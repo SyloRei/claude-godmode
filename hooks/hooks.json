@@ -1,0 +1,27 @@
+{
+  "description": "claude-godmode hooks — session context injection and post-compaction recovery",
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostCompact": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

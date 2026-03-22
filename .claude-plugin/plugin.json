@@ -1,0 +1,9 @@
+{
+  "name": "claude-godmode",
+  "description": "Production-grade engineering workflow: 8 agents, 8 skills, hooks, quality gates, and feature pipeline (/prd → /plan-stories → /execute → /ship)",
+  "version": "1.0.0",
+  "author": {
+    "name": "sylorei"
+  },
+  "keywords": ["workflow", "agents", "pipeline", "engineering", "quality-gates"]
+}
