@@ -1,0 +1,40 @@
+name: Feature Request
+description: Suggest a new agent, skill, hook, or enhancement
+labels: ["enhancement"]
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - New agent
+        - New skill
+        - New hook
+        - Enhancement to existing component
+        - Other
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What would you like to see added or changed?
+    validations:
+      required: true
+
+  - type: textarea
+    id: use-case
+    attributes:
+      label: Use Case
+      description: Why is this needed? What workflow does it enable?
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed Solution
+      description: If you have a specific approach in mind, describe it here
+    validations:
+      required: false

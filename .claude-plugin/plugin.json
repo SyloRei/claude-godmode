@@ -1,11 +1,25 @@
 {
   "name": "claude-godmode",
-  "description": "Production-grade engineering workflow: 8 agents, 8 skills, hooks, quality gates, and feature pipeline (/prd → /plan-stories → /execute → /ship)",
+  "description": "Production-grade engineering workflow for Claude Code: 8 specialized agents, 8 skills, 3 hooks, quality gates, and a full feature pipeline. Language-agnostic.",
   "version": "1.0.0",
   "author": {
-    "name": "sylorei"
+    "name": "sylorei",
+    "url": "https://github.com/sylorei"
   },
-  "keywords": ["workflow", "agents", "pipeline", "engineering", "quality-gates"],
+  "keywords": [
+    "workflow",
+    "agents",
+    "skills",
+    "hooks",
+    "pipeline",
+    "engineering",
+    "quality-gates",
+    "code-review",
+    "tdd",
+    "refactoring",
+    "prd",
+    "claude-code"
+  ],
   "repository": "https://github.com/sylorei/claude-godmode",
   "homepage": "https://github.com/sylorei/claude-godmode",
   "license": "MIT"

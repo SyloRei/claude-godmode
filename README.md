@@ -1,29 +1,69 @@
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)
+
 # Claude God-Mode
 
-Production-grade engineering workflow for Claude Code. 8 specialized agents, 8 skills, hooks, quality gates, and a full feature pipeline.
+**Production-grade engineering workflow for Claude Code. Ship features, not prompts.**
 
-## What's Inside
+- **End-to-end pipeline** -- go from idea to merged PR with `/prd`, `/plan-stories`, `/execute`, `/ship`
+- **Quality gates enforcement** -- typecheck, lint, test, and security checks run automatically before anything ships
+- **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
+- **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
 
-### Feature Pipeline
+## Pipeline
 
 ```
-/prd → /plan-stories → /execute → /ship
+/prd  -->  /plan-stories  -->  /execute  -->  /ship
+  |              |                 |             |
+  PRD       stories.json      @executor      Quality
+                               @reviewer    gates --> PR
 ```
 
-### Agents
+## Quick Start
+
+### Option A: Plugin Marketplace (Recommended)
+
+```bash
+# Add the marketplace registry
+claude plugin marketplace add SyloRei/claude-marketplace
+
+# Install the plugin
+claude plugin install claude-godmode@sylorei-plugins
+```
+
+### Option B: Manual Install
+
+```bash
+git clone https://github.com/sylorei/claude-godmode.git
+cd claude-godmode
+./install.sh
+```
+
+The install script backs up your existing `~/.claude/` config (timestamped), copies agents, skills, hooks, CLAUDE.md, and INSTRUCTIONS.md, and merges settings.json additively -- your existing permissions and plugins are preserved.
+
+### Uninstall
+
+```bash
+./uninstall.sh
+```
+
+Restores from the most recent backup created during install.
+
+## Agents
 
 | Agent | Model | Purpose |
 |-------|-------|---------|
 | `@writer` | opus | Implementation in isolated worktree |
 | `@executor` | opus | Story execution from stories.json |
 | `@reviewer` | opus | Code review (read-only) |
-| `@researcher` | sonnet | Codebase & web research |
+| `@researcher` | sonnet | Codebase and web research |
 | `@architect` | opus | System design (advisory) |
 | `@security-auditor` | opus | Security audit (read-only) |
 | `@test-writer` | opus | Test generation in isolated worktree |
 | `@doc-writer` | sonnet | Documentation |
 
-### Skills
+## Skills
 
 | Skill | Purpose |
 |-------|---------|
@@ -36,68 +76,36 @@ Production-grade engineering workflow for Claude Code. 8 specialized agents, 8 s
 | `/refactor` | Safe refactoring with test verification |
 | `/explore-repo` | Deep codebase exploration |
 
-### Hooks
+## Hooks
 
-- **SessionStart** — Injects project context (language, package manager, test runner, git state)
-- **PostCompact** — Restores quality gates and available skills after context compaction
-- **StatusLine** — Shows context %, model, cost, project, branch
+| Hook | Trigger | Purpose |
+|------|---------|---------|
+| **SessionStart** | Conversation begins | Injects project context (language, package manager, test runner, git state) |
+| **PostCompact** | After `/compact` | Restores quality gates and available skills after context compaction |
+| **StatusLine** | Continuous | Shows context %, model, cost, project, branch |
 
-### Config
+## How It Works
 
-- **CLAUDE.md** — Global instructions: coding standards, quality gates, workflow phases, agent routing
-- **INSTRUCTIONS.md** — Detailed behavioral instructions and conventions
-
-## Installation
-
-### Option A: Plugin (Recommended)
-
-```bash
-# From local clone
-claude /plugin install --source ./path/to/claude-godmode
-
-# From GitHub
-claude /plugin install --source url --url https://github.com/youruser/claude-godmode.git
-```
-
-### Option B: Install Script
-
-```bash
-git clone https://github.com/youruser/claude-godmode.git
-cd claude-godmode
-./install.sh
-```
-
-The install script:
-- Backs up your existing `~/.claude/` config (timestamped)
-- Copies agents, skills, and hooks
-- Copies CLAUDE.md and INSTRUCTIONS.md
-- Merges settings.json (additive — your existing permissions and plugins are preserved)
-
-### Uninstall
-
-```bash
-./uninstall.sh
-```
-
-Restores from the most recent backup created during install.
+Claude God-Mode is a Claude Code plugin defined by `plugin.json`. It installs **agents** (specialized Claude instances with dedicated system prompts and model assignments), **skills** (slash-command workflows composed of multiple steps), and **hooks** (shell scripts that fire on session events). The global `CLAUDE.md` provides coding standards, quality gates, and routing logic that all agents inherit. `INSTRUCTIONS.md` supplies detailed behavioral conventions. Together, these files transform Claude Code from a general assistant into a structured engineering team.
 
 ## Customization
 
-After installing, you'll want to customize:
+After installing, customize to match your workflow:
 
-1. **`~/.claude/CLAUDE.md`** — Edit the `Identity` and `Response Style` sections to match your preferences
-2. **`~/.claude/INSTRUCTIONS.md`** — Adjust agent behaviors and conventions
-3. **`~/.claude/settings.json`** — Add/remove permissions for your toolchain
+1. **`~/.claude/CLAUDE.md`** -- Edit the `Identity` and `Response Style` sections to match your preferences
+2. **`~/.claude/INSTRUCTIONS.md`** -- Adjust agent behaviors and conventions
+3. **`~/.claude/settings.json`** -- Add/remove permissions for your toolchain
 
 ## Updating
 
-### Plugin path
+### Plugin
 
 ```bash
-claude /plugin update claude-godmode
+claude plugin marketplace add SyloRei/claude-marketplace
+claude plugin install claude-godmode@sylorei-plugins
 ```
 
-### Install script path
+### Manual
 
 ```bash
 cd claude-godmode
@@ -110,6 +118,28 @@ git pull
 - [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
 - `jq` (for install script settings merge): `brew install jq`
 
+## FAQ
+
+### Does this work with Sonnet/Haiku?
+
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Research-oriented agents (`@researcher`, `@doc-writer`) already default to Sonnet.
+
+### Will this overwrite my config?
+
+No. The install script creates a timestamped backup of your `~/.claude/` directory before making any changes, and merges `settings.json` additively -- your existing permissions and plugins are preserved.
+
+### Can I use individual parts?
+
+Yes. You can cherry-pick individual agents, skills, or hooks. Copy just the files you want into your `~/.claude/` directory. Each component is self-contained.
+
+### What languages does this support?
+
+Claude God-Mode is language-agnostic. The SessionStart hook auto-detects your project's toolchain (package manager, test runner, linter, formatter, build system) and injects that context into every conversation.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on adding agents, skills, hooks, and submitting pull requests.
+
 ## License
 
-MIT
+[MIT](LICENSE)
