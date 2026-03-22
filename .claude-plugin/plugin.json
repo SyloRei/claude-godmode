@@ -1,7 +1,7 @@
 {
   "name": "claude-godmode",
   "description": "Production-grade engineering workflow for Claude Code: 8 specialized agents, 8 skills, 3 hooks, quality gates, and a full feature pipeline. Language-agnostic.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "author": {
     "name": "sylorei",
     "url": "https://github.com/sylorei"

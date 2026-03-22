@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] - 2025-03-23
+
+### Added
+
+- `/godmode statusline` command for plugin-based statusline setup
+- CONTRIBUTING.md, CODE_OF_CONDUCT.md, CHANGELOG.md
+- GitHub issue templates (bug report, feature request) and PR template
+- Enriched plugin.json with expanded keywords and author URL
+
+### Changed
+
+- README.md rewritten with badges, value proposition, pipeline diagram, FAQ, and correct marketplace install commands
+
 ## [1.0.0] - 2025-03-23
 
 ### Added
