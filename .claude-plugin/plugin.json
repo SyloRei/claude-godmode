@@ -5,5 +5,8 @@
   "author": {
     "name": "sylorei"
   },
-  "keywords": ["workflow", "agents", "pipeline", "engineering", "quality-gates"]
+  "keywords": ["workflow", "agents", "pipeline", "engineering", "quality-gates"],
+  "repository": "https://github.com/sylorei/claude-godmode",
+  "homepage": "https://github.com/sylorei/claude-godmode",
+  "license": "MIT"
 }
