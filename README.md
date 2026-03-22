@@ -32,6 +32,8 @@ claude plugin marketplace add SyloRei/claude-marketplace
 claude plugin install claude-godmode@sylorei-plugins
 ```
 
+After installing, enable the statusline by running `/godmode statusline` in Claude Code.
+
 ### Option B: Manual Install
 
 ```bash
@@ -82,7 +84,7 @@ Restores from the most recent backup created during install.
 |------|---------|---------|
 | **SessionStart** | Conversation begins | Injects project context (language, package manager, test runner, git state) |
 | **PostCompact** | After `/compact` | Restores quality gates and available skills after context compaction |
-| **StatusLine** | Continuous | Shows context %, model, cost, project, branch |
+| **StatusLine** | Continuous | Shows context %, model, cost, project, branch (run `/godmode statusline` to enable) |
 
 ## How It Works
 
