@@ -16,7 +16,8 @@ Create detailed Product Requirements Documents that are clear, actionable, and r
 2. Auto-detect project quality commands (typecheck, lint, test, build)
 3. Ask 3-5 essential clarifying questions (with lettered options)
 4. Generate a structured PRD based on answers
-5. Save to `tasks/prd-[feature-name].md`
+5. Create output directory if needed: `mkdir -p .claude-pipeline/prds`
+6. Save to `.claude-pipeline/prds/prd-[feature-name].md`
 
 **Important:** Do NOT start implementing. Just create the PRD.
 
@@ -110,7 +111,7 @@ The PRD reader may be a junior developer or AI agent. Therefore:
 ## Output
 
 - **Format:** Markdown (`.md`)
-- **Location:** `tasks/`
+- **Location:** `.claude-pipeline/prds/`
 - **Filename:** `prd-[feature-name].md` (kebab-case)
 
 ---
@@ -133,4 +134,4 @@ Before saving:
 - [ ] Functional requirements are numbered and unambiguous
 - [ ] Non-goals section defines clear boundaries
 - [ ] Technical considerations include detected quality commands
-- [ ] Saved to `tasks/prd-[feature-name].md`
+- [ ] Saved to `.claude-pipeline/prds/prd-[feature-name].md`

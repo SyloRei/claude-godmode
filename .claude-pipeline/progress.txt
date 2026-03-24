@@ -1,0 +1,17 @@
+## Codebase Patterns
+- Skills are defined as Markdown files with YAML frontmatter in skills/[name]/SKILL.md
+- Pipeline artifacts migrate from tasks/ to .claude-pipeline/ subdirectories
+- Quality gates: shell syntax check on hooks/*.sh, grep-based checks for stale references
+- The grep quality gate excludes Claude tool names (TaskCreate, TaskUpdate, etc.) and "task tools"/"multi-step tasks" phrases
+
+---
+
+## 2026-03-24 - US-001: PRDs write to .claude-pipeline/prds/
+- Replaced 3 references to `tasks/` in skills/prd/SKILL.md with `.claude-pipeline/prds/`
+- Added `mkdir -p .claude-pipeline/prds` step (step 5) in The Job section
+- Files changed: skills/prd/SKILL.md
+- **Learnings for future iterations:**
+  - SKILL.md files have a consistent structure: frontmatter, The Job (numbered steps), detailed Steps, Output section, Checklist
+  - The Output section has Location and Filename fields that must stay in sync with The Job steps and the Checklist
+  - The second quality gate (no-tasks-refs) will have false positives from other files until all stories complete
+---
