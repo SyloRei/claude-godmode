@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.1.1] - 2026-03-25
+
+### Changed
+
+- Pipeline artifacts (PRDs, stories) now write to `.claude-pipeline/` directory
+- `/prd` and `/plan-stories` skills manage `.gitignore` for pipeline artifacts
+- `/plan-stories` references updated with `prdSource` field support
+- Archive structure updated with PRD tracking
+- Documentation and plugin repo cleanup
+
+### Fixed
+
+- `.claude-pipeline/` added to `.gitignore` and removed from tracking
+
 ## [1.1.0] - 2025-03-23
 
 ### Added
