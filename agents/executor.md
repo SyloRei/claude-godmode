@@ -62,8 +62,7 @@ If stuck → use /debug protocol: Reproduce → Hypothesize → Isolate → Fix.
 Append to progress.txt:
 ```
 ## [Date] - [Story ID]: [Title]
-## Plan
-[Brief plan from PLAN phase — acceptance criteria, approach, risks]
+- **Plan:** [Brief plan from PLAN phase — acceptance criteria, approach, risks]
 - What was implemented
 - Files changed
 - **Learnings for future iterations:**
