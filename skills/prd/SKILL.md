@@ -17,7 +17,8 @@ Create detailed Product Requirements Documents that are clear, actionable, and r
 3. Ask 3-5 essential clarifying questions (with lettered options)
 4. Generate a structured PRD based on answers
 5. Create output directory if needed: `mkdir -p .claude-pipeline/prds`
-6. Save to `.claude-pipeline/prds/prd-[feature-name].md`
+6. Ensure `.claude-pipeline/` is in `.gitignore` (see Gitignore Management step below)
+7. Save to `.claude-pipeline/prds/prd-[feature-name].md`
 
 **Important:** Do NOT start implementing. Just create the PRD.
 
@@ -108,6 +109,41 @@ The PRD reader may be a junior developer or AI agent. Therefore:
 
 ---
 
+## Gitignore Management
+
+Ensure `.claude-pipeline/` is listed in the project's `.gitignore` so pipeline artifacts are not committed. This step is **idempotent** — running it multiple times must not duplicate the entry.
+
+**Procedure:**
+
+1. **Git repo check:** Only proceed if inside a git repository:
+   ```bash
+   git rev-parse --is-inside-work-tree 2>/dev/null
+   ```
+   If this fails, skip this step entirely.
+
+2. **Opt-out check:** If `.gitignore` exists and contains the line `# claude-godmode: unmanaged`, skip this step entirely:
+   ```bash
+   grep -qxF '# claude-godmode: unmanaged' .gitignore
+   ```
+
+3. **Already present check:** If `.gitignore` already contains the exact line `.claude-pipeline/`, skip — nothing to do:
+   ```bash
+   grep -qxF '.claude-pipeline/' .gitignore
+   ```
+
+4. **Add the entry:** If not present, append it:
+   - If `.gitignore` does not exist, create it.
+   - If `.gitignore` exists and does not end with a newline, add one first:
+     ```bash
+     [ -s .gitignore ] && [ "$(tail -c1 .gitignore)" != "" ] && printf '\n' >> .gitignore
+     ```
+   - Append the comment header and the entry:
+     ```bash
+     printf '# claude-godmode pipeline artifacts\n.claude-pipeline/\n' >> .gitignore
+     ```
+
+---
+
 ## Output
 
 - **Format:** Markdown (`.md`)
@@ -134,4 +170,5 @@ Before saving:
 - [ ] Functional requirements are numbered and unambiguous
 - [ ] Non-goals section defines clear boundaries
 - [ ] Technical considerations include detected quality commands
+- [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)
 - [ ] Saved to `.claude-pipeline/prds/prd-[feature-name].md`

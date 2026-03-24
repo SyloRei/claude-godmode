@@ -37,7 +37,7 @@
         "All quality gates pass"
       ],
       "priority": 2,
-      "passes": false,
+      "passes": true,
       "notes": "Markdown-only changes to two SKILL.md files. Add a new step section with the .gitignore management instructions and idempotency pattern. Do NOT modify session-start.sh."
     },
     {
