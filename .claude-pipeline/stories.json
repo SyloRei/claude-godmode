@@ -2,7 +2,7 @@
   "project": "claude-godmode",
   "branchName": "consolidate-pipeline-artifacts",
   "description": "Consolidate all plugin-generated artifacts under .claude-pipeline/ directory, add automatic .gitignore management, and remove all references to tasks/",
-  "prdSource": "tasks/prd-consolidate-pipeline-artifacts.md",
+  "prdSource": ".claude-pipeline/prds/prd-consolidate-pipeline-artifacts.md",
   "qualityGates": {
     "shellcheck": "bash -n hooks/session-start.sh && bash -n hooks/post-compact.sh",
     "references": "! grep -rn 'tasks/' skills/ agents/ config/ commands/ hooks/ --include='*.md' --include='*.sh' --include='*.json' | grep -v 'TaskCreate\\|TaskUpdate\\|TaskGet\\|TaskList\\|TaskStop\\|TaskOutput\\|task tools\\|multi-step tasks'"
@@ -73,8 +73,8 @@
         "All quality gates pass"
       ],
       "priority": 4,
-      "passes": false,
-      "notes": "Multi-file documentation sweep. Be careful to distinguish 'tasks/' as artifact output (replace) from unrelated uses like 'TaskCreate tool' or 'multi-step tasks' (keep). The PRD file itself needs to move before deleting tasks/. Do NOT modify config/CLAUDE.md — 'use tasks instead' refers to the Claude Code Tasks tool, not the tasks/ directory."
+      "passes": true,
+      "notes": "Fixed one tasks/ reference in config/INSTRUCTIONS.md example workflow. Verified README.md, godmode.md, execute/SKILL.md, executor.md had no tasks/ artifact references. Moved PRD to .claude-pipeline/prds/, deleted tasks/ directory, updated prdSource field."
     },
     {
       "id": "US-005",
