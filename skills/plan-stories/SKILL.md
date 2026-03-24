@@ -162,8 +162,11 @@ Ensure `.claude-pipeline/` is listed in the project's `.gitignore` so pipeline a
 Before writing `.claude-pipeline/stories.json`, check if one exists from a different feature:
 1. Read current `.claude-pipeline/stories.json`
 2. If `branchName` differs from new feature:
-   - Archive to `.claude-pipeline/archive/YYYY-MM-DD-feature-name/`
-   - Copy `stories.json` and `progress.txt`
+   - Create archive directory: `.claude-pipeline/archive/YYYY-MM-DD-feature-name/`
+   - Copy `stories.json` and `progress.txt` into the archive directory
+   - Read the `prdSource` field from the existing `stories.json` to identify the source PRD
+   - Copy the source PRD file (the file at the `prdSource` path) into the archive directory
+   - Only copy the single PRD referenced by `prdSource` — do NOT copy all PRDs
    - Reset `.claude-pipeline/progress.txt`
 
 ---
@@ -179,7 +182,7 @@ Suggest next steps:
 ## Checklist
 
 - [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)
-- [ ] Previous run archived (if `.claude-pipeline/stories.json` exists with different branch)
+- [ ] Previous run archived with source PRD (if `.claude-pipeline/stories.json` exists with different branch)
 - [ ] Quality gates auto-detected and populated
 - [ ] Each story completable in one agent session
 - [ ] Stories ordered by dependency

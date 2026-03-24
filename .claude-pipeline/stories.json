@@ -88,7 +88,7 @@
         "All quality gates pass"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "Markdown-only change to skills/plan-stories/SKILL.md archive section. Update the archive instructions to include prdSource-based PRD copying."
     }
   ]
