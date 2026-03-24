@@ -58,7 +58,7 @@ Step 4:  /ship                Push + create PR
 You:    create a prd for adding user authentication
 Claude: [asks 3-5 clarifying questions with lettered options]
 You:    1A, 2C, 3B
-Claude: [generates PRD, saves to tasks/prd-user-auth.md]
+Claude: [generates PRD, saves to .claude-pipeline/prds/prd-user-auth.md]
 
 You:    /plan-stories
 Claude: [converts PRD → stories.json with 6 stories + quality gates]

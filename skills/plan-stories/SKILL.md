@@ -12,10 +12,11 @@ Converts PRDs into stories.json — executable story specifications with auto-de
 
 ## The Job
 
-1. Read the PRD (markdown file or user-provided text)
+1. Read the PRD from `.claude-pipeline/prds/` (or user-provided text)
 2. Auto-detect project quality gate commands
 3. Convert to stories.json format
-4. Save to `.claude-pipeline/stories.json` (create `.claude-pipeline/` dir if needed)
+4. Ensure `.claude-pipeline/` is in `.gitignore` (see Gitignore Management step below)
+5. Save to `.claude-pipeline/stories.json` (create `.claude-pipeline/` dir if needed)
 
 ---
 
@@ -26,6 +27,7 @@ Converts PRDs into stories.json — executable story specifications with auto-de
   "project": "[Project Name]",
   "branchName": "[feature-name-kebab-case]",
   "description": "[Feature description]",
+  "prdSource": ".claude-pipeline/prds/prd-feature-name.md",
   "qualityGates": {
     "typecheck": "[detected command, e.g. pnpm type-check]",
     "lint": "[detected command, e.g. pnpm lint]",
@@ -116,6 +118,42 @@ This aligns with the canonical quality gates defined in CLAUDE.md.
 5. branchName: derived from feature, kebab-case
 6. qualityGates: auto-detected project commands
 7. Final criterion always: "All quality gates pass"
+8. prdSource: path to the PRD file consumed
+
+---
+
+## Gitignore Management
+
+Ensure `.claude-pipeline/` is listed in the project's `.gitignore` so pipeline artifacts are not committed. This step is **idempotent** — running it multiple times must not duplicate the entry.
+
+**Procedure:**
+
+1. **Git repo check:** Only proceed if inside a git repository:
+   ```bash
+   git rev-parse --is-inside-work-tree 2>/dev/null
+   ```
+   If this fails, skip this step entirely.
+
+2. **Opt-out check:** If `.gitignore` exists and contains the line `# claude-godmode: unmanaged`, skip this step entirely:
+   ```bash
+   grep -qxF '# claude-godmode: unmanaged' .gitignore
+   ```
+
+3. **Already present check:** If `.gitignore` already contains the exact line `.claude-pipeline/`, skip — nothing to do:
+   ```bash
+   grep -qxF '.claude-pipeline/' .gitignore
+   ```
+
+4. **Add the entry:** If not present, append it:
+   - If `.gitignore` does not exist, create it.
+   - If `.gitignore` exists and does not end with a newline, add one first:
+     ```bash
+     [ -s .gitignore ] && [ "$(tail -c1 .gitignore)" != "" ] && printf '\n' >> .gitignore
+     ```
+   - Append the comment header and the entry:
+     ```bash
+     printf '# claude-godmode pipeline artifacts\n.claude-pipeline/\n' >> .gitignore
+     ```
 
 ---
 
@@ -124,8 +162,11 @@ This aligns with the canonical quality gates defined in CLAUDE.md.
 Before writing `.claude-pipeline/stories.json`, check if one exists from a different feature:
 1. Read current `.claude-pipeline/stories.json`
 2. If `branchName` differs from new feature:
-   - Archive to `.claude-pipeline/archive/YYYY-MM-DD-feature-name/`
-   - Copy `stories.json` and `progress.txt`
+   - Create archive directory: `.claude-pipeline/archive/YYYY-MM-DD-feature-name/`
+   - Copy `stories.json` and `progress.txt` into the archive directory
+   - Read the `prdSource` field from the existing `stories.json` to identify the source PRD
+   - Copy the source PRD file (the file at the `prdSource` path) into the archive directory
+   - Only copy the single PRD referenced by `prdSource` — do NOT copy all PRDs
    - Reset `.claude-pipeline/progress.txt`
 
 ---
@@ -140,7 +181,8 @@ Suggest next steps:
 
 ## Checklist
 
-- [ ] Previous run archived (if `.claude-pipeline/stories.json` exists with different branch)
+- [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)
+- [ ] Previous run archived with source PRD (if `.claude-pipeline/stories.json` exists with different branch)
 - [ ] Quality gates auto-detected and populated
 - [ ] Each story completable in one agent session
 - [ ] Stories ordered by dependency
