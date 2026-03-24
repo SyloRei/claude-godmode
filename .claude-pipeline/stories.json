@@ -52,7 +52,7 @@
         "All quality gates pass"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Markdown-only changes to skills/plan-stories/SKILL.md. Update the Output Format JSON example, Conversion Rules, and any PRD path references."
     },
     {

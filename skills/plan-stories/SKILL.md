@@ -12,7 +12,7 @@ Converts PRDs into stories.json — executable story specifications with auto-de
 
 ## The Job
 
-1. Read the PRD (markdown file or user-provided text)
+1. Read the PRD from `.claude-pipeline/prds/` (or user-provided text)
 2. Auto-detect project quality gate commands
 3. Convert to stories.json format
 4. Ensure `.claude-pipeline/` is in `.gitignore` (see Gitignore Management step below)
@@ -27,6 +27,7 @@ Converts PRDs into stories.json — executable story specifications with auto-de
   "project": "[Project Name]",
   "branchName": "[feature-name-kebab-case]",
   "description": "[Feature description]",
+  "prdSource": ".claude-pipeline/prds/prd-feature-name.md",
   "qualityGates": {
     "typecheck": "[detected command, e.g. pnpm type-check]",
     "lint": "[detected command, e.g. pnpm lint]",
@@ -117,6 +118,7 @@ This aligns with the canonical quality gates defined in CLAUDE.md.
 5. branchName: derived from feature, kebab-case
 6. qualityGates: auto-detected project commands
 7. Final criterion always: "All quality gates pass"
+8. prdSource: path to the PRD file consumed
 
 ---
 
