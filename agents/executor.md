@@ -86,3 +86,4 @@ If you discover a reusable pattern, add it to the `## Codebase Patterns` section
 - Run quality gates before committing
 - Keep CI green
 - Follow existing code patterns — detect them, don't impose your own
+- **Parallel mode:** If the orchestrator passes `parallel: true` in your spawn message, skip steps 8 (PROGRESS) and 9 (COMPLETION CHECK) — return implementation results only. The orchestrator handles shared state updates.
