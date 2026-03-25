@@ -122,6 +122,56 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Check Anti-Patterns section to avoid repeating past mistakes. |
 | **complete** | Same as executing — accumulated knowledge is still useful for safe refactoring. |
 
+### Pipeline Integration
+
+**Consumes:**
+- `stories.json` — if a story mentions refactoring (e.g., `/refactor US-005`), load its description and acceptance criteria as context for scoping the refactoring
+- `progress.txt` — check Anti-Patterns section to avoid repeating structural mistakes from previous stories
+
+**After PLAN phase (end of Step 3):**
+
+When `.claude-pipeline/stories.json` exists, phase is not **no-pipeline**, and the refactoring plan has **3 or more steps**, present the user with three options:
+
+```
+Refactoring plan: [summary]
+Steps: N planned
+
+How to proceed?
+(a) Execute immediately (default) — apply all steps now with per-step test verification
+(b) Generate refactoring PRD — save to .claude-pipeline/prds/prd-refactor-[area].md for later planning
+(c) Append refactoring stories to stories.json — add one story per step for /execute to pick up
+```
+
+Press enter or choose (a) to execute immediately. Options (b) and (c) defer execution for pipeline-driven workflow.
+
+**Small refactors (1-2 steps):** Always execute immediately without prompting about pipeline options, regardless of pipeline state. The overhead of pipeline stories is not justified for small changes.
+
+**Option (c) appended story format:**
+
+Each refactoring step maps to one story. Stories are chained sequentially with `dependsOn` to enforce execution order:
+
+```json
+{
+  "id": "US-NNN",          // next available ID (continue sequence from existing stories)
+  "title": "Refactor: [step description]",
+  "description": "Refactoring step N of M: [what this step does]. Part of [area] refactoring.",
+  "acceptanceCriteria": [
+    "[specific refactoring criterion for this step]",
+    "All tests pass before AND after this refactoring step",
+    "No behavior changes — only structural improvement",
+    "All quality gates pass"
+  ],
+  "dependsOn": ["US-PPP"],  // previous step's ID (first step: [] or existing dependency)
+  "priority": N,             // max existing priority + 1 (incremented per step)
+  "passes": false,
+  "notes": ""
+}
+```
+
+**Example:** A 4-step refactoring produces stories US-015 through US-018, where US-016 depends on US-015, US-017 depends on US-016, and US-018 depends on US-017.
+
+**Standalone mode (no pipeline):** When `.claude-pipeline/stories.json` does not exist or phase is **no-pipeline**, always proceed directly to Step 4 (execute) without prompting about pipeline options.
+
 ---
 
 ## Output
