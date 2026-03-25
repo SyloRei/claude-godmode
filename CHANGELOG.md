@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.2.0] - 2026-03-25
+
+### Added
+
+- PLAN phase in @executor: structured thinking (restate criteria, identify files, pseudocode, flag risks) before coding
+- PLAN phase in @writer: lightweight plan-before-code discipline for ad-hoc tasks
+- Anti-Patterns section in progress.txt: tracks what didn't work, auto-populated on @reviewer CRITICAL rework
+- Architecture Decisions section in progress.txt: records design choices with rationale
+- Dependency declaration in /plan-stories: `dependsOn` field with conservative heuristics (shared files, API/schema, infrastructure, PRD ordering)
+- Parallel story execution in /execute: spawns concurrent @executor agents for independent stories
+- Batch computation with transitive dependency resolution and `maxParallel` cap (default 3)
+- Post-merge smoke test: quality gates on combined result after parallel merge
+- Dry-run batch plan display with user confirmation before spawning
+- Concurrency directive in @executor and @writer: batch independent tool calls in parallel
+
+### Changed
+
+- @executor workflow: CONTEXT → PLAN → BRANCH → IMPLEMENT → TEST → QUALITY GATES → COMMIT → PROGRESS → COMPLETION CHECK (9 phases, was 8)
+- @writer workflow: UNDERSTAND → PLAN → IMPLEMENT → TEST → QUALITY GATES → RETURN (6 phases, was 5)
+- /execute skill: supports both sequential (backward compatible) and parallel execution modes
+- @executor supports parallel mode: skips shared state updates when orchestrator signals `parallel: true`
+
 ## [1.1.1] - 2026-03-25
 
 ### Changed
