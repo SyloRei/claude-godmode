@@ -28,6 +28,7 @@ Converts PRDs into stories.json — executable story specifications with auto-de
   "branchName": "[feature-name-kebab-case]",
   "description": "[Feature description]",
   "prdSource": ".claude-pipeline/prds/prd-feature-name.md",
+  "maxParallel": 3,
   "qualityGates": {
     "typecheck": "[detected command, e.g. pnpm type-check]",
     "lint": "[detected command, e.g. pnpm lint]",
@@ -44,6 +45,7 @@ Converts PRDs into stories.json — executable story specifications with auto-de
         "Criterion 2",
         "All quality gates pass"
       ],
+      "dependsOn": [],
       "priority": 1,
       "passes": false,
       "notes": ""
@@ -98,6 +100,29 @@ Earlier stories must NOT depend on later ones.
 
 ---
 
+## Dependency Analysis
+
+Every story must include a `dependsOn` field — an array of story IDs it depends on. Stories with no dependencies get `dependsOn: []`.
+
+### Heuristics (declare a dependency when):
+
+| Signal | Example |
+|--------|---------|
+| **Shared files** — two stories modify any of the same files | US-002 and US-003 both modify `agents/executor.md` → later one depends on earlier |
+| **API/schema/type producer-consumer** — a story produces an API, schema, or type that another consumes | US-001 creates a DB table → US-002 writes queries against it |
+| **Shared infrastructure** — a story modifies test helpers, config, build scripts, or shared utilities | US-001 updates test fixtures → US-003 uses those fixtures |
+| **PRD-stated ordering** — the PRD explicitly states one feature requires another | "Search requires the index built in Story 1" |
+
+### Conservative by default
+
+When uncertain whether a dependency exists, **declare it**. Safety over speed — a false dependency only reduces parallelism, but a missed dependency causes merge conflicts or broken builds.
+
+### Backward compatibility
+
+Existing `stories.json` files without `dependsOn` fields continue to work. Consumers (e.g., `/execute`) fall back to sequential execution when `dependsOn` is absent.
+
+---
+
 ## Acceptance Criteria: Must Be Verifiable
 
 **Good:** "Add `status` column with default 'pending'" / "Filter dropdown has options: All, Active, Completed"
@@ -119,6 +144,8 @@ This aligns with the canonical quality gates defined in CLAUDE.md.
 6. qualityGates: auto-detected project commands
 7. Final criterion always: "All quality gates pass"
 8. prdSource: path to the PRD file consumed
+9. dependsOn: array of story IDs using dependency heuristics (see Dependency Analysis); empty array `[]` if no dependencies
+10. maxParallel: optional top-level integer (default 3) — max concurrent agent sessions for `/execute`
 
 ---
 
@@ -186,6 +213,9 @@ Suggest next steps:
 - [ ] Quality gates auto-detected and populated
 - [ ] Each story completable in one agent session
 - [ ] Stories ordered by dependency
+- [ ] Every story has a `dependsOn` field (array of story IDs, or `[]`)
+- [ ] Dependencies follow heuristics: shared files, API/schema, infrastructure, PRD ordering
+- [ ] When uncertain, dependency is declared (conservative)
 - [ ] Every story ends with "All quality gates pass"
 - [ ] Acceptance criteria are verifiable (not vague)
 - [ ] No story depends on a later story
