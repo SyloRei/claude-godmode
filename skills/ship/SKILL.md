@@ -107,9 +107,59 @@ Return PR URL.
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 1 (Gate failure) | Spawn @writer for complex fixes | Fix typecheck, lint, or test failures that need multi-file changes |
+| Step 2 (Requirements) | MUST spawn @reviewer for deep code review | Validate all changes match acceptance criteria before pushing |
+| Step 3 (Security) | MUST spawn @security-auditor for comprehensive audit | Scan for vulnerabilities, secrets, injection risks before shipping |
+
+**Rule:** Never perform code review or security audit inline — always spawn the designated agent.
+
+---
+
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Operate in standalone mode. Ship changes without pipeline context. Zero regression from pre-pipeline behavior. |
+| **prd-only** | Standalone mode — no stories to verify against. Ship normally. |
+| **planning** | Warn user: stories are planned but none are implemented. Confirm they want to ship without executing the pipeline. |
+| **executing** | Read `progress.txt` for context on completed stories. Use `stories.json` to verify all stories pass before shipping. If incomplete stories remain, warn user and confirm intent. Use quality gate commands from `stories.json.qualityGates` instead of re-detecting. |
+| **complete** | All stories pass. Read `progress.txt` for PR description context. Use `stories.json` for quality gate commands and story summaries to populate the PR body. Reference the PRD via `prdSource` for requirements verification (Step 2). |
+
+---
+
 ## Related
 
 - **/debug** — when quality gates fail
 - **@reviewer** — for deep code review before shipping
 - **@security-auditor** — for comprehensive security audit before shipping
-- **/execute** — if shipping stories from the pipeline
+- **/execute** — preceding step: implement all stories before shipping
+
+**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.txt` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.

@@ -109,38 +109,10 @@ The PRD reader may be a junior developer or AI agent. Therefore:
 
 ---
 
+<!-- canonical: skills/_shared/gitignore-management.md -->
 ## Gitignore Management
 
-Ensure `.claude-pipeline/` is listed in the project's `.gitignore` so pipeline artifacts are not committed. This step is **idempotent** — running it multiple times must not duplicate the entry.
-
-**Procedure:**
-
-1. **Git repo check:** Only proceed if inside a git repository:
-   ```bash
-   git rev-parse --is-inside-work-tree 2>/dev/null
-   ```
-   If this fails, skip this step entirely.
-
-2. **Opt-out check:** If `.gitignore` exists and contains the line `# claude-godmode: unmanaged`, skip this step entirely:
-   ```bash
-   grep -qxF '# claude-godmode: unmanaged' .gitignore
-   ```
-
-3. **Already present check:** If `.gitignore` already contains the exact line `.claude-pipeline/`, skip — nothing to do:
-   ```bash
-   grep -qxF '.claude-pipeline/' .gitignore
-   ```
-
-4. **Add the entry:** If not present, append it:
-   - If `.gitignore` does not exist, create it.
-   - If `.gitignore` exists and does not end with a newline, add one first:
-     ```bash
-     [ -s .gitignore ] && [ "$(tail -c1 .gitignore)" != "" ] && printf '\n' >> .gitignore
-     ```
-   - Append the comment header and the entry:
-     ```bash
-     printf '# claude-godmode pipeline artifacts\n.claude-pipeline/\n' >> .gitignore
-     ```
+See `skills/_shared/gitignore-management.md` for the canonical procedure. Apply before saving any pipeline artifact.
 
 ---
 
@@ -157,6 +129,70 @@ Ensure `.claude-pipeline/` is listed in the project's `.gitignore` so pipeline a
 Suggest next steps:
 1. **Optional:** "Use `@architect` to review the design before proceeding"
 2. **Required:** "Use `/plan-stories` to convert this PRD into executable stories"
+
+---
+
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 2 (Clarifying Questions) | Suggest @researcher if exploration needed | Investigate codebase structure, existing patterns, or technical constraints before finalizing requirements |
+| After Saving | Suggest @architect for design review (optional) | Review PRD architecture and technical approach before proceeding to /plan-stories |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
+| **prd-only** | A PRD already exists for this feature area. Read it for context to reduce clarifying questions and avoid re-detecting quality commands already captured in the PRD's Technical Considerations. |
+| **planning** | Stories exist. Read `stories.json` for scope context — the PRD is being refined or a new PRD is being created for a related feature. Reference existing stories to avoid overlap. |
+| **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding — use findings to reduce clarifying questions and skip re-detection of quality commands already discovered. |
+| **complete** | Same as executing — accumulated knowledge and explorations are still useful for planning the next feature. |
+
+### Exploration Awareness
+
+When `.claude-pipeline/explorations/` contains files:
+- Read exploration findings before asking clarifying questions — answers may already exist
+- Use detected quality commands from explorations instead of re-running detection (Step 1)
+- Reference discovered architecture patterns and constraints in the PRD's Technical Considerations
+
+---
+
+## Related
+
+- **/explore-repo** — run first to build codebase understanding; `/prd` consumes exploration findings to reduce clarifying questions
+- **@architect** — review the PRD design before converting to stories
+- **/plan-stories** — next step: convert PRD into executable stories.json
+
+**Pipeline:** consumes exploration files from `.claude-pipeline/explorations/`. Produces PRD at `.claude-pipeline/prds/`. Preceding step: `/explore-repo`. Next: `/plan-stories`.
 
 ---
 

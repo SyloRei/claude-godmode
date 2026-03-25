@@ -16,6 +16,7 @@ For each story (highest priority, `passes: false`):
 1. Display story details
 2. Spawn @executor agent to implement (stories.json-aware, tracks progress)
 3. Spawn @reviewer agent to validate
+3.5. If security-sensitive: offer @security-auditor (optional)
 4. Run quality gates
 5. Commit, update stories.json
 6. Continue to next story
@@ -131,6 +132,49 @@ Review dimensions: correctness, edge cases, security, performance, readability, 
 
 Review failure for one story in a batch does NOT block review of other independent stories in the same batch.
 
+### Step 3.5: Security Validation (optional)
+
+After reviewer validation, check if the story touches **security-sensitive areas**:
+
+- Authentication (login, signup, password reset, OAuth, SSO)
+- Authorization (role checks, permissions, access control, RBAC)
+- Session management (cookies, tokens, JWT, session storage)
+- User input handling (form validation, sanitization, parsing untrusted data)
+- Database queries (SQL, ORM queries, query building, migrations with data)
+- File system access (uploads, downloads, path construction, temp files)
+- API endpoints (new routes, middleware, rate limiting, CORS)
+- Cryptography (hashing, encryption, key generation, certificate handling)
+- Secrets handling (env vars, config files, API keys, credentials)
+
+**Detection:** Scan the story's description, acceptance criteria, and changed file paths/contents for keywords matching these areas.
+
+**When detected**, prompt the user:
+```
+This story touches [detected area(s)]. Run @security-auditor? (recommended)
+```
+
+**If user confirms**, spawn `@security-auditor` on the story's changes:
+```
+Audit the changes for story [ID]: [title]
+
+Focus areas: [detected security-sensitive areas]
+
+Audit dimensions: injection, auth/authz, data exposure, dependencies, configuration.
+Report findings using severity scale: CRITICAL / HIGH / MEDIUM / LOW.
+```
+
+**Handling results:**
+
+| Severity | Action |
+|----------|--------|
+| **CRITICAL** | Blocks the story — same as @reviewer CRITICAL. Report to user, offer fix with @writer or manual fix. Loop back to Step 2 if using @writer. |
+| **HIGH** | Report to user. Recommend fixing before proceeding but do not block. |
+| **MEDIUM / LOW** | Report to user as informational. Proceed to Step 4. |
+
+**If user declines** the security audit, proceed directly to Step 4. The audit is recommended but never forced.
+
+**Parallel mode:** Security validation runs sequentially per story, after reviewer validation for that story.
+
 ### Step 4: Quality Gates
 
 Run canonical quality gates (from stories.json qualityGates):
@@ -176,15 +220,45 @@ Progress entry format:
 
 ## Failure Recovery
 
-| Failure | Action |
-|---------|--------|
-| @executor returns with failing gates | Send back with specific errors |
-| @reviewer finds CRITICAL | Report to user, offer re-implementation |
-| Quality gate fails after merge | Use /debug to diagnose, fix, re-run |
-| Story too large for one session | Split story in .claude-pipeline/stories.json, re-execute |
-| Merge conflict (parallel) | Report to user, fall back to sequential re-execution for conflicting story |
-| Partial batch failure (parallel) | Merge passing stories, failed stories remain `passes: false` and retry in next batch |
-| Post-merge smoke test fails (parallel) | Identify causal story, revert its merge, retry sequentially |
+Classify each failure by type and route to the appropriate skill or agent. **All routing is suggested to the user with an explicit prompt — never automatic.** After any routed skill/agent completes, suggest: `Run /execute to continue`.
+
+### Quality Gate Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Test failure | Test gate fails (non-zero exit, assertion errors) | Suggest `/debug` | `Tests failing. Run /debug to diagnose, or send back to @executor?` |
+| Type error | Typecheck gate fails (type mismatch, missing types) | Retry with `@executor` (include full error output) | `Type errors found. Send back to @executor with error details?` |
+| Lint failure | Lint gate fails (formatting, style violations) | Attempt auto-fix (run lint with `--fix` flag if available), then re-run gates | `Lint errors found. Attempt auto-fix and re-run gates?` |
+
+### @reviewer Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| CRITICAL on structure | @reviewer CRITICAL finding about code structure, architecture, or design | Suggest `/refactor` | `Reviewer found structural issues. Run /refactor to address, or fix manually?` |
+| WARNING on test coverage | @reviewer WARNING about missing tests or insufficient coverage | Suggest `@test-writer` | `Reviewer flagged test coverage gaps. Spawn @test-writer to add tests?` |
+| CRITICAL on security | @reviewer CRITICAL finding about security vulnerability | Suggest `@security-auditor` | `Reviewer found security concern. Run @security-auditor for full audit?` |
+| Other CRITICAL | @reviewer CRITICAL not matching above categories | Report to user, offer re-implementation with `@executor` | `Reviewer found critical issues. Send back to @executor, or fix manually?` |
+
+### @security-auditor Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| CRITICAL finding | @security-auditor reports CRITICAL severity vulnerability | Blocks story — same as @reviewer CRITICAL. Offer fix with `@writer` or manual fix. | `Security audit found CRITICAL vulnerability: [finding]. Fix with @writer, or fix manually?` |
+| HIGH finding | @security-auditor reports HIGH severity vulnerability | Report to user, recommend fixing before proceeding | `Security audit found HIGH severity issue: [finding]. Recommended to fix before proceeding. Continue anyway?` |
+
+### Parallel-Mode Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Merge conflict | Git merge fails during post-batch merge (Step 2.5) | Fall back to sequential re-execution for the conflicting story | `Merge conflict on [story ID]. Re-run this story sequentially?` |
+| Partial batch failure | One or more executors in a batch fail while others succeed | Merge passing stories; failed stories remain `passes: false` and retry in next batch | `[N] stories succeeded, [M] failed. Merge passing stories and retry failed in next batch?` |
+| Post-merge smoke test failure | Quality gates fail on merged result (Step 2.5) | Identify causal story, revert its merge, retry sequentially | `Post-merge smoke test failed. Identified [story ID] as cause. Revert and retry sequentially?` |
+
+### Other Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Story too large | @executor cannot complete within session limits | Split story in stories.json, re-execute | `Story too large for one session. Split into smaller stories?` |
 
 ---
 
@@ -195,6 +269,7 @@ After each story (sequential):
 Story [ID]: [Title]
   Writer:   Implemented (N files changed)
   Reviewer: Approved (0 critical, N warnings, N nits)
+  Security: Passed (0 critical, 0 high) | Skipped | Not applicable
   Gates:    typecheck | lint | test | build
   Commit:   [hash] feat: [ID] - [Title]
 
@@ -216,6 +291,69 @@ After all stories:
 All stories complete!
 Next: run /ship to push and create PR
 ```
+
+---
+
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 2 (Implement) | MUST spawn @executor for each story | Implement story in isolated worktree — stories.json-aware, tracks progress |
+| Step 2 (Parallel) | MUST spawn multiple @executor agents concurrently | Each works on a temporary branch for independent stories in the batch |
+| Step 3 (Validate) | MUST spawn @reviewer on changes for each story | Validate against acceptance criteria — correctness, security, patterns |
+| Step 3.5 (Security) | Spawn @security-auditor when story touches security-sensitive areas | Optional security audit — user confirms before spawning. CRITICAL findings block story. |
+| Gate failure | Spawn @writer for complex fixes | Fix quality gate failures that need multi-file changes |
+
+**Rule:** Never perform implementation or review inline — always spawn the designated agent.
+
+---
+
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Cannot execute — `stories.json` is required. Suggest `/prd` then `/plan-stories` to create one. |
+| **prd-only** | Cannot execute — stories not yet planned. Suggest `/plan-stories` to convert the PRD. |
+| **planning** | Ready to begin execution. All stories are pending. |
+| **executing** | Resume execution. Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
+| **complete** | All stories pass. Report completion and suggest `/ship`. |
+
+---
+
+## Related
+
+- **/plan-stories** — preceding step: create stories.json before executing
+- **/debug** — route test failures here for structured diagnosis
+- **/refactor** — route structural issues here (from @reviewer CRITICAL on structure)
+- **@test-writer** — route coverage gaps here (from @reviewer WARNING on coverage)
+- **@security-auditor** — route security concerns here (from @reviewer CRITICAL on security)
+- **/ship** — next step: push and create PR when all stories complete
+
+**Pipeline:** consumes `stories.json`, `progress.txt`, exploration files. Produces implemented code, updated `stories.json` (passes: true), progress entries. Preceding step: `/plan-stories`. Next: `/ship`. Entry points from standalone skills: `/debug` (appended bug-fix stories), `/refactor` (appended refactoring stories), `/tdd` (appended TDD stories).
 
 ---
 
