@@ -117,6 +117,55 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Use test patterns from previous stories to maintain consistency. |
 | **complete** | Same as executing — accumulated knowledge is still useful for writing consistent tests. |
 
+### Pipeline Integration
+
+**Consumes:**
+- `stories.json` — accepts a story ID as input (e.g., `/tdd US-003`), loads the story's description and acceptance criteria as the feature spec to drive behavior decomposition
+- `progress.txt` — reads Codebase Patterns section for test patterns from previous stories (naming conventions, test utilities, fixture patterns)
+
+**After behavior list is generated (end of "Workflow Per Feature" step 1):**
+
+When `.claude-pipeline/stories.json` exists, phase is not **no-pipeline**, AND the behavior list has **4 or more items**, present the user with two options:
+
+```
+Behaviors identified (N items):
+1. [behavior]
+2. [behavior]
+...
+
+How to proceed?
+(a) Execute all cycles immediately (default) — run RED-GREEN-REFACTOR for each behavior now
+(b) Generate one story per behavior — append to stories.json for /execute to pick up
+```
+
+Press enter or choose (a) to execute immediately. Option (b) defers execution to the pipeline.
+
+**Option (b) generated story format:**
+
+Each behavior becomes one story. Stories are chained sequentially with `dependsOn`:
+
+```json
+{
+  "id": "US-NNN",          // next available ID (continue sequence from existing stories)
+  "title": "TDD: [behavior description]",
+  "description": "One RED-GREEN-REFACTOR cycle for: [behavior]. Part of /tdd decomposition from [source story ID or feature name].",
+  "acceptanceCriteria": [
+    "Failing test written for: [behavior]",
+    "Minimal implementation makes the test pass",
+    "Code refactored while all tests remain green",
+    "All quality gates pass"
+  ],
+  "dependsOn": ["US-PPP"],  // previous story in chain (first story depends on nothing or source story)
+  "priority": N,             // max existing priority + 1, incrementing for each
+  "passes": false,
+  "notes": ""
+}
+```
+
+The first generated story has `dependsOn: []` (or `["US-source"]` if invoked with a story ID). Each subsequent story depends on the previous one, ensuring sequential execution.
+
+**Standalone mode:** When `.claude-pipeline/stories.json` does not exist, phase is **no-pipeline**, OR the behavior list has **fewer than 4 items**, always execute all cycles immediately without prompting about pipeline options.
+
 ---
 
 ## Related
