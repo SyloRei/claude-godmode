@@ -127,6 +127,48 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Check if similar bugs were fixed in previous stories. |
 | **complete** | Same as executing — accumulated knowledge is still useful for diagnosing regressions. |
 
+### Pipeline Integration
+
+**Consumes:**
+- `stories.json` — if a story ID is mentioned (e.g., `/debug US-003`), load its description and acceptance criteria as context for the investigation
+- `progress.txt` — search Codebase Patterns, Anti-Patterns, and Architecture Decisions sections for similar bugs fixed in previous stories
+
+**After root cause is found (end of Phase 3):**
+
+When `.claude-pipeline/stories.json` exists and phase is not **no-pipeline**, present the user with three options:
+
+```
+Bug identified: [root cause summary]
+
+How to proceed?
+(a) Fix immediately (default) — apply fix now, write regression test, run quality gates
+(b) Generate bug-fix PRD — save to .claude-pipeline/prds/prd-bugfix-[description].md for later planning
+(c) Append fix story to stories.json — add a new story for /execute to pick up
+```
+
+Press enter or choose (a) to fix immediately. Options (b) and (c) defer the fix for pipeline-driven execution.
+
+**Option (c) appended story format:**
+
+```json
+{
+  "id": "US-NNN",          // next available ID (continue sequence from existing stories)
+  "title": "Fix: [root cause summary]",
+  "description": "Bug found by /debug: [description]. Root cause: [cause] at [file:line].",
+  "acceptanceCriteria": [
+    "[specific fix criterion derived from root cause]",
+    "Regression test added that fails without fix and passes with fix",
+    "All quality gates pass"
+  ],
+  "dependsOn": [],
+  "priority": N,            // max existing priority + 1
+  "passes": false,
+  "notes": ""
+}
+```
+
+**Standalone mode (no pipeline):** When `.claude-pipeline/stories.json` does not exist or phase is **no-pipeline**, always proceed directly to Phase 4 (fix immediately) without prompting about pipeline options.
+
 ---
 
 ## Related
