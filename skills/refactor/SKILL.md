@@ -192,3 +192,5 @@ Coverage: [before] → [after]
 - **/tdd** — for TDD-style development of new features
 - **/debug** — if refactoring reveals bugs, switch to debug protocol
 - **@reviewer** — for review of refactoring changes before committing
+
+**Pipeline:** consumes stories.json (refactoring context), progress.txt (Anti-Patterns section). Produces refactoring PRD or chained stories (one per step, with dependsOn). Next: `/execute` to implement refactoring stories.

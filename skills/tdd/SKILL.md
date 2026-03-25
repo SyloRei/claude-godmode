@@ -173,3 +173,5 @@ The first generated story has `dependsOn: []` (or `["US-source"]` if invoked wit
 - **@test-writer** — for adding coverage to existing code (not TDD)
 - **/refactor** — for refactoring existing code without adding features
 - **/debug** — if a test reveals a bug, switch to debugging protocol
+
+**Pipeline:** consumes stories.json (story ID as feature spec), progress.txt (test patterns from previous stories). Produces one story per behavior (each = one RED-GREEN-REFACTOR cycle, chained with dependsOn). Next: `/execute` to implement TDD stories.

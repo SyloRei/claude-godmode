@@ -230,6 +230,17 @@ When `.claude-pipeline/explorations/` contains files:
 
 ---
 
+## Related
+
+- **/prd** — preceding step: create a PRD before converting to stories
+- **/explore-repo** — exploration findings inform quality gate detection
+- **@architect** — review story plan design before execution
+- **/execute** — next step: implement stories with @executor + @reviewer agents
+
+**Pipeline:** consumes PRD from `.claude-pipeline/prds/`, exploration files for gate detection. Produces `stories.json` and `progress.txt`. Preceding step: `/prd`. Next: `/execute`.
+
+---
+
 ## Checklist
 
 - [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)

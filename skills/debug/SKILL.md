@@ -176,3 +176,5 @@ Press enter or choose (a) to fix immediately. Options (b) and (c) defer the fix 
 - **@researcher** — use for gathering context when stuck
 - **@test-writer** — use for comprehensive test coverage after the fix
 - **/refactor** — if the fix reveals structural issues, refactor separately
+
+**Pipeline:** consumes stories.json (acceptance criteria by story ID), progress.txt (similar past bugs). Produces bug-fix PRD or appended story. Next: `/execute` to implement the fix story, or `/ship` if fixed immediately.

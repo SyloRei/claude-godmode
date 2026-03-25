@@ -192,3 +192,5 @@ Suggest next steps:
 - **@researcher** — spawn for parallel deep dives into specific areas
 - **@architect** — hand off for design decisions based on exploration findings
 - **/prd** — use exploration findings to write better PRDs
+
+**Pipeline:** consumes nothing (entry point). Produces exploration file at `.claude-pipeline/explorations/exp-[project]-[date].md` (quality gates, architecture, patterns). Next: `/prd` to create a PRD based on findings, or `@architect` to evaluate the architecture.

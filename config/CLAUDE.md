@@ -154,6 +154,36 @@ Documentation            → @doc-writer agent
 Push & create PR         → /ship skill
 ```
 
+### Pipeline Entry Points
+
+Not every workflow starts with `/prd`. Choose the right entry point:
+
+```
+New to codebase    → /explore-repo → /prd → /plan-stories → /execute → /ship
+Feature from scratch → /prd → /plan-stories → /execute → /ship
+Found bugs         → /debug → append stories → /execute → /ship
+Need to refactor   → /refactor → append stories → /execute → /ship
+TDD a feature      → /tdd [story ID] → append stories → /execute → /ship
+```
+
+### Common Workflow Examples
+
+```
+# Exploration-first (recommended for unfamiliar codebases)
+/explore-repo  →  saves findings  →  /prd consumes them  →  fewer questions, better PRD
+
+# Bug found during review
+/debug  →  diagnose root cause  →  option: append fix story to stories.json  →  /execute
+
+# Large refactoring
+/refactor  →  PLAN phase identifies 5 steps  →  option: generate 5 chained stories  →  /execute
+
+# Mid-pipeline course correction
+/execute finds test failures  →  /debug to diagnose  →  fix  →  /execute to continue
+/execute gets @reviewer CRITICAL on structure  →  /refactor  →  /execute to continue
+/execute gets @reviewer CRITICAL on security  →  @security-auditor  →  fix  →  /execute
+```
+
 **Severity scales** (different domains, established conventions):
 - Code review (@reviewer): CRITICAL / WARNING / NIT
 - Security audit (@security-auditor): CRITICAL / HIGH / MEDIUM / LOW

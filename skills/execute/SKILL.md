@@ -344,6 +344,19 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 
 ---
 
+## Related
+
+- **/plan-stories** — preceding step: create stories.json before executing
+- **/debug** — route test failures here for structured diagnosis
+- **/refactor** — route structural issues here (from @reviewer CRITICAL on structure)
+- **@test-writer** — route coverage gaps here (from @reviewer WARNING on coverage)
+- **@security-auditor** — route security concerns here (from @reviewer CRITICAL on security)
+- **/ship** — next step: push and create PR when all stories complete
+
+**Pipeline:** consumes `stories.json`, `progress.txt`, exploration files. Produces implemented code, updated `stories.json` (passes: true), progress entries. Preceding step: `/plan-stories`. Next: `/ship`. Entry points from standalone skills: `/debug` (appended bug-fix stories), `/refactor` (appended refactoring stories), `/tdd` (appended TDD stories).
+
+---
+
 ## Backward Compatibility
 
 All parallel execution behavior is **conditional on `dependsOn` presence**:

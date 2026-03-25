@@ -186,6 +186,16 @@ When `.claude-pipeline/explorations/` contains files:
 
 ---
 
+## Related
+
+- **/explore-repo** — run first to build codebase understanding; `/prd` consumes exploration findings to reduce clarifying questions
+- **@architect** — review the PRD design before converting to stories
+- **/plan-stories** — next step: convert PRD into executable stories.json
+
+**Pipeline:** consumes exploration files from `.claude-pipeline/explorations/`. Produces PRD at `.claude-pipeline/prds/`. Preceding step: `/explore-repo`. Next: `/plan-stories`.
+
+---
+
 ## Checklist
 
 Before saving:

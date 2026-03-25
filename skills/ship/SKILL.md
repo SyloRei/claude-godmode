@@ -160,4 +160,6 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 - **/debug** — when quality gates fail
 - **@reviewer** — for deep code review before shipping
 - **@security-auditor** — for comprehensive security audit before shipping
-- **/execute** — if shipping stories from the pipeline
+- **/execute** — preceding step: implement all stories before shipping
+
+**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.txt` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.
