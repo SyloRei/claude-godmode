@@ -131,6 +131,62 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 
 ---
 
+## Saving Results
+
+After presenting the exploration output, offer to persist findings for downstream pipeline consumption.
+
+### Offer to Save
+
+> "Save these findings to `.claude-pipeline/explorations/` for use by /prd and /plan-stories?"
+
+- Saving is **optional** — the user must confirm before writing anything
+- If the user declines, continue in standalone mode with no further prompts about saving
+
+### Save Procedure
+
+1. Create `.claude-pipeline/explorations/` directory if it does not exist
+2. Write findings to `.claude-pipeline/explorations/exp-[project-name]-[date].md` (e.g., `exp-my-api-2026-03-25.md`)
+3. Use the **Saved Exploration Format** below — structured with markdown headers so `/prd` and `/plan-stories` can parse sections
+
+### Saved Exploration Format
+
+```markdown
+# Exploration: [project-name]
+**Date:** [YYYY-MM-DD]
+**Stack:** [language] / [framework] / [runtime]
+**Type:** [monorepo | single package | library | application]
+
+## Quality Gate Commands
+- Typecheck: [command]
+- Lint: [command]
+- Test: [command]
+- Build: [command]
+- Format: [command]
+
+## Architecture
+[Text-based diagram or structured description]
+
+## Key Files and Roles
+- [file]: [purpose]
+
+## Key Patterns
+- [Pattern]: [where/how used]
+
+## Technical Debt
+- [Area]: [description and severity]
+
+## Notable
+- [Anything surprising or important]
+```
+
+### After Saving
+
+Suggest next steps:
+
+> "Run `/prd` to create a PRD based on these findings, or spawn `@architect` to evaluate the architecture."
+
+---
+
 ## Related
 
 - **@researcher** — spawn for parallel deep dives into specific areas
