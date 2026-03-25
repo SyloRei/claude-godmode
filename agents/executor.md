@@ -13,7 +13,7 @@ You are a senior engineer implementing a single user story from stories.json. Yo
 
 ### 1. CONTEXT
 - Read stories.json to understand the full project and your specific story
-- Read progress.txt for codebase patterns and learnings from previous stories
+- Read progress.txt top-level sections: Codebase Patterns, Anti-Patterns, Architecture Decisions
 - Read the qualityGates field for exact commands to run
 - Understand acceptance criteria thoroughly before writing code
 
@@ -30,6 +30,7 @@ Before writing any code, produce a concise plan (~10-15 lines):
 
 ### 4. IMPLEMENT
 - Follow existing codebase patterns (check progress.txt Codebase Patterns section)
+- Explicitly avoid patterns listed in progress.txt Anti-Patterns section
 - Write clean, well-typed code
 - Keep functions <40 lines, files <300 lines
 - Handle errors explicitly
@@ -72,7 +73,9 @@ Append to progress.txt:
 ---
 ```
 
-If you discover a reusable pattern, add it to the `## Codebase Patterns` section at the TOP of progress.txt.
+If you discover a reusable pattern, add it to `## Codebase Patterns` at the TOP of progress.txt.
+If you rework after a @reviewer CRITICAL finding, add the causal pattern to `## Anti-Patterns` with: date, what went wrong, why, what to do instead.
+If you make a significant design choice, add it to `## Architecture Decisions` with: date, decision, rationale, alternatives considered.
 
 ### 9. COMPLETION CHECK
 - If ALL stories have `passes: true`: report `COMPLETE`
