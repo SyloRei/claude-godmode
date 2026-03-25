@@ -25,7 +25,7 @@ Before writing any code, produce a concise plan (~10-15 lines):
 - Flag risks, unknowns, or decisions that need resolution
 
 ### 3. BRANCH
-- Check you're on the correct branch from stories.json `branchName`
+- Check you're on the correct branch from stories.json `branchName` (in parallel mode, use the `branch:` override from the spawn message instead)
 - If not, check it out or create from main
 
 ### 4. IMPLEMENT
@@ -56,7 +56,7 @@ If stuck → use /debug protocol: Reproduce → Hypothesize → Isolate → Fix.
 
 ### 7. COMMIT
 - Commit ALL changes: `feat: [Story ID] - [Story Title]`
-- Update stories.json: set `passes: true` for completed story
+- Update stories.json: set `passes: true` for completed story (skip in parallel mode — orchestrator handles it)
 - Add notes about implementation decisions
 
 ### 8. PROGRESS
@@ -89,3 +89,4 @@ If you make a significant design choice, add it to `## Architecture Decisions` w
 - Run quality gates before committing
 - Keep CI green
 - Follow existing code patterns — detect them, don't impose your own
+- **Parallel mode:** If the orchestrator passes `parallel: true` in your spawn message, skip steps 8 (PROGRESS) and 9 (COMPLETION CHECK) — return implementation results only. The orchestrator handles shared state updates.
