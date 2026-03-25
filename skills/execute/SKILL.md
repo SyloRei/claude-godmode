@@ -16,6 +16,7 @@ For each story (highest priority, `passes: false`):
 1. Display story details
 2. Spawn @executor agent to implement (stories.json-aware, tracks progress)
 3. Spawn @reviewer agent to validate
+3.5. If security-sensitive: offer @security-auditor (optional)
 4. Run quality gates
 5. Commit, update stories.json
 6. Continue to next story
@@ -131,6 +132,49 @@ Review dimensions: correctness, edge cases, security, performance, readability, 
 
 Review failure for one story in a batch does NOT block review of other independent stories in the same batch.
 
+### Step 3.5: Security Validation (optional)
+
+After reviewer validation, check if the story touches **security-sensitive areas**:
+
+- Authentication (login, signup, password reset, OAuth, SSO)
+- Authorization (role checks, permissions, access control, RBAC)
+- Session management (cookies, tokens, JWT, session storage)
+- User input handling (form validation, sanitization, parsing untrusted data)
+- Database queries (SQL, ORM queries, query building, migrations with data)
+- File system access (uploads, downloads, path construction, temp files)
+- API endpoints (new routes, middleware, rate limiting, CORS)
+- Cryptography (hashing, encryption, key generation, certificate handling)
+- Secrets handling (env vars, config files, API keys, credentials)
+
+**Detection:** Scan the story's description, acceptance criteria, and changed file paths/contents for keywords matching these areas.
+
+**When detected**, prompt the user:
+```
+This story touches [detected area(s)]. Run @security-auditor? (recommended)
+```
+
+**If user confirms**, spawn `@security-auditor` on the story's changes:
+```
+Audit the changes for story [ID]: [title]
+
+Focus areas: [detected security-sensitive areas]
+
+Audit dimensions: injection, auth/authz, data exposure, dependencies, configuration.
+Report findings using severity scale: CRITICAL / HIGH / MEDIUM / LOW.
+```
+
+**Handling results:**
+
+| Severity | Action |
+|----------|--------|
+| **CRITICAL** | Blocks the story — same as @reviewer CRITICAL. Report to user, offer fix with @writer or manual fix. Loop back to Step 2 if using @writer. |
+| **HIGH** | Report to user. Recommend fixing before proceeding but do not block. |
+| **MEDIUM / LOW** | Report to user as informational. Proceed to Step 4. |
+
+**If user declines** the security audit, proceed directly to Step 4. The audit is recommended but never forced.
+
+**Parallel mode:** Security validation runs sequentially per story, after reviewer validation for that story.
+
 ### Step 4: Quality Gates
 
 Run canonical quality gates (from stories.json qualityGates):
@@ -195,6 +239,13 @@ Classify each failure by type and route to the appropriate skill or agent. **All
 | CRITICAL on security | @reviewer CRITICAL finding about security vulnerability | Suggest `@security-auditor` | `Reviewer found security concern. Run @security-auditor for full audit?` |
 | Other CRITICAL | @reviewer CRITICAL not matching above categories | Report to user, offer re-implementation with `@executor` | `Reviewer found critical issues. Send back to @executor, or fix manually?` |
 
+### @security-auditor Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| CRITICAL finding | @security-auditor reports CRITICAL severity vulnerability | Blocks story — same as @reviewer CRITICAL. Offer fix with `@writer` or manual fix. | `Security audit found CRITICAL vulnerability: [finding]. Fix with @writer, or fix manually?` |
+| HIGH finding | @security-auditor reports HIGH severity vulnerability | Report to user, recommend fixing before proceeding | `Security audit found HIGH severity issue: [finding]. Recommended to fix before proceeding. Continue anyway?` |
+
 ### Parallel-Mode Failures
 
 | Failure Type | Detection | Routing | Prompt to User |
@@ -218,6 +269,7 @@ After each story (sequential):
 Story [ID]: [Title]
   Writer:   Implemented (N files changed)
   Reviewer: Approved (0 critical, N warnings, N nits)
+  Security: Passed (0 critical, 0 high) | Skipped | Not applicable
   Gates:    typecheck | lint | test | build
   Commit:   [hash] feat: [ID] - [Title]
 
@@ -249,6 +301,7 @@ Next: run /ship to push and create PR
 | Step 2 (Implement) | MUST spawn @executor for each story | Implement story in isolated worktree — stories.json-aware, tracks progress |
 | Step 2 (Parallel) | MUST spawn multiple @executor agents concurrently | Each works on a temporary branch for independent stories in the batch |
 | Step 3 (Validate) | MUST spawn @reviewer on changes for each story | Validate against acceptance criteria — correctness, security, patterns |
+| Step 3.5 (Security) | Spawn @security-auditor when story touches security-sensitive areas | Optional security audit — user confirms before spawning. CRITICAL findings block story. |
 | Gate failure | Spawn @writer for complex fixes | Fix quality gate failures that need multi-file changes |
 
 **Rule:** Never perform implementation or review inline — always spawn the designated agent.
