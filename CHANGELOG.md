@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.3.0] - 2026-03-25
+
+### Added
+
+- Shared reference files: `gitignore-management.md` and `pipeline-context.md` for cross-skill consistency
+- Agent routing sections in all standalone skills (/debug, /tdd, /refactor, /explore-repo) and pipeline skills (/prd, /plan-stories, /execute, /ship)
+- Pipeline context sections in standalone and pipeline skills for `.claude-pipeline/` awareness
+- Explore-repo output persistence to `.claude-pipeline/exploration/`
+- Pipeline integration for /debug, /refactor, /tdd: story-aware context and progress tracking
+- Failure recovery routing in /execute: structured re-entry after failed stories
+- Security auditor integration in /execute: optional `@security-auditor` pass on security-tagged stories
+- Session-start hook pipeline state detection (active stories, progress)
+- Post-compact hook pipeline state restoration
+- Workflow composition documentation (US-014)
+
+### Changed
+
+- All skills now reference shared modules instead of duplicating gitignore and pipeline logic
+- /execute skill enhanced with failure recovery, security audit, and richer pipeline context
+- Hooks enriched with pipeline awareness for better context injection and recovery
+- CLAUDE.md updated with agent routing rule for skill-to-agent dispatch
+
 ## [1.2.0] - 2026-03-25
 
 ### Added
