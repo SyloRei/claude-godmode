@@ -81,6 +81,18 @@ H3: [hypothesis] — confirm by [check]
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| HYPOTHESIZE | MUST spawn @researcher when >5 files may be involved | Search codebase for related patterns, recent changes, similar bugs in parallel |
+| FIX | Always spawn @test-writer for low-coverage areas | Ensure regression test coverage around the fix, especially in undertested code |
+| Post-fix | MUST spawn @reviewer for security-sensitive fixes | Validate that fixes touching auth, input handling, or data access are safe |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Related
 
 - **@researcher** — use for gathering context when stuck

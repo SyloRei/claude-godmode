@@ -83,6 +83,18 @@ Detect and report the exact commands for:
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Deep Dive | MUST spawn parallel @researcher agents when >20 source files | One @researcher per subsystem for concurrent deep dives |
+| Design questions | Always spawn @architect | Evaluate architecture patterns, suggest improvements, validate design decisions |
+| Vulnerability concerns | Always spawn @security-auditor | Audit security-sensitive areas discovered during exploration |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Related
 
 - **@researcher** — spawn for parallel deep dives into specific areas

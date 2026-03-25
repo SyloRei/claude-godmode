@@ -72,6 +72,17 @@ Cycle N: [test name]
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Before first RED | MUST spawn @researcher | Find test framework, utilities, naming conventions, fixtures, and existing test patterns |
+| REFACTOR | Always spawn @reviewer when >3 files changed | Review refactored code for correctness and adherence to project patterns |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Related
 
 - **@test-writer** — for adding coverage to existing code (not TDD)

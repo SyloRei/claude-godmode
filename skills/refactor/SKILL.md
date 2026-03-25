@@ -76,6 +76,18 @@ d. If RED → revert immediately, try smaller step
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| IDENTIFY | MUST spawn @researcher | Explore affected files, find all callers/consumers, map dependencies before planning |
+| PLAN | Always spawn @architect when >5 files affected | Validate refactoring approach and step ordering for large-scope changes |
+| VERIFY | MUST spawn @reviewer | Review each completed refactoring step for correctness and regressions |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Output
 
 ```
