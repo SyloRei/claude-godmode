@@ -232,6 +232,42 @@ Next: run /ship to push and create PR
 
 ---
 
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Cannot execute — `stories.json` is required. Suggest `/prd` then `/plan-stories` to create one. |
+| **prd-only** | Cannot execute — stories not yet planned. Suggest `/plan-stories` to convert the PRD. |
+| **planning** | Ready to begin execution. All stories are pending. |
+| **executing** | Resume execution. Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
+| **complete** | All stories pass. Report completion and suggest `/ship`. |
+
+---
+
 ## Backward Compatibility
 
 All parallel execution behavior is **conditional on `dependsOn` presence**:

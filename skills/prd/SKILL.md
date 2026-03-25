@@ -143,6 +143,49 @@ Suggest next steps:
 
 ---
 
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
+| **prd-only** | A PRD already exists for this feature area. Read it for context to reduce clarifying questions and avoid re-detecting quality commands already captured in the PRD's Technical Considerations. |
+| **planning** | Stories exist. Read `stories.json` for scope context — the PRD is being refined or a new PRD is being created for a related feature. Reference existing stories to avoid overlap. |
+| **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding — use findings to reduce clarifying questions and skip re-detection of quality commands already discovered. |
+| **complete** | Same as executing — accumulated knowledge and explorations are still useful for planning the next feature. |
+
+### Exploration Awareness
+
+When `.claude-pipeline/explorations/` contains files:
+- Read exploration findings before asking clarifying questions — answers may already exist
+- Use detected quality commands from explorations instead of re-running detection (Step 1)
+- Reference discovered architecture patterns and constraints in the PRD's Technical Considerations
+
+---
+
 ## Checklist
 
 Before saving:

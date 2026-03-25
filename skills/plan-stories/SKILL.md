@@ -188,6 +188,48 @@ Suggest next steps:
 
 ---
 
+## Pipeline Context
+
+<!-- canonical: skills/_shared/pipeline-context.md -->
+
+On activation, detect the current pipeline phase:
+
+| # | Condition | Phase |
+|---|-----------|-------|
+| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
+| 2 | PRD exists but no `stories.json` | **prd-only** |
+| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
+| 4 | All stories have `passes: false` | **planning** |
+| 5 | Some `passes: true`, some `passes: false` | **executing** |
+| 6 | All stories have `passes: true` | **complete** |
+
+### Branch Check
+
+```bash
+current_branch=$(git branch --show-current)
+pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+```
+
+If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+
+### Phase Behaviors
+
+| Phase | Behavior |
+|-------|----------|
+| **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
+| **prd-only** | Normal operation — this is the expected phase. Read the PRD and convert to stories. |
+| **planning** | Stories already exist for this feature. Check if the user wants to regenerate or amend existing stories before overwriting. |
+| **executing** | Implementation is in progress. Warn the user before overwriting stories.json — in-progress work may be lost. Read `progress.txt` for context on completed stories. |
+| **complete** | All stories are done. If re-planning, archive the previous run first (see Archiving Previous Runs). |
+
+### Exploration Awareness
+
+When `.claude-pipeline/explorations/` contains files:
+- Read exploration findings for quality gate command detection — use discovered commands instead of re-running auto-detection when available
+- Reference architecture patterns and constraints from explorations when sizing stories and analyzing dependencies
+
+---
+
 ## Checklist
 
 - [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)
