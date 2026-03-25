@@ -178,6 +178,16 @@ Suggest next steps:
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| After Saving | Suggest @architect for design review (optional) | Review story breakdown, dependency graph, and sizing before execution |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Checklist
 
 - [ ] `.claude-pipeline/` is in `.gitignore` (or opt-out marker present)

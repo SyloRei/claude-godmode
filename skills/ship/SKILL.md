@@ -107,6 +107,18 @@ Return PR URL.
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 1 (Gate failure) | Spawn @writer for complex fixes | Fix typecheck, lint, or test failures that need multi-file changes |
+| Step 2 (Requirements) | MUST spawn @reviewer for deep code review | Validate all changes match acceptance criteria before pushing |
+| Step 3 (Security) | MUST spawn @security-auditor for comprehensive audit | Scan for vulnerabilities, secrets, injection risks before shipping |
+
+**Rule:** Never perform code review or security audit inline — always spawn the designated agent.
+
+---
+
 ## Related
 
 - **/debug** — when quality gates fail

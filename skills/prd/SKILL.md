@@ -132,6 +132,17 @@ Suggest next steps:
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 2 (Clarifying Questions) | Suggest @researcher if exploration needed | Investigate codebase structure, existing patterns, or technical constraints before finalizing requirements |
+| After Saving | Suggest @architect for design review (optional) | Review PRD architecture and technical approach before proceeding to /plan-stories |
+
+**Rule:** Never explore the codebase inline when @researcher can do it in parallel.
+
+---
+
 ## Checklist
 
 Before saving:

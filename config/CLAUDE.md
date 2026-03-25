@@ -158,6 +158,10 @@ Push & create PR         → /ship skill
 - Code review (@reviewer): CRITICAL / WARNING / NIT
 - Security audit (@security-auditor): CRITICAL / HIGH / MEDIUM / LOW
 
+## Agent Routing
+
+When a skill's Agent Routing section says to spawn an agent, always spawn it. Never perform the agent's job inline in the main context.
+
 ## Plan Mode
 
 - Make plans extremely concise. Sacrifice grammar for concision.

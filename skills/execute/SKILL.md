@@ -219,6 +219,19 @@ Next: run /ship to push and create PR
 
 ---
 
+## Agent Routing
+
+| Phase | Agent | Purpose |
+|-------|-------|---------|
+| Step 2 (Implement) | MUST spawn @executor for each story | Implement story in isolated worktree — stories.json-aware, tracks progress |
+| Step 2 (Parallel) | MUST spawn multiple @executor agents concurrently | Each works on a temporary branch for independent stories in the batch |
+| Step 3 (Validate) | MUST spawn @reviewer on changes for each story | Validate against acceptance criteria — correctness, security, patterns |
+| Gate failure | Spawn @writer for complex fixes | Fix quality gate failures that need multi-file changes |
+
+**Rule:** Never perform implementation or review inline — always spawn the designated agent.
+
+---
+
 ## Backward Compatibility
 
 All parallel execution behavior is **conditional on `dependsOn` presence**:
