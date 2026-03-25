@@ -176,15 +176,38 @@ Progress entry format:
 
 ## Failure Recovery
 
-| Failure | Action |
-|---------|--------|
-| @executor returns with failing gates | Send back with specific errors |
-| @reviewer finds CRITICAL | Report to user, offer re-implementation |
-| Quality gate fails after merge | Use /debug to diagnose, fix, re-run |
-| Story too large for one session | Split story in .claude-pipeline/stories.json, re-execute |
-| Merge conflict (parallel) | Report to user, fall back to sequential re-execution for conflicting story |
-| Partial batch failure (parallel) | Merge passing stories, failed stories remain `passes: false` and retry in next batch |
-| Post-merge smoke test fails (parallel) | Identify causal story, revert its merge, retry sequentially |
+Classify each failure by type and route to the appropriate skill or agent. **All routing is suggested to the user with an explicit prompt — never automatic.** After any routed skill/agent completes, suggest: `Run /execute to continue`.
+
+### Quality Gate Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Test failure | Test gate fails (non-zero exit, assertion errors) | Suggest `/debug` | `Tests failing. Run /debug to diagnose, or send back to @executor?` |
+| Type error | Typecheck gate fails (type mismatch, missing types) | Retry with `@executor` (include full error output) | `Type errors found. Send back to @executor with error details?` |
+| Lint failure | Lint gate fails (formatting, style violations) | Attempt auto-fix (run lint with `--fix` flag if available), then re-run gates | `Lint errors found. Attempt auto-fix and re-run gates?` |
+
+### @reviewer Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| CRITICAL on structure | @reviewer CRITICAL finding about code structure, architecture, or design | Suggest `/refactor` | `Reviewer found structural issues. Run /refactor to address, or fix manually?` |
+| WARNING on test coverage | @reviewer WARNING about missing tests or insufficient coverage | Suggest `@test-writer` | `Reviewer flagged test coverage gaps. Spawn @test-writer to add tests?` |
+| CRITICAL on security | @reviewer CRITICAL finding about security vulnerability | Suggest `@security-auditor` | `Reviewer found security concern. Run @security-auditor for full audit?` |
+| Other CRITICAL | @reviewer CRITICAL not matching above categories | Report to user, offer re-implementation with `@executor` | `Reviewer found critical issues. Send back to @executor, or fix manually?` |
+
+### Parallel-Mode Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Merge conflict | Git merge fails during post-batch merge (Step 2.5) | Fall back to sequential re-execution for the conflicting story | `Merge conflict on [story ID]. Re-run this story sequentially?` |
+| Partial batch failure | One or more executors in a batch fail while others succeed | Merge passing stories; failed stories remain `passes: false` and retry in next batch | `[N] stories succeeded, [M] failed. Merge passing stories and retry failed in next batch?` |
+| Post-merge smoke test failure | Quality gates fail on merged result (Step 2.5) | Identify causal story, revert its merge, retry sequentially | `Post-merge smoke test failed. Identified [story ID] as cause. Revert and retry sequentially?` |
+
+### Other Failures
+
+| Failure Type | Detection | Routing | Prompt to User |
+|---|---|---|---|
+| Story too large | @executor cannot complete within session limits | Split story in stories.json, re-execute | `Story too large for one session. Split into smaller stories?` |
 
 ---
 
