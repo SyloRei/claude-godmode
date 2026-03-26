@@ -118,6 +118,18 @@ Never mix refactoring with new features in the same commit. Follow up with `/shi
 
 **`/tdd` vs `@test-writer`:** Use `/tdd` when building something new -- the tests come first and shape the code. Use `@test-writer` when adding tests to code that already exists.
 
+## When Things Go Wrong
+
+| Situation | What to Use |
+|-----------|-------------|
+| Bug found before shipping | [`/debug`](#debug) to isolate and fix, then `/ship` |
+| Bug found after merge | [`/debug`](#debug) on a new branch, then `/ship` to PR the fix |
+| Flaky or missing tests | [`/tdd`](#tdd) for new coverage, `@test-writer` for existing code |
+| Messy code that works | [`/refactor`](#refactor) -- tests must pass before and after every step |
+| Security concern | `@security-auditor` for audit, then fix findings manually or with `@writer` |
+| Architecture question | `@architect` for design advice (advisory, read-only) |
+| Missing documentation | `@doc-writer` to generate docs from existing code |
+
 ## Agents
 
 | Agent | Model | Purpose |
