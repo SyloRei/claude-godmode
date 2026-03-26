@@ -11,15 +11,6 @@
 - **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
 
-## Pipeline
-
-```
-/prd  -->  /plan-stories  -->  /execute  -->  /ship
-  |              |                 |             |
-  PRD       stories.json      @executor      Quality
-                               @reviewer    gates --> PR
-```
-
 ## Quick Start
 
 ### Option A: Plugin Marketplace (Recommended)
@@ -52,18 +43,126 @@ The install script backs up your existing `~/.claude/` config (timestamped), cop
 
 Restores from the most recent backup created during install.
 
+## Which Workflow?
+
+| Task | Workflow | What Happens |
+|------|----------|--------------|
+| New feature (complex) | `/prd` then `/plan-stories` then `/execute` then `/ship` | Full pipeline: PRD, stories, parallel execution, review, PR |
+| New feature (simple) | `/tdd` or `@writer` then `/ship` | Write code directly with TDD or an isolated agent, then ship |
+| Bug fix | `/debug` then `/ship` | Reproduce, hypothesize, isolate, fix, verify, then ship |
+| Refactor | `/refactor` then `/ship` | Safe restructuring with test verification at every step |
+| Add tests (new feature) | `/tdd` | Red-green-refactor cycle drives the implementation |
+| Add tests (existing code) | `@test-writer` | Generates tests for code that already exists |
+| Explore / understand | `/explore-repo` or `@researcher` | Deep codebase analysis or web research without modifying code |
+| Ship / create PR | `/ship` | Runs quality gates, cleans up git, creates PR |
+
+> **Tip:** When in doubt, start with `/prd`. It only takes a minute, and you can always skip `/plan-stories` if the scope turns out to be small.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    A["/prd"] -->|PRD| B["/plan-stories"]
+    B -->|stories.json| C["/execute"]
+    C -->|completed code| D["/ship"]
+    D -->|PR|E((Merged))
+```
+
+**1. `/prd` -- Define the feature.** You describe what you want to build and `/prd` generates a Product Requirements Document covering goals, requirements, and scope. The PRD becomes the single source of truth for everything downstream. *On failure: edit the PRD directly and re-run.*
+
+**2. `/plan-stories` -- Break it into stories.** Reads the PRD and produces a `stories.json` file with prioritized, dependency-ordered user stories. Each story has acceptance criteria and quality gate commands tailored to your project's toolchain. *On failure: edit stories.json manually or re-run with refinements.*
+
+**3. `/execute` -- Build it.** Spawns `@executor` agents that implement stories in isolated git worktrees, optionally running multiple stories in parallel. After each story, `@reviewer` performs a code review and `@security-auditor` checks for vulnerabilities. Stories that fail review are reworked automatically. *On failure: re-run `/execute` -- it picks up from the first incomplete story.*
+
+**4. `/ship` -- Ship it.** Runs all quality gates (typecheck, lint, test, build), consolidates commits, and opens a pull request. Nothing ships unless every gate passes. *On failure: fix the failing gate and re-run `/ship`.*
+
+## Individual Workflows
+
+### /debug
+
+**When to use:** You have a bug to fix -- something is broken, failing, or behaving unexpectedly.
+
+**Steps:**
+
+1. **Reproduce** -- get the exact error and confirm the bug exists
+2. **Hypothesize** -- form 2-3 hypotheses based on evidence
+3. **Isolate** -- test hypotheses one at a time to narrow to the root cause
+4. **Fix** -- apply a minimal targeted fix and write a regression test
+5. **Verify** -- run quality gates to confirm the fix and no regressions
+
+Follow up with `/ship` when ready. All work happens in your current branch.
+
+### /refactor
+
+**When to use:** Code works but needs restructuring -- extracting functions, renaming, reorganizing modules.
+
+**Steps:**
+
+1. **Test before** -- run the full test suite and confirm everything passes
+2. **Refactor** -- make one structural change at a time, committing after each step
+3. **Test after** -- run the test suite again after every change
+4. **Revert on failure** -- if tests break, revert the last step and try a smaller change
+
+Never mix refactoring with new features in the same commit. Follow up with `/ship` when done.
+
+### /tdd
+
+**When to use:** Building new behavior where tests should drive the design.
+
+**Steps:**
+
+1. **Red** -- write a failing test that describes the desired behavior
+2. **Green** -- write the minimum code to make the test pass
+3. **Refactor** -- clean up the implementation while keeping tests green
+4. Repeat until the feature is complete
+
+**`/tdd` vs `@test-writer`:** Use `/tdd` when building something new -- the tests come first and shape the code. Use `@test-writer` when adding tests to code that already exists.
+
+## When Things Go Wrong
+
+| Situation | What to Use |
+|-----------|-------------|
+| Bug found before shipping | [`/debug`](#debug) to isolate and fix, then `/ship` |
+| Bug found after merge | [`/debug`](#debug) on a new branch, then `/ship` to PR the fix |
+| Flaky or missing tests | [`/tdd`](#tdd) for new coverage, `@test-writer` for existing code |
+| Messy code that works | [`/refactor`](#refactor) -- tests must pass before and after every step |
+| Security concern | `@security-auditor` for audit, then fix findings manually or with `@writer` |
+| Architecture question | `@architect` for design advice (advisory, read-only) |
+| Missing documentation | `@doc-writer` to generate docs from existing code |
+
+## Quality Gates
+
+Every task must pass these gates before shipping. `/ship` and `/execute` enforce them automatically.
+
+1. **Typecheck** passes (zero errors)
+2. **Lint** passes (zero errors)
+3. **All tests** pass (existing + new)
+4. **No hardcoded secrets** in the diff
+5. **No regressions** in related functionality
+6. **Changes match** the original requirements
+
+Gate commands are auto-detected per project based on your toolchain (e.g., `tsc`, `eslint`, `vitest`). You can override them in `stories.json` via the `qualityGates` field.
+
+## Context Management
+
+Long sessions consume context. Three tools help you stay effective:
+
+- **`/compact`** -- summarize and compress context when the statusline shows capacity above ~70%. Add a note about what to preserve: `/compact "keep the auth refactoring progress"`. The PostCompact hook automatically restores quality gates and available skills.
+- **`@researcher`** -- delegate heavy exploration (codebase analysis, web lookups) to a subagent instead of consuming main context. Summarize findings before acting on them.
+- **Statusline** -- shows context %, model, cost, project, and branch at a glance. Enable with `/godmode statusline`.
+
 ## Agents
 
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| `@writer` | opus | Implementation in isolated worktree |
-| `@executor` | opus | Story execution from stories.json |
-| `@reviewer` | opus | Code review (read-only) |
-| `@researcher` | sonnet | Codebase and web research |
-| `@architect` | opus | System design (advisory) |
-| `@security-auditor` | opus | Security audit (read-only) |
-| `@test-writer` | opus | Test generation in isolated worktree |
-| `@doc-writer` | sonnet | Documentation |
+| Agent | Model | Purpose | Used By | Direct Use |
+|-------|-------|---------|---------|------------|
+| `@writer` | opus | Implementation (isolated worktree) | `/execute` (fallback) | Ad-hoc implementation tasks |
+| `@executor` | opus | Story execution from stories.json | `/execute` | Rarely -- `/execute` handles orchestration |
+| `@reviewer` | opus | Code review (read-only, in-place) | `/execute`, `/ship` | Reviewing any changes before shipping |
+| `@researcher` | sonnet | Codebase and web research (read-only) | `/debug`, `/tdd`, `/refactor`, `/explore-repo` | Any research task without modifying code |
+| `@architect` | opus | System design (advisory, read-only) | -- (suggested after `/prd`) | Design questions and architecture review |
+| `@security-auditor` | opus | Security audit (read-only, in-place) | `/execute`, `/ship` | Security review of any codebase |
+| `@test-writer` | opus | Test generation (isolated worktree) | -- | Backfilling test coverage for existing code |
+| `@doc-writer` | sonnet | Documentation (in-place) | -- | Generating docs from existing code |
 
 ## Skills
 
