@@ -11,24 +11,6 @@
 - **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
 
-## Pipeline
-
-```mermaid
-flowchart LR
-    A["/prd"] -->|PRD| B["/plan-stories"]
-    B -->|stories.json| C["/execute"]
-    C -->|completed code| D["/ship"]
-    D -->|PR|E((Merged))
-```
-
-**1. `/prd` -- Define the feature.** You describe what you want to build and `/prd` generates a Product Requirements Document covering goals, requirements, and scope. The PRD becomes the single source of truth for everything downstream. *On failure: edit the PRD directly and re-run.*
-
-**2. `/plan-stories` -- Break it into stories.** Reads the PRD and produces a `stories.json` file with prioritized, dependency-ordered user stories. Each story has acceptance criteria and quality gate commands tailored to your project's toolchain. *On failure: edit stories.json manually or re-run with refinements.*
-
-**3. `/execute` -- Build it.** Spawns `@executor` agents that implement stories in isolated git worktrees, optionally running multiple stories in parallel. After each story, `@reviewer` performs a code review and `@security-auditor` checks for vulnerabilities. Stories that fail review are reworked automatically. *On failure: re-run `/execute` -- it picks up from the first incomplete story.*
-
-**4. `/ship` -- Ship it.** Runs all quality gates (typecheck, lint, test, build), consolidates commits, and opens a pull request. Nothing ships unless every gate passes. *On failure: fix the failing gate and re-run `/ship`.*
-
 ## Quick Start
 
 ### Option A: Plugin Marketplace (Recommended)
@@ -75,6 +57,24 @@ Restores from the most recent backup created during install.
 | Ship / create PR | `/ship` | Runs quality gates, cleans up git, creates PR |
 
 > **Tip:** When in doubt, start with `/prd`. It only takes a minute, and you can always skip `/plan-stories` if the scope turns out to be small.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    A["/prd"] -->|PRD| B["/plan-stories"]
+    B -->|stories.json| C["/execute"]
+    C -->|completed code| D["/ship"]
+    D -->|PR|E((Merged))
+```
+
+**1. `/prd` -- Define the feature.** You describe what you want to build and `/prd` generates a Product Requirements Document covering goals, requirements, and scope. The PRD becomes the single source of truth for everything downstream. *On failure: edit the PRD directly and re-run.*
+
+**2. `/plan-stories` -- Break it into stories.** Reads the PRD and produces a `stories.json` file with prioritized, dependency-ordered user stories. Each story has acceptance criteria and quality gate commands tailored to your project's toolchain. *On failure: edit stories.json manually or re-run with refinements.*
+
+**3. `/execute` -- Build it.** Spawns `@executor` agents that implement stories in isolated git worktrees, optionally running multiple stories in parallel. After each story, `@reviewer` performs a code review and `@security-auditor` checks for vulnerabilities. Stories that fail review are reworked automatically. *On failure: re-run `/execute` -- it picks up from the first incomplete story.*
+
+**4. `/ship` -- Ship it.** Runs all quality gates (typecheck, lint, test, build), consolidates commits, and opens a pull request. Nothing ships unless every gate passes. *On failure: fix the failing gate and re-run `/ship`.*
 
 ## Individual Workflows
 
