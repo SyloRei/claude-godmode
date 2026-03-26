@@ -130,6 +130,27 @@ Never mix refactoring with new features in the same commit. Follow up with `/shi
 | Architecture question | `@architect` for design advice (advisory, read-only) |
 | Missing documentation | `@doc-writer` to generate docs from existing code |
 
+## Quality Gates
+
+Every task must pass these gates before shipping. `/ship` and `/execute` enforce them automatically.
+
+1. **Typecheck** passes (zero errors)
+2. **Lint** passes (zero errors)
+3. **All tests** pass (existing + new)
+4. **No hardcoded secrets** in the diff
+5. **No regressions** in related functionality
+6. **Changes match** the original requirements
+
+Gate commands are auto-detected per project based on your toolchain (e.g., `tsc`, `eslint`, `vitest`). You can override them in `stories.json` via the `qualityGates` field.
+
+## Context Management
+
+Long sessions consume context. Three tools help you stay effective:
+
+- **`/compact`** -- summarize and compress context when the statusline shows capacity above ~70%. Add a note about what to preserve: `/compact "keep the auth refactoring progress"`. The PostCompact hook automatically restores quality gates and available skills.
+- **`@researcher`** -- delegate heavy exploration (codebase analysis, web lookups) to a subagent instead of consuming main context. Summarize findings before acting on them.
+- **Statusline** -- shows context %, model, cost, project, and branch at a glance. Enable with `/godmode statusline`.
+
 ## Agents
 
 | Agent | Model | Purpose |
