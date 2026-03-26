@@ -76,6 +76,48 @@ Restores from the most recent backup created during install.
 
 > **Tip:** When in doubt, start with `/prd`. It only takes a minute, and you can always skip `/plan-stories` if the scope turns out to be small.
 
+## Individual Workflows
+
+### /debug
+
+**When to use:** You have a bug to fix -- something is broken, failing, or behaving unexpectedly.
+
+**Steps:**
+
+1. **Reproduce** -- get the exact error and confirm the bug exists
+2. **Hypothesize** -- form 2-3 hypotheses based on evidence
+3. **Isolate** -- test hypotheses one at a time to narrow to the root cause
+4. **Fix** -- apply a minimal targeted fix and write a regression test
+5. **Verify** -- run quality gates to confirm the fix and no regressions
+
+Follow up with `/ship` when ready. All work happens in your current branch.
+
+### /refactor
+
+**When to use:** Code works but needs restructuring -- extracting functions, renaming, reorganizing modules.
+
+**Steps:**
+
+1. **Test before** -- run the full test suite and confirm everything passes
+2. **Refactor** -- make one structural change at a time, committing after each step
+3. **Test after** -- run the test suite again after every change
+4. **Revert on failure** -- if tests break, revert the last step and try a smaller change
+
+Never mix refactoring with new features in the same commit. Follow up with `/ship` when done.
+
+### /tdd
+
+**When to use:** Building new behavior where tests should drive the design.
+
+**Steps:**
+
+1. **Red** -- write a failing test that describes the desired behavior
+2. **Green** -- write the minimum code to make the test pass
+3. **Refactor** -- clean up the implementation while keeping tests green
+4. Repeat until the feature is complete
+
+**`/tdd` vs `@test-writer`:** Use `/tdd` when building something new -- the tests come first and shape the code. Use `@test-writer` when adding tests to code that already exists.
+
 ## Agents
 
 | Agent | Model | Purpose |
