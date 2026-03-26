@@ -52,6 +52,21 @@ The install script backs up your existing `~/.claude/` config (timestamped), cop
 
 Restores from the most recent backup created during install.
 
+## Which Workflow?
+
+| Task | Workflow | What Happens |
+|------|----------|--------------|
+| New feature (complex) | `/prd` then `/plan-stories` then `/execute` then `/ship` | Full pipeline: PRD, stories, parallel execution, review, PR |
+| New feature (simple) | `/tdd` or `@writer` then `/ship` | Write code directly with TDD or an isolated agent, then ship |
+| Bug fix | `/debug` then `/ship` | Reproduce, hypothesize, isolate, fix, verify, then ship |
+| Refactor | `/refactor` then `/ship` | Safe restructuring with test verification at every step |
+| Add tests (new feature) | `/tdd` | Red-green-refactor cycle drives the implementation |
+| Add tests (existing code) | `@test-writer` | Generates tests for code that already exists |
+| Explore / understand | `/explore-repo` or `@researcher` | Deep codebase analysis or web research without modifying code |
+| Ship / create PR | `/ship` | Runs quality gates, cleans up git, creates PR |
+
+> **Tip:** When in doubt, start with `/prd`. It only takes a minute, and you can always skip `/plan-stories` if the scope turns out to be small.
+
 ## Agents
 
 | Agent | Model | Purpose |
