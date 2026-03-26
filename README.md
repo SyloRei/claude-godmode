@@ -153,16 +153,16 @@ Long sessions consume context. Three tools help you stay effective:
 
 ## Agents
 
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| `@writer` | opus | Implementation in isolated worktree |
-| `@executor` | opus | Story execution from stories.json |
-| `@reviewer` | opus | Code review (read-only) |
-| `@researcher` | sonnet | Codebase and web research |
-| `@architect` | opus | System design (advisory) |
-| `@security-auditor` | opus | Security audit (read-only) |
-| `@test-writer` | opus | Test generation in isolated worktree |
-| `@doc-writer` | sonnet | Documentation |
+| Agent | Model | Purpose | Used By | Direct Use |
+|-------|-------|---------|---------|------------|
+| `@writer` | opus | Implementation (isolated worktree) | `/execute` (fallback) | Ad-hoc implementation tasks |
+| `@executor` | opus | Story execution from stories.json | `/execute` | Rarely -- `/execute` handles orchestration |
+| `@reviewer` | opus | Code review (read-only, in-place) | `/execute`, `/ship` | Reviewing any changes before shipping |
+| `@researcher` | sonnet | Codebase and web research (read-only) | `/debug`, `/tdd`, `/refactor`, `/explore-repo` | Any research task without modifying code |
+| `@architect` | opus | System design (advisory, read-only) | -- (suggested after `/prd`) | Design questions and architecture review |
+| `@security-auditor` | opus | Security audit (read-only, in-place) | `/execute`, `/ship` | Security review of any codebase |
+| `@test-writer` | opus | Test generation (isolated worktree) | -- | Backfilling test coverage for existing code |
+| `@doc-writer` | sonnet | Documentation (in-place) | -- | Generating docs from existing code |
 
 ## Skills
 
