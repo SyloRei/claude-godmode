@@ -23,7 +23,7 @@ warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
 # --- Preflight ---
-command -v jq >/dev/null 2>&1 || error "jq is required but not installed. Install it: brew install jq"
+command -v jq >/dev/null 2>&1 || error "jq is required but not installed. See: https://jqlang.github.io/jq/download/"
 [ -d "$CLAUDE_DIR" ] || error "~/.claude/ directory not found. Is Claude Code installed?"
 
 # --- Mode detection ---
@@ -60,7 +60,7 @@ if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
     warn "Found godmode v1.x CLAUDE.md"
     warn "Your rules are now in ~/.claude/rules/godmode-*.md"
     echo ""
-    read -rp "  Remove the old CLAUDE.md? (backed up first) [y/N] " migrate_confirm
+    read -rp "  Remove the old CLAUDE.md? (backed up first) [y/N] " migrate_confirm || migrate_confirm=""
     echo ""
     if [[ "$migrate_confirm" == [yY] ]]; then
       # Back up the old CLAUDE.md before removing
@@ -76,7 +76,7 @@ fi
 # --- Rules ---
 RULES_SRC="$SCRIPT_DIR/rules"
 if [ -d "$RULES_SRC" ]; then
-  RULES_COUNT=$(find "$RULES_SRC" -name "godmode-*.md" -maxdepth 1 | wc -l | tr -d ' ')
+  RULES_COUNT=$(find "$RULES_SRC" -maxdepth 1 -name "godmode-*.md" | wc -l | tr -d ' ')
   info "Installing rules (${RULES_COUNT} files)"
   mkdir -p "$CLAUDE_DIR/rules"
   cp "$RULES_SRC"/godmode-*.md "$CLAUDE_DIR/rules/"
@@ -102,13 +102,13 @@ if [ -f "$SETTINGS" ]; then
         map({key: .[0].key, value: (.[0].value)}) |
         from_entries
       ),
-      permissions: {
+      permissions: (($existing.permissions // {}) * {
         allow: (
           ($existing.permissions.allow // []) +
           ($template.permissions.allow // []) |
           unique
         )
-      }
+      })
     }
   ' "$SETTINGS" "$TEMPLATE")
   echo "$MERGED" | jq '.' > "$SETTINGS"
@@ -119,7 +119,7 @@ fi
 # --- Manual-mode extras (agents, skills, hooks) ---
 if [ "$MODE" = "manual" ]; then
   # Agents
-  AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -name "*.md" -maxdepth 1 | wc -l | tr -d ' ')
+  AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -maxdepth 1 -name "*.md" | wc -l | tr -d ' ')
   info "Installing agents (${AGENT_COUNT})"
   mkdir -p "$CLAUDE_DIR/agents"
   cp "$SCRIPT_DIR/agents/"*.md "$CLAUDE_DIR/agents/"
