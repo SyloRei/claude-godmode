@@ -10,7 +10,7 @@ allowed-tools:
 user-invocable: true
 ---
 
-# Claude God-Mode
+# Claude God-Mode v1.4.0
 
 Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, show the **Quick Reference**.
 
@@ -39,16 +39,16 @@ Check if the user's message contains "statusline" (e.g., `/godmode statusline`).
 
 ### Available Agents
 
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| `@writer` | opus | Implementation (isolated worktree) |
-| `@executor` | opus | Story execution from stories.json |
-| `@reviewer` | opus | Code review (read-only) |
-| `@researcher` | sonnet | Codebase & web research |
-| `@architect` | opus | System design (advisory) |
-| `@security-auditor` | opus | Security audit (read-only) |
-| `@test-writer` | opus | Test generation (isolated worktree) |
-| `@doc-writer` | sonnet | Documentation |
+| Agent | Model | Memory | Purpose |
+|-------|-------|--------|---------|
+| `@writer` | opus | project | Implementation (isolated worktree) |
+| `@executor` | opus | project | Story execution from stories.json |
+| `@reviewer` | opus | project | Code review (read-only) |
+| `@researcher` | sonnet | user | Codebase & web research |
+| `@architect` | opus | user | System design (advisory) |
+| `@security-auditor` | opus | local | Security audit (read-only) |
+| `@test-writer` | opus | project | Test generation (isolated worktree) |
+| `@doc-writer` | sonnet | project | Documentation |
 
 ### Quality Gates
 
@@ -59,6 +59,10 @@ All tasks must pass before completion:
 4. No hardcoded secrets
 5. No regressions
 6. Changes match requirements
+
+### Configuration
+
+God-Mode uses rules-based configuration. Rule files live in `~/.claude/rules/godmode-*.md` and are loaded automatically by Claude Code. To customize behavior, edit the relevant rule file directly.
 
 **Tip:** Run `/godmode statusline` to set up the context-aware status bar.
 
