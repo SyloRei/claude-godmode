@@ -59,9 +59,11 @@ echo ""
 
 # 1. Remove rules
 info "Removing godmode rules..."
-for rule in "$CLAUDE_DIR"/rules/godmode-*.md; do
-  [ -f "$rule" ] && remove_file "$rule"
-done
+if [ -d "$CLAUDE_DIR/rules" ]; then
+  for rule in "$CLAUDE_DIR"/rules/godmode-*.md; do
+    [ -f "$rule" ] && remove_file "$rule"
+  done
+fi
 
 # Remove rules/ dir if empty after cleanup
 if [ -d "$CLAUDE_DIR/rules" ] && [ -z "$(ls -A "$CLAUDE_DIR/rules" 2>/dev/null)" ]; then
@@ -117,7 +119,10 @@ if [ "$MODE" = "manual" ]; then
 fi
 
 # --- Secondary path: offer backup restoration if available ---
-LATEST_BACKUP=$(find "$BACKUP_BASE" -maxdepth 1 -type d -name "godmode-*" 2>/dev/null | sort -r | head -1)
+LATEST_BACKUP=""
+if [ -d "$BACKUP_BASE" ]; then
+  LATEST_BACKUP=$(find "$BACKUP_BASE" -maxdepth 1 -type d -name "godmode-*" 2>/dev/null | sort -r | head -1)
+fi
 
 if [ -n "$LATEST_BACKUP" ]; then
   echo ""
