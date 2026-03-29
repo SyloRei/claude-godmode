@@ -12,7 +12,42 @@ user-invocable: true
 
 # Claude God-Mode v1.4.0
 
-Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, show the **Quick Reference**.
+Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, **run the Rules Check first**, then show the **Quick Reference**.
+
+---
+
+## Rules Check (runs automatically)
+
+Before showing the Quick Reference, silently check whether godmode rules are installed:
+
+```bash
+ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || echo "rules_missing"
+```
+
+**If rules are missing:**
+
+1. Tell the user:
+   ```
+   God-Mode rules are not installed yet. Rules provide coding standards, quality gates,
+   workflow guidance, and agent routing that make the system work at full capacity.
+
+   Without rules, agents and skills still work but won't follow godmode conventions.
+   ```
+
+2. Ask: "Install godmode rules to ~/.claude/rules/? [Y/n]"
+
+3. If user confirms (or presses Enter for default Y):
+   - Resolve the plugin root: `echo "${CLAUDE_PLUGIN_ROOT}"`
+   - If `CLAUDE_PLUGIN_ROOT` is set, copy from there:
+     ```bash
+     mkdir -p ~/.claude/rules && cp "${CLAUDE_PLUGIN_ROOT}/rules/godmode-"*.md ~/.claude/rules/
+     ```
+   - If `CLAUDE_PLUGIN_ROOT` is empty (manual install), check if the repo `rules/` dir exists relative to the command file and copy from there
+   - Report: "Installed N rule files to ~/.claude/rules/. They'll be active in your next session."
+
+4. If user declines: "Skipping. Run /godmode anytime to install rules later."
+
+**If rules are already installed:** Skip silently, proceed to Quick Reference.
 
 ---
 

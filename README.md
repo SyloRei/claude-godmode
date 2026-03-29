@@ -56,7 +56,7 @@ claude plugin marketplace add SyloRei/claude-marketplace
 claude plugin install claude-godmode@sylorei-plugins
 ```
 
-After installing, enable the statusline by running `/godmode statusline` in Claude Code.
+After installing, run `/godmode` in Claude Code. It will detect that rules are not yet installed and offer to set them up automatically. Then run `/godmode statusline` to enable the status bar.
 
 ### Option B: Manual Install
 
@@ -181,6 +181,14 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 ## Rules-Based Configuration
 
 Claude God-Mode uses individual rule files instead of a monolithic config. Rule files live in `~/.claude/rules/` and are loaded automatically by Claude Code at session start.
+
+### Installing Rules
+
+**Plugin users:** Run `/godmode` after installing the plugin. It auto-detects missing rules and offers to install them with your confirmation. No manual file copying needed.
+
+**Manual install users:** The `./install.sh` script handles rules installation automatically.
+
+> **Why a separate step?** Claude Code's plugin system doesn't yet support a `rules` directory natively ([tracking issue](https://github.com/anthropics/claude-code/issues/14200)). Until that ships, `/godmode` bridges the gap by copying rule files on first run with your explicit consent.
 
 | Rule File | Concern |
 |-----------|---------|
