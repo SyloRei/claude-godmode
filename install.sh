@@ -5,7 +5,7 @@ set -euo pipefail
 # Installs rules/ files to ~/.claude/rules/ (never touches CLAUDE.md)
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode (backward compat)
 
-VERSION="1.4.0"
+VERSION="1.4.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
