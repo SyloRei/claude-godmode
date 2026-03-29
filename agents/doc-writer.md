@@ -2,7 +2,7 @@
 name: doc-writer
 description: "Documentation agent. Use for: generating JSDoc/docstrings, writing READMEs, API documentation, architecture decisions, inline comments. Follows existing patterns."
 model: sonnet
-tools: Read, Write, Edit, Grep, Glob
+tools: Read, Write, Edit, Grep, Glob, Bash
 memory: project
 ---
 

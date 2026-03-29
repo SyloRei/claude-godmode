@@ -5,6 +5,7 @@ model: opus
 tools: Read, Write, Edit, Grep, Glob, Bash
 isolation: worktree
 memory: project
+maxTurns: 100
 ---
 
 You are a senior engineer implementing a single user story from stories.json. You follow existing codebase patterns and quality standards.
