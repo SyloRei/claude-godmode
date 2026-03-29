@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.0] - 2026-03-29
+
+### Added
+
+- 8 rule files (`rules/godmode-*.md`) replacing monolithic config files with modular, scopeable rules
+- Memory scopes for all 8 agents — each agent now has a dedicated memory scope for persistent context
+- `.claude-godmode-version` file for tracking installed version
+- Plugin-mode and manual-mode installer detection — `install.sh` auto-detects installation method
+- v1.x migration detection — installer identifies old `CLAUDE.md`-based installs and offers cleanup
+
+### Changed
+
+- **BREAKING:** `install.sh` fully rewritten — rules-based architecture replaces config-file copying
+- **BREAKING:** `uninstall.sh` fully rewritten — targeted removal of rules, hooks, and settings entries
+- Agent memory scopes updated for all 8 agents — `@architect` and `@researcher` use project (not user), `@security-auditor` uses project (not local)
+- `effort: high` added to `@reviewer`, `@security-auditor`, `@architect` for thoroughness protection
+- `maxTurns` safety limits added to `@executor` (100), `@writer` (100), `@test-writer` (80)
+- `disallowedTools: Write, Edit` enforced on read-only agents (`@reviewer`, `@researcher`, `@security-auditor`)
+- `@researcher` defaults to background mode for non-blocking parallel research
+- `@security-auditor` gains WebSearch tool for CVE and vulnerability lookups
+- `@doc-writer` gains Bash tool for doc generation and git commands
+- `/godmode` command enhanced with memory column and configuration section
+- `README.md` major rewrite — updated for rules-based architecture, new install flow, and feature overview
+- `CONTRIBUTING.md` updated with rules authoring guide and memory scope guide
+
+### Removed
+
+- **BREAKING:** `config/CLAUDE.md` — replaced by modular `rules/godmode-*.md` files
+- **BREAKING:** `config/INSTRUCTIONS.md` — content merged into `rules/` and `README.md`
+
+### Migration
+
+Upgrading from v1.x (config-based) to v1.4 (rules-based):
+
+1. Run the new `install.sh` — it detects the old `config/CLAUDE.md` installation automatically
+2. Accept the cleanup prompt to remove legacy `config/CLAUDE.md` and `config/INSTRUCTIONS.md` entries
+3. Verify new `rules/godmode-*.md` files are in place
+4. Confirm `.claude/settings.json` references rules instead of config files
+5. Remove any manual `CLAUDE.md` includes that referenced the old config paths
+
+> **Note:** The installer handles most migration steps automatically. Manual intervention is only needed if you customized the old config files — review your customizations and port them to the appropriate rule file.
+
 ## [1.3.0] - 2026-03-25
 
 ### Added

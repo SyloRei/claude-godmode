@@ -10,9 +10,44 @@ allowed-tools:
 user-invocable: true
 ---
 
-# Claude God-Mode
+# Claude God-Mode v1.4.0
 
-Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, show the **Quick Reference**.
+Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, **run the Rules Check first**, then show the **Quick Reference**.
+
+---
+
+## Rules Check (runs automatically)
+
+Before showing the Quick Reference, silently check whether godmode rules are installed:
+
+```bash
+ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || echo "rules_missing"
+```
+
+**If rules are missing:**
+
+1. Tell the user:
+   ```
+   God-Mode rules are not installed yet. Rules provide coding standards, quality gates,
+   workflow guidance, and agent routing that make the system work at full capacity.
+
+   Without rules, agents and skills still work but won't follow godmode conventions.
+   ```
+
+2. Ask: "Install godmode rules to ~/.claude/rules/? [Y/n]"
+
+3. If user confirms (or presses Enter for default Y):
+   - Resolve the plugin root: `echo "${CLAUDE_PLUGIN_ROOT}"`
+   - If `CLAUDE_PLUGIN_ROOT` is set, copy from there:
+     ```bash
+     mkdir -p ~/.claude/rules && cp "${CLAUDE_PLUGIN_ROOT}/rules/godmode-"*.md ~/.claude/rules/
+     ```
+   - If `CLAUDE_PLUGIN_ROOT` is empty (manual install), check if the repo `rules/` dir exists relative to the command file and copy from there
+   - Report: "Installed N rule files to ~/.claude/rules/. They'll be active in your next session."
+
+4. If user declines: "Skipping. Run /godmode anytime to install rules later."
+
+**If rules are already installed:** Skip silently, proceed to Quick Reference.
 
 ---
 
@@ -39,16 +74,16 @@ Check if the user's message contains "statusline" (e.g., `/godmode statusline`).
 
 ### Available Agents
 
-| Agent | Model | Purpose |
-|-------|-------|---------|
-| `@writer` | opus | Implementation (isolated worktree) |
-| `@executor` | opus | Story execution from stories.json |
-| `@reviewer` | opus | Code review (read-only) |
-| `@researcher` | sonnet | Codebase & web research |
-| `@architect` | opus | System design (advisory) |
-| `@security-auditor` | opus | Security audit (read-only) |
-| `@test-writer` | opus | Test generation (isolated worktree) |
-| `@doc-writer` | sonnet | Documentation |
+| Agent | Model | Memory | Effort | Purpose |
+|-------|-------|--------|--------|---------|
+| `@writer` | opus | project | inherit | Implementation (isolated worktree, maxTurns: 100) |
+| `@executor` | opus | project | inherit | Story execution from stories.json (maxTurns: 100) |
+| `@reviewer` | opus | project | high | Code review (read-only enforced) |
+| `@researcher` | sonnet | project | inherit | Codebase & web research (background, read-only enforced) |
+| `@architect` | opus | project | high | System design (advisory) |
+| `@security-auditor` | opus | project | high | Security audit (read-only enforced, +WebSearch) |
+| `@test-writer` | opus | project | inherit | Test generation (isolated worktree, maxTurns: 80) |
+| `@doc-writer` | sonnet | project | inherit | Documentation (+Bash) |
 
 ### Quality Gates
 
@@ -59,6 +94,10 @@ All tasks must pass before completion:
 4. No hardcoded secrets
 5. No regressions
 6. Changes match requirements
+
+### Configuration
+
+God-Mode uses rules-based configuration. Rule files live in `~/.claude/rules/godmode-*.md` and are loaded automatically by Claude Code. To customize behavior, edit the relevant rule file directly.
 
 **Tip:** Run `/godmode statusline` to set up the context-aware status bar.
 
