@@ -74,16 +74,16 @@ ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || 
 
 ### Available Agents
 
-| Agent | Model | Memory | Purpose |
-|-------|-------|--------|---------|
-| `@writer` | opus | project | Implementation (isolated worktree) |
-| `@executor` | opus | project | Story execution from stories.json |
-| `@reviewer` | opus | project | Code review (read-only) |
-| `@researcher` | sonnet | user | Codebase & web research |
-| `@architect` | opus | user | System design (advisory) |
-| `@security-auditor` | opus | local | Security audit (read-only) |
-| `@test-writer` | opus | project | Test generation (isolated worktree) |
-| `@doc-writer` | sonnet | project | Documentation |
+| Agent | Model | Memory | Effort | Purpose |
+|-------|-------|--------|--------|---------|
+| `@writer` | opus | project | inherit | Implementation (isolated worktree, maxTurns: 100) |
+| `@executor` | opus | project | inherit | Story execution from stories.json (maxTurns: 100) |
+| `@reviewer` | opus | project | high | Code review (read-only enforced) |
+| `@researcher` | sonnet | project | inherit | Codebase & web research (background, read-only enforced) |
+| `@architect` | opus | project | high | System design (advisory) |
+| `@security-auditor` | opus | project | high | Security audit (read-only enforced, +WebSearch) |
+| `@test-writer` | opus | project | inherit | Test generation (isolated worktree, maxTurns: 80) |
+| `@doc-writer` | sonnet | project | inherit | Documentation (+Bash) |
 
 ### Quality Gates
 

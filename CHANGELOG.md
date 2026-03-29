@@ -19,7 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 - **BREAKING:** `install.sh` fully rewritten — rules-based architecture replaces config-file copying
 - **BREAKING:** `uninstall.sh` fully rewritten — targeted removal of rules, hooks, and settings entries
-- Agent memory scopes updated for 6 agents to align with new rules-based architecture
+- Agent memory scopes updated for all 8 agents — `@architect` and `@researcher` use project (not user), `@security-auditor` uses project (not local)
+- `effort: high` added to `@reviewer`, `@security-auditor`, `@architect` for thoroughness protection
+- `maxTurns` safety limits added to `@executor` (100), `@writer` (100), `@test-writer` (80)
+- `disallowedTools: Write, Edit` enforced on read-only agents (`@reviewer`, `@researcher`, `@security-auditor`)
+- `@researcher` defaults to background mode for non-blocking parallel research
+- `@security-auditor` gains WebSearch tool for CVE and vulnerability lookups
+- `@doc-writer` gains Bash tool for doc generation and git commands
 - `/godmode` command enhanced with memory column and configuration section
 - `README.md` major rewrite — updated for rules-based architecture, new install flow, and feature overview
 - `CONTRIBUTING.md` updated with rules authoring guide and memory scope guide

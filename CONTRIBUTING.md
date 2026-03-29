@@ -9,10 +9,15 @@ Thanks for your interest in improving Claude God-Mode. This project grows throug
 1. Create `agents/<name>.md` with a system prompt
 2. Define the agent's model, permissions, and purpose in the frontmatter
 3. Add `memory:` to the frontmatter -- choose the appropriate scope:
-   - **user** -- cross-project learnings (e.g., `@researcher`, `@architect`). Use when findings benefit the user regardless of which project they're in.
-   - **project** -- team-shareable context (e.g., `@reviewer`, `@writer`, `@executor`). Use when learnings are specific to the current codebase and useful for the whole team.
-   - **local** -- sensitive or private findings (e.g., `@security-auditor`). Use when memory may contain credentials, vulnerability details, or other data that should not be shared.
-4. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
+   - **project** -- the default for most agents. Codebase patterns, conventions, and findings are project-specific and useful for the whole team. Used by all current godmode agents.
+   - **user** -- cross-project learnings. Use only when findings genuinely benefit the user regardless of which project they're in. Currently unused in godmode (all agents use project).
+   - **local** -- sensitive or private findings. Use when memory may contain credentials, vulnerability details, or other data that should not be committed. Currently unused in godmode.
+4. Consider additional frontmatter fields:
+   - `effort: high` -- for agents where thoroughness is critical (reviewers, security, architecture)
+   - `maxTurns: N` -- safety valve for agents that write code (prevents runaway token burn)
+   - `disallowedTools: Write, Edit` -- enforce read-only mechanically on read-only agents
+   - `background: true` -- for agents typically spawned for non-blocking parallel work
+5. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
 
 ### New Skill
 

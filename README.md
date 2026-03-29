@@ -78,16 +78,22 @@ Removes godmode rule files, agents, skills, and hooks. Your personal config is n
 
 ## Agents
 
-| Agent | Model | Memory | Purpose |
-|-------|-------|--------|---------|
-| `@writer` | opus | project | Implementation in isolated worktree |
-| `@executor` | opus | project | Story execution from stories.json |
-| `@reviewer` | opus | project | Code review (read-only) |
-| `@researcher` | sonnet | user | Codebase and web research |
-| `@architect` | opus | user | System design (advisory) |
-| `@security-auditor` | opus | local | Security audit (read-only) |
-| `@test-writer` | opus | project | Test generation in isolated worktree |
-| `@doc-writer` | sonnet | project | Documentation |
+| Agent | Model | Memory | Effort | Purpose |
+|-------|-------|--------|--------|---------|
+| `@writer` | opus | project | inherit | Implementation in isolated worktree |
+| `@executor` | opus | project | inherit | Story execution from stories.json |
+| `@reviewer` | opus | project | high | Code review (read-only, enforced) |
+| `@researcher` | sonnet | project | inherit | Codebase and web research (background) |
+| `@architect` | opus | project | high | System design (advisory) |
+| `@security-auditor` | opus | project | high | Security audit (read-only, enforced) |
+| `@test-writer` | opus | project | inherit | Test generation in isolated worktree |
+| `@doc-writer` | sonnet | project | inherit | Documentation |
+
+**Safety features:**
+- Read-only agents (`@reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
+- Write agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
+- `@researcher` runs in background mode by default for non-blocking parallel research
+- `@security-auditor` has WebSearch for CVE and vulnerability lookups
 
 ## Skills
 
