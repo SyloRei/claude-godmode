@@ -76,9 +76,15 @@ fi
 # Also check for stale INSTRUCTIONS.md from v1.x
 if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
   if grep -q "Claude Code God-Mode System" "$CLAUDE_DIR/INSTRUCTIONS.md" 2>/dev/null; then
-    cp "$CLAUDE_DIR/INSTRUCTIONS.md" "$BACKUP_DIR/INSTRUCTIONS.md.v1-backup"
-    rm "$CLAUDE_DIR/INSTRUCTIONS.md"
-    info "Removed stale v1.x INSTRUCTIONS.md (backed up)"
+    warn "Found stale v1.x INSTRUCTIONS.md (content now lives in rules/)"
+    read -rp "  Remove it? (backed up first) [y/N] " instructions_confirm || instructions_confirm=""
+    if [[ "$instructions_confirm" == [yY] ]]; then
+      cp "$CLAUDE_DIR/INSTRUCTIONS.md" "$BACKUP_DIR/INSTRUCTIONS.md.v1-backup"
+      rm "$CLAUDE_DIR/INSTRUCTIONS.md"
+      info "Old INSTRUCTIONS.md backed up and removed"
+    else
+      info "Keeping old INSTRUCTIONS.md (you can remove it manually later)"
+    fi
   fi
 fi
 
@@ -86,6 +92,19 @@ fi
 RULES_SRC="$SCRIPT_DIR/rules"
 if [ -d "$RULES_SRC" ]; then
   RULES_COUNT=$(find "$RULES_SRC" -maxdepth 1 -name "godmode-*.md" | wc -l | tr -d ' ')
+  # Check if any existing rule files have been customized (differ from source)
+  CUSTOMIZED=0
+  for rule in "$RULES_SRC"/godmode-*.md; do
+    rule_name="$(basename "$rule")"
+    dest="$CLAUDE_DIR/rules/$rule_name"
+    if [ -f "$dest" ] && ! diff -q "$rule" "$dest" >/dev/null 2>&1; then
+      CUSTOMIZED=$((CUSTOMIZED + 1))
+    fi
+  done
+  if [ "$CUSTOMIZED" -gt 0 ]; then
+    warn "${CUSTOMIZED} rule file(s) have local customizations that will be overwritten"
+    warn "Originals are backed up at $BACKUP_DIR/rules/"
+  fi
   info "Installing rules (${RULES_COUNT} files)"
   mkdir -p "$CLAUDE_DIR/rules"
   cp "$RULES_SRC"/godmode-*.md "$CLAUDE_DIR/rules/"
@@ -150,6 +169,11 @@ fi
 
 # --- Manual-mode extras (agents, skills, hooks) ---
 if [ "$MODE" = "manual" ]; then
+  if [ -d "$CLAUDE_DIR/agents" ] || [ -d "$CLAUDE_DIR/skills" ]; then
+    warn "Manual-mode will overwrite existing agents and skills in ~/.claude/"
+    warn "Customizations to agent/skill files will be lost (backed up above)"
+  fi
+
   # Agents
   AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -maxdepth 1 -name "*.md" | wc -l | tr -d ' ')
   info "Installing agents (${AGENT_COUNT})"
