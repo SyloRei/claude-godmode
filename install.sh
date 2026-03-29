@@ -73,6 +73,15 @@ if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
   fi
 fi
 
+# Also check for stale INSTRUCTIONS.md from v1.x
+if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
+  if grep -q "Claude Code God-Mode System" "$CLAUDE_DIR/INSTRUCTIONS.md" 2>/dev/null; then
+    cp "$CLAUDE_DIR/INSTRUCTIONS.md" "$BACKUP_DIR/INSTRUCTIONS.md.v1-backup"
+    rm "$CLAUDE_DIR/INSTRUCTIONS.md"
+    info "Removed stale v1.x INSTRUCTIONS.md (backed up)"
+  fi
+fi
+
 # --- Rules ---
 RULES_SRC="$SCRIPT_DIR/rules"
 if [ -d "$RULES_SRC" ]; then
@@ -90,30 +99,53 @@ SETTINGS="$CLAUDE_DIR/settings.json"
 TEMPLATE="$SCRIPT_DIR/config/settings.template.json"
 
 if [ -f "$SETTINGS" ]; then
-  MERGED=$(jq -s '
-    .[0] as $existing |
-    .[1] as $template |
-    $existing * {
-      statusLine: $template.statusLine,
-      hooks: (
-        $existing.hooks // {} |
-        to_entries + ($template.hooks | to_entries) |
-        group_by(.key) |
-        map({key: .[0].key, value: (.[0].value)}) |
-        from_entries
-      ),
-      permissions: (($existing.permissions // {}) * {
-        allow: (
-          ($existing.permissions.allow // []) +
-          ($template.permissions.allow // []) |
-          unique
-        )
-      })
-    }
-  ' "$SETTINGS" "$TEMPLATE")
+  if [ "$MODE" = "plugin" ]; then
+    # Plugin mode: only merge permissions (hooks + statusLine handled by plugin loader)
+    MERGED=$(jq -s '
+      .[0] as $existing |
+      .[1] as $template |
+      $existing * {
+        permissions: (($existing.permissions // {}) * {
+          allow: (
+            ($existing.permissions.allow // []) +
+            ($template.permissions.allow // []) |
+            unique
+          )
+        })
+      }
+    ' "$SETTINGS" "$TEMPLATE")
+  else
+    # Manual mode: merge permissions, hooks, and statusLine
+    MERGED=$(jq -s '
+      .[0] as $existing |
+      .[1] as $template |
+      $existing * {
+        statusLine: $template.statusLine,
+        hooks: (
+          $existing.hooks // {} |
+          to_entries + ($template.hooks | to_entries) |
+          group_by(.key) |
+          map({key: .[0].key, value: (.[0].value)}) |
+          from_entries
+        ),
+        permissions: (($existing.permissions // {}) * {
+          allow: (
+            ($existing.permissions.allow // []) +
+            ($template.permissions.allow // []) |
+            unique
+          )
+        })
+      }
+    ' "$SETTINGS" "$TEMPLATE")
+  fi
   echo "$MERGED" | jq '.' > "$SETTINGS"
 else
-  cp "$TEMPLATE" "$SETTINGS"
+  if [ "$MODE" = "manual" ]; then
+    cp "$TEMPLATE" "$SETTINGS"
+  else
+    # Plugin mode fresh install: only permissions
+    jq '{permissions: .permissions}' "$TEMPLATE" > "$SETTINGS"
+  fi
 fi
 
 # --- Manual-mode extras (agents, skills, hooks) ---

@@ -15,7 +15,7 @@ You are a senior software engineer implementing production-grade code. You work 
 ### 1. UNDERSTAND
 - Read all relevant files before writing any code
 - Identify existing patterns, utilities, types to reuse
-- Detect project tooling (auto-detection per CLAUDE.md)
+- Detect project tooling (auto-detection per godmode-coding.md)
 - Understand the full requirement before writing a single line
 
 ### 2. PLAN
@@ -37,7 +37,7 @@ Before writing any code, briefly state:
 - Follow existing test patterns
 - Run ALL tests, not just new ones
 
-### 5. QUALITY GATES (Canonical — from CLAUDE.md)
+### 5. QUALITY GATES (Canonical — from godmode-quality.md)
 
 ALL must pass before returning:
 1. Typecheck passes (zero errors)

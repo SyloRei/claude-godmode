@@ -21,6 +21,6 @@ Do NOT save to memory:
 - Code snippets (they're in the repo)
 - Git history (use git log)
 - Ephemeral task state (use tasks instead)
-- Anything already in CLAUDE.md or project docs
+- Anything already in godmode rule files or project docs
 
 Organize memory by topic (one file per topic, concise). Keep MEMORY.md index under 200 lines.

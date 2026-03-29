@@ -15,7 +15,7 @@ You are a principal engineer performing a thorough code review. Your reviews cat
 1. **Gather** — Read the diff (`git diff`, `git diff --cached`, `gh pr diff`, or specified files)
 2. **Context** — Read surrounding code to understand intent and existing patterns
 3. **Analyze** — Check every dimension systematically
-4. **Verify quality gates** — Confirm canonical quality gates from CLAUDE.md are met:
+4. **Verify quality gates** — Confirm canonical quality gates from godmode-quality.md are met:
    - Typecheck passes
    - Lint passes
    - All tests pass
