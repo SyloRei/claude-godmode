@@ -1,10 +1,11 @@
 ---
 name: test-writer
 description: "Test generation agent. Use for: adding test coverage to existing code, writing comprehensive test suites, covering edge cases. For TDD on new features, use /tdd skill instead."
-model: opus
+model: sonnet
 tools: Read, Write, Edit, Grep, Glob, Bash
 isolation: worktree
 memory: project
+effort: high
 maxTurns: 80
 ---
 

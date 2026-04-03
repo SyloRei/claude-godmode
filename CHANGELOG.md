@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.4.2] - 2026-04-03
+
+### Changed
+
+- Agent model rebalancing: moved from 6 opus / 2 sonnet to 4 opus / 4 sonnet split
+  - `@reviewer`: opus -> sonnet (with effort: high)
+  - `@test-writer`: opus -> sonnet (added effort: high)
+  - `@doc-writer`: added effort: high (already sonnet)
+- `@architect` gains `disallowedTools: Write, Edit` for mechanical read-only enforcement
+- Documentation updated to reflect four-tier model strategy: opus+high (architecture/security), opus (code-writing), sonnet+high (analysis/generation), sonnet (research)
+- CONTRIBUTING.md model selection guide expanded with decision tree for placing future agents
+
 ## [1.4.1] - 2026-03-29
 
 ### Fixed

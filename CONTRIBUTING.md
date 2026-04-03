@@ -79,10 +79,27 @@ claude-godmode/
 - Hooks: lowercase, hyphenated shell scripts (e.g., `session-start.sh`)
 - Rules: `godmode-{concern}.md` (e.g., `godmode-coding.md`)
 
-### Model Selection
+### Model Selection (Four-Tier Strategy)
 
-- **Opus** -- for agents that write code or make decisions (`@writer`, `@executor`, `@reviewer`, `@architect`)
-- **Sonnet** -- for read-only or research-oriented agents (`@researcher`, `@doc-writer`)
+Agents are assigned to one of four tiers based on task complexity and cost:
+
+- **Opus + high effort** -- High-stakes read-only analysis requiring maximum thoroughness. These agents evaluate architecture and security where missed issues are costly.
+  - `@architect`, `@security-auditor`
+- **Opus + default effort** -- Code-writing agents that need Opus-level reasoning to produce correct implementations but don't need the thoroughness overhead.
+  - `@writer`, `@executor`
+- **Sonnet + high effort** -- Structured analysis and generation tasks. Sonnet handles these well when given high effort to be thorough.
+  - `@reviewer`, `@test-writer`, `@doc-writer`
+- **Sonnet + default effort** -- Background research and information gathering where speed and cost matter more than deep reasoning.
+  - `@researcher`
+
+**Decision tree for placing future agents:**
+
+1. Does the agent write or modify code? -> Opus + default effort
+2. Does the agent perform high-stakes read-only analysis (security, architecture)? -> Opus + high effort
+3. Does the agent produce structured output (reviews, tests, docs)? -> Sonnet + high effort
+4. Is the agent primarily research or information gathering? -> Sonnet + default effort
+
+> **Note:** `effort: max` is an Opus-exclusive setting. Do not assign it to Sonnet agents. Most agents should use `high` or omit the field (default). Reserve `max` for edge cases where Opus needs to exhaust all reasoning before responding.
 
 ### Quality
 

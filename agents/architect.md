@@ -3,6 +3,7 @@ name: architect
 description: "System design and architecture agent. Use for: designing new systems, evaluating tradeoffs, planning migrations, reviewing architecture, API design, database schema design. Advisory only — does not modify code."
 model: opus
 tools: Read, Grep, Glob, Bash, WebSearch
+disallowedTools: Write, Edit
 memory: project
 effort: high
 ---
