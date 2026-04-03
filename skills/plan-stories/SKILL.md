@@ -162,11 +162,11 @@ Before writing `.claude-pipeline/stories.json`, check if one exists from a diffe
 1. Read current `.claude-pipeline/stories.json`
 2. If `branchName` differs from new feature:
    - Create archive directory: `.claude-pipeline/archive/YYYY-MM-DD-feature-name/`
-   - Copy `stories.json` and `progress.txt` into the archive directory
+   - Copy `stories.json` and `progress.md` into the archive directory
    - Read the `prdSource` field from the existing `stories.json` to identify the source PRD
    - Copy the source PRD file (the file at the `prdSource` path) into the archive directory
    - Only copy the single PRD referenced by `prdSource` — do NOT copy all PRDs
-   - Reset `.claude-pipeline/progress.txt`
+   - Reset `.claude-pipeline/progress.md`
 
 ---
 
@@ -219,7 +219,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | Normal operation — this is the expected phase. Read the PRD and convert to stories. |
 | **planning** | Stories already exist for this feature. Check if the user wants to regenerate or amend existing stories before overwriting. |
-| **executing** | Implementation is in progress. Warn the user before overwriting stories.json — in-progress work may be lost. Read `progress.txt` for context on completed stories. |
+| **executing** | Implementation is in progress. Warn the user before overwriting stories.json — in-progress work may be lost. Read `progress.md` for context on completed stories. |
 | **complete** | All stories are done. If re-planning, archive the previous run first (see Archiving Previous Runs). |
 
 ### Exploration Awareness
@@ -237,7 +237,7 @@ When `.claude-pipeline/explorations/` contains files:
 - **@architect** — review story plan design before execution
 - **/execute** — next step: implement stories with @executor + @reviewer agents
 
-**Pipeline:** consumes PRD from `.claude-pipeline/prds/`, exploration files for gate detection. Produces `stories.json` and `progress.txt`. Preceding step: `/prd`. Next: `/execute`.
+**Pipeline:** consumes PRD from `.claude-pipeline/prds/`, exploration files for gate detection. Produces `stories.json` and `progress.md`. Preceding step: `/prd`. Next: `/execute`.
 
 ---
 

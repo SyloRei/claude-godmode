@@ -114,14 +114,14 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | May reference PRD for context on what feature is being built. |
 | **planning** | May reference `stories.json` to align test behaviors with upcoming story acceptance criteria. |
-| **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Use test patterns from previous stories to maintain consistency. |
+| **executing** | Read `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Use test patterns from previous stories to maintain consistency. |
 | **complete** | Same as executing — accumulated knowledge is still useful for writing consistent tests. |
 
 ### Pipeline Integration
 
 **Consumes:**
 - `stories.json` — accepts a story ID as input (e.g., `/tdd US-003`), loads the story's description and acceptance criteria as the feature spec to drive behavior decomposition
-- `progress.txt` — reads Codebase Patterns section for test patterns from previous stories (naming conventions, test utilities, fixture patterns)
+- `progress.md` — reads Codebase Patterns section for test patterns from previous stories (naming conventions, test utilities, fixture patterns)
 
 **After behavior list is generated (end of "Workflow Per Feature" step 1):**
 
@@ -174,4 +174,4 @@ The first generated story has `dependsOn: []` (or `["US-source"]` if invoked wit
 - **/refactor** — for refactoring existing code without adding features
 - **/debug** — if a test reveals a bug, switch to debugging protocol
 
-**Pipeline:** consumes stories.json (story ID as feature spec), progress.txt (test patterns from previous stories). Produces one story per behavior (each = one RED-GREEN-REFACTOR cycle, chained with dependsOn). Next: `/execute` to implement TDD stories.
+**Pipeline:** consumes stories.json (story ID as feature spec), progress.md (test patterns from previous stories). Produces one story per behavior (each = one RED-GREEN-REFACTOR cycle, chained with dependsOn). Next: `/execute` to implement TDD stories.

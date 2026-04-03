@@ -66,11 +66,11 @@ Implement story [ID]: [title] from stories.json
 
 The @executor agent will:
 - Read .claude-pipeline/stories.json for full context and quality gate commands
-- Read .claude-pipeline/progress.txt for codebase patterns from previous stories
+- Read .claude-pipeline/progress.md for codebase patterns from previous stories
 - Implement the story following existing patterns
 - Write tests for new behavior
 - Run ALL quality gates before returning
-- Update .claude-pipeline/stories.json and .claude-pipeline/progress.txt
+- Update .claude-pipeline/stories.json and .claude-pipeline/progress.md
 - Do NOT return until all gates pass
 ```
 
@@ -87,16 +87,16 @@ branch: {branchName}-{storyId}
 
 The @executor agent will:
 - Read .claude-pipeline/stories.json for full context and quality gate commands
-- Read .claude-pipeline/progress.txt for codebase patterns from previous stories
+- Read .claude-pipeline/progress.md for codebase patterns from previous stories
 - Implement the story following existing patterns
 - Write tests for new behavior
 - Run ALL quality gates before returning
 - Work on temporary branch: {branchName}-{storyId}
-- Do NOT update stories.json or progress.txt (orchestrator owns shared state)
+- Do NOT update stories.json or progress.md (orchestrator owns shared state)
 - Do NOT return until all gates pass
 ```
 
-Each parallel executor works on a temporary branch `{branchName}-{storyId}` and does NOT update stories.json or progress.txt.
+Each parallel executor works on a temporary branch `{branchName}-{storyId}` and does NOT update stories.json or progress.md.
 
 ### Step 2.5: Post-Batch Merge
 
@@ -190,13 +190,13 @@ Run canonical quality gates (from stories.json qualityGates):
 **Sequential mode** (unchanged):
 - Commit all changes: `feat: [Story ID] - [Story Title]`
 - Update `.claude-pipeline/stories.json`: set `passes: true` for completed story
-- Append progress to `.claude-pipeline/progress.txt`
+- Append progress to `.claude-pipeline/progress.md`
 
 **Parallel mode** (orchestrator handles shared state):
 - For each successfully merged and reviewed story in the batch:
   - Commit changes: `feat: [Story ID] - [Story Title]`
   - Update `.claude-pipeline/stories.json`: set `passes: true`
-  - Append progress entry to `.claude-pipeline/progress.txt` sequentially
+  - Append progress entry to `.claude-pipeline/progress.md` sequentially
 - Failed stories remain `passes: false` and retry in the next batch
 
 Progress entry format:
@@ -339,7 +339,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Cannot execute — `stories.json` is required. Suggest `/prd` then `/plan-stories` to create one. |
 | **prd-only** | Cannot execute — stories not yet planned. Suggest `/plan-stories` to convert the PRD. |
 | **planning** | Ready to begin execution. All stories are pending. |
-| **executing** | Resume execution. Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
+| **executing** | Resume execution. Read `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
 | **complete** | All stories pass. Report completion and suggest `/ship`. |
 
 ---
@@ -353,7 +353,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 - **@security-auditor** — route security concerns here (from @reviewer CRITICAL on security)
 - **/ship** — next step: push and create PR when all stories complete
 
-**Pipeline:** consumes `stories.json`, `progress.txt`, exploration files. Produces implemented code, updated `stories.json` (passes: true), progress entries. Preceding step: `/plan-stories`. Next: `/ship`. Entry points from standalone skills: `/debug` (appended bug-fix stories), `/refactor` (appended refactoring stories), `/tdd` (appended TDD stories).
+**Pipeline:** consumes `stories.json`, `progress.md`, exploration files. Produces implemented code, updated `stories.json` (passes: true), progress entries. Preceding step: `/plan-stories`. Next: `/ship`. Entry points from standalone skills: `/debug` (appended bug-fix stories), `/refactor` (appended refactoring stories), `/tdd` (appended TDD stories).
 
 ---
 
