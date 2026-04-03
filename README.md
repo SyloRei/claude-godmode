@@ -29,6 +29,7 @@ Claude God-Mode is a Claude Code plugin that installs rules (focused config file
 ### Table of Contents
 
 - [Who It's For](#who-its-for)
+- [Why Claude God-Mode?](#why-claude-god-mode)
 - [Getting Started](#getting-started)
 - [Pipeline](#pipeline)
 - [Agents](#agents)
@@ -47,13 +48,25 @@ Claude God-Mode is a Claude Code plugin that installs rules (focused config file
 
 ## Who It's For
 
-<!-- Placeholder: US-002 will expand this section -->
+Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Claude Code workflow instead of ad-hoc prompting. Whether you're a solo developer or part of an engineering team, it brings code quality automation and AI engineering best practices to every session.
 
-Claude God-Mode is designed for developers who use Claude Code as their daily coding assistant and want a structured, repeatable workflow for shipping features.
+**Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/prd` to define the feature, `/plan-stories` to break it into tasks, `/execute` to implement with automated review, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
+
+**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. Rules live in `~/.claude/rules/` as individual files, so teams can share a baseline while individuals customize their setup.
+
+**Contributor extending the plugin.** You want to add a new agent, skill, or rule. Each component is a self-contained markdown file with a clear contract. Drop a new agent into `agents/`, a new skill into `skills/`, or a new rule into `rules/` -- the plugin picks it up automatically.
+
+## Why Claude God-Mode?
+
+Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
+
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get an end-to-end pipeline (`/prd` through `/ship`), 8 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, build) run on every change automatically -- not when you remember to ask.
+
+The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
 ## Getting Started
 
-<!-- Placeholder: US-003 will expand this section -->
+<!-- Placeholder: US-005 will expand this section -->
 
 Use `/explore-repo` first when working in an unfamiliar codebase -- it detects your stack, maps architecture, and reports patterns before you start changing things.
 
