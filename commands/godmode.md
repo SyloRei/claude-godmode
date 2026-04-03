@@ -76,14 +76,14 @@ ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || 
 
 | Agent | Model | Memory | Effort | Purpose |
 |-------|-------|--------|--------|---------|
-| `@writer` | opus | project | inherit | Implementation (isolated worktree, maxTurns: 100) |
-| `@executor` | opus | project | inherit | Story execution from stories.json (maxTurns: 100) |
-| `@reviewer` | opus | project | high | Code review (read-only enforced) |
-| `@researcher` | sonnet | project | inherit | Codebase & web research (background, read-only enforced) |
-| `@architect` | opus | project | high | System design (advisory) |
+| `@writer` | opus | project | default | Implementation (isolated worktree, maxTurns: 100) |
+| `@executor` | opus | project | default | Story execution from stories.json (maxTurns: 100) |
+| `@architect` | opus | project | high | System design (advisory, read-only enforced) |
 | `@security-auditor` | opus | project | high | Security audit (read-only enforced, +WebSearch) |
-| `@test-writer` | opus | project | inherit | Test generation (isolated worktree, maxTurns: 80) |
-| `@doc-writer` | sonnet | project | inherit | Documentation (+Bash) |
+| `@reviewer` | sonnet | project | high | Code review (read-only enforced) |
+| `@test-writer` | sonnet | project | high | Test generation (isolated worktree, maxTurns: 80) |
+| `@doc-writer` | sonnet | project | high | Documentation (+Bash) |
+| `@researcher` | sonnet | project | default | Codebase & web research (background, read-only enforced) |
 
 ### Quality Gates
 

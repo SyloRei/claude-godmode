@@ -80,17 +80,17 @@ Removes godmode rule files, agents, skills, and hooks. Your personal config is n
 
 | Agent | Model | Memory | Effort | Purpose |
 |-------|-------|--------|--------|---------|
-| `@writer` | opus | project | inherit | Implementation in isolated worktree |
-| `@executor` | opus | project | inherit | Story execution from stories.json |
-| `@reviewer` | opus | project | high | Code review (read-only, enforced) |
-| `@researcher` | sonnet | project | inherit | Codebase and web research (background) |
-| `@architect` | opus | project | high | System design (advisory) |
+| `@writer` | opus | project | default | Implementation in isolated worktree |
+| `@executor` | opus | project | default | Story execution from stories.json |
+| `@architect` | opus | project | high | System design (advisory, read-only enforced) |
 | `@security-auditor` | opus | project | high | Security audit (read-only, enforced) |
-| `@test-writer` | opus | project | inherit | Test generation in isolated worktree |
-| `@doc-writer` | sonnet | project | inherit | Documentation |
+| `@reviewer` | sonnet | project | high | Code review (read-only, enforced) |
+| `@test-writer` | sonnet | project | high | Test generation in isolated worktree |
+| `@doc-writer` | sonnet | project | high | Documentation |
+| `@researcher` | sonnet | project | default | Codebase and web research (background) |
 
 **Safety features:**
-- Read-only agents (`@reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
+- Read-only agents (`@architect`, `@reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
 - Write agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
 - `@researcher` runs in background mode by default for non-blocking parallel research
 - `@security-auditor` has WebSearch for CVE and vulnerability lookups
@@ -322,7 +322,7 @@ git pull
 
 ### Does this work with Sonnet/Haiku?
 
-Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Research-oriented agents (`@researcher`, `@doc-writer`) already default to Sonnet.
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Four agents use Sonnet (`@reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and four use Opus (`@writer`, `@executor`, `@architect`, `@security-auditor`).
 
 ### Will this overwrite my config?
 
