@@ -174,7 +174,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | A PRD already exists for this feature area. Read it for context to reduce clarifying questions and avoid re-detecting quality commands already captured in the PRD's Technical Considerations. |
 | **planning** | Stories exist. Read `stories.json` for scope context — the PRD is being refined or a new PRD is being created for a related feature. Reference existing stories to avoid overlap. |
-| **executing** | Read `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding — use findings to reduce clarifying questions and skip re-detection of quality commands already discovered. |
+| **executing** | Read `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding — use findings to reduce clarifying questions and skip re-detection of quality commands already discovered. |
 | **complete** | Same as executing — accumulated knowledge and explorations are still useful for planning the next feature. |
 
 ### Exploration Awareness

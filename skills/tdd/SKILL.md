@@ -114,7 +114,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | May reference PRD for context on what feature is being built. |
 | **planning** | May reference `stories.json` to align test behaviors with upcoming story acceptance criteria. |
-| **executing** | Read `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Use test patterns from previous stories to maintain consistency. |
+| **executing** | Read `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Use test patterns from previous stories to maintain consistency. |
 | **complete** | Same as executing — accumulated knowledge is still useful for writing consistent tests. |
 
 ### Pipeline Integration

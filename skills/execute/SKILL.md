@@ -190,18 +190,18 @@ Run canonical quality gates (from stories.json qualityGates):
 **Sequential mode** (unchanged):
 - Commit all changes: `feat: [Story ID] - [Story Title]`
 - Update `.claude-pipeline/stories.json`: set `passes: true` for completed story
-- Append progress to `.claude-pipeline/progress.md`
+- Append progress entry under `## Story Log` in `.claude-pipeline/progress.md`
 
 **Parallel mode** (orchestrator handles shared state):
 - For each successfully merged and reviewed story in the batch:
   - Commit changes: `feat: [Story ID] - [Story Title]`
   - Update `.claude-pipeline/stories.json`: set `passes: true`
-  - Append progress entry to `.claude-pipeline/progress.md` sequentially
+  - Append progress entry under `## Story Log` in `.claude-pipeline/progress.md` sequentially
 - Failed stories remain `passes: false` and retry in the next batch
 
-Progress entry format:
+Progress entry format (append under `## Story Log`):
 ```
-## [Date] - [Story ID]: [Title]
+### [Date] - [Story ID]: [Title]
 - What was implemented
 - Files changed
 - Learnings for future iterations
@@ -339,7 +339,7 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Cannot execute — `stories.json` is required. Suggest `/prd` then `/plan-stories` to create one. |
 | **prd-only** | Cannot execute — stories not yet planned. Suggest `/plan-stories` to convert the PRD. |
 | **planning** | Ready to begin execution. All stories are pending. |
-| **executing** | Resume execution. Read `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
+| **executing** | Resume execution. Read `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) to pass accumulated project knowledge to @executor agents. Read `.claude-pipeline/explorations/` for codebase understanding when available. Skip stories that already pass. |
 | **complete** | All stories pass. Report completion and suggest `/ship`. |
 
 ---

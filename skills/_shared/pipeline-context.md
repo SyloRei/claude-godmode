@@ -50,7 +50,7 @@ If `current_branch` does not match `pipeline_branch`, the phase is **no-pipeline
 | **no-pipeline** | Skill operates in standalone mode. No pipeline artifacts are read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | Skill may reference the PRD for context but does not expect stories.json. |
 | **planning** | Skill may reference stories.json for upcoming work context. |
-| **executing** | Skill reads `progress.md` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Reads `.claude-pipeline/explorations/` for codebase understanding when available. |
+| **executing** | Skill reads `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Reads `.claude-pipeline/explorations/` for codebase understanding when available. |
 | **complete** | Same as executing — accumulated knowledge is still useful. |
 
 ---

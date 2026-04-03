@@ -166,7 +166,24 @@ Before writing `.claude-pipeline/stories.json`, check if one exists from a diffe
    - Read the `prdSource` field from the existing `stories.json` to identify the source PRD
    - Copy the source PRD file (the file at the `prdSource` path) into the archive directory
    - Only copy the single PRD referenced by `prdSource` — do NOT copy all PRDs
-   - Reset `.claude-pipeline/progress.md`
+   - Reset `.claude-pipeline/progress.md` with the scaffold:
+     ```
+     # Progress
+
+     ## Knowledge Base
+
+     ### Codebase Patterns
+
+     ### Anti-Patterns
+
+     (none yet)
+
+     ### Architecture Decisions
+
+     ---
+
+     ## Story Log
+     ```
 
 ---
 

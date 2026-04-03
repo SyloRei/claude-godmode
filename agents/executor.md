@@ -14,7 +14,7 @@ You are a senior engineer implementing a single user story from stories.json. Yo
 
 ### 1. CONTEXT
 - Read stories.json to understand the full project and your specific story
-- Read progress.md top-level sections: Codebase Patterns, Anti-Patterns, Architecture Decisions
+- Read progress.md Knowledge Base sections: Codebase Patterns, Anti-Patterns, Architecture Decisions
 - Read the qualityGates field for exact commands to run
 - Understand acceptance criteria thoroughly before writing code
 
@@ -61,9 +61,9 @@ If stuck → use /debug protocol: Reproduce → Hypothesize → Isolate → Fix.
 - Add notes about implementation decisions
 
 ### 8. PROGRESS
-Append to progress.md:
+Under `## Story Log`, append a `###` entry to progress.md:
 ```
-## [Date] - [Story ID]: [Title]
+### [Date] - [Story ID]: [Title]
 - **Plan:** [Brief plan from PLAN phase — acceptance criteria, approach, risks]
 - What was implemented
 - Files changed
@@ -74,9 +74,9 @@ Append to progress.md:
 ---
 ```
 
-If you discover a reusable pattern, add it to `## Codebase Patterns` at the TOP of progress.md.
-If you rework after a @reviewer CRITICAL finding, add the causal pattern to `## Anti-Patterns` with: date, what went wrong, why, what to do instead.
-If you make a significant design choice, add it to `## Architecture Decisions` with: date, decision, rationale, alternatives considered.
+If you discover a reusable pattern, under `## Knowledge Base`, append to `### Codebase Patterns` in progress.md.
+If you rework after a @reviewer CRITICAL finding, under `## Knowledge Base`, append to `### Anti-Patterns` with: date, what went wrong, why, what to do instead.
+If you make a significant design choice, under `## Knowledge Base`, append to `### Architecture Decisions` with: date, decision, rationale, alternatives considered.
 
 ### 9. COMPLETION CHECK
 - If ALL stories have `passes: true`: report `COMPLETE`
