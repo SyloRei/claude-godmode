@@ -119,14 +119,14 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. No pipeline artifacts read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | May reference PRD for context on the feature area being refactored. |
 | **planning** | May reference `stories.json` to check if refactoring aligns with planned stories. |
-| **executing** | Read `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Check Anti-Patterns section to avoid repeating past mistakes. |
+| **executing** | Read `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Read `.claude-pipeline/explorations/` for codebase understanding when available. Check Anti-Patterns section to avoid repeating past mistakes. |
 | **complete** | Same as executing — accumulated knowledge is still useful for safe refactoring. |
 
 ### Pipeline Integration
 
 **Consumes:**
 - `stories.json` — if a story mentions refactoring (e.g., `/refactor US-005`), load its description and acceptance criteria as context for scoping the refactoring
-- `progress.txt` — check Anti-Patterns section to avoid repeating structural mistakes from previous stories
+- `progress.md` — check Anti-Patterns section to avoid repeating structural mistakes from previous stories
 
 **After PLAN phase (end of Step 3):**
 
@@ -193,4 +193,4 @@ Coverage: [before] → [after]
 - **/debug** — if refactoring reveals bugs, switch to debug protocol
 - **@reviewer** — for review of refactoring changes before committing
 
-**Pipeline:** consumes stories.json (refactoring context), progress.txt (Anti-Patterns section). Produces refactoring PRD or chained stories (one per step, with dependsOn). Next: `/execute` to implement refactoring stories.
+**Pipeline:** consumes stories.json (refactoring context), progress.md (Anti-Patterns section). Produces refactoring PRD or chained stories (one per step, with dependsOn). Next: `/execute` to implement refactoring stories.

@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.5.0] - 2026-04-04
+
+### Added
+
+- Structured heading hierarchy in `progress.md`: `# Progress` > `## Knowledge Base` (with `### Codebase Patterns`, `### Anti-Patterns`, `### Architecture Decisions`) > `## Story Log` (with `### [Date] - [Story ID]: [Title]` entries)
+- Auto-migration for existing `progress.txt` files — runs as a pre-phase-detection step in `pipeline-context.md`, inherited by all consumer skills
+
+### Changed
+
+- **BREAKING:** `progress.txt` renamed to `progress.md`
+  - Pipeline progress file now uses `.md` extension to match its markdown content
+  - Auto-migration renames existing `progress.txt` files automatically
+  - If both `progress.txt` and `progress.md` exist, `progress.md` is preferred — remove the stale `.txt` file manually
+
 ## [1.4.2] - 2026-04-03
 
 ### Changed

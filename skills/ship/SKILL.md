@@ -150,8 +150,8 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 | **no-pipeline** | Operate in standalone mode. Ship changes without pipeline context. Zero regression from pre-pipeline behavior. |
 | **prd-only** | Standalone mode — no stories to verify against. Ship normally. |
 | **planning** | Warn user: stories are planned but none are implemented. Confirm they want to ship without executing the pipeline. |
-| **executing** | Read `progress.txt` for context on completed stories. Use `stories.json` to verify all stories pass before shipping. If incomplete stories remain, warn user and confirm intent. Use quality gate commands from `stories.json.qualityGates` instead of re-detecting. |
-| **complete** | All stories pass. Read `progress.txt` for PR description context. Use `stories.json` for quality gate commands and story summaries to populate the PR body. Reference the PRD via `prdSource` for requirements verification (Step 2). |
+| **executing** | Read `progress.md` for context on completed stories. Use `stories.json` to verify all stories pass before shipping. If incomplete stories remain, warn user and confirm intent. Use quality gate commands from `stories.json.qualityGates` instead of re-detecting. |
+| **complete** | All stories pass. Read `progress.md` for PR description context. Use `stories.json` for quality gate commands and story summaries to populate the PR body. Reference the PRD via `prdSource` for requirements verification (Step 2). |
 
 ---
 
@@ -162,4 +162,4 @@ If branches differ, phase is **no-pipeline** — the pipeline belongs to a diffe
 - **@security-auditor** — for comprehensive security audit before shipping
 - **/execute** — preceding step: implement all stories before shipping
 
-**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.txt` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.
+**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.md` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.

@@ -4,6 +4,19 @@ Canonical reference for detecting the current pipeline phase. Skills that includ
 
 ---
 
+## Pre-Phase Migration: progress.txt to progress.md
+
+Before detecting the pipeline phase, run this one-time migration check. It is idempotent and safe to run on every activation.
+
+1. Check if `.claude-pipeline/progress.txt` exists
+2. **If `progress.txt` exists and `progress.md` does not:** rename `progress.txt` to `progress.md`
+3. **If both `progress.txt` and `progress.md` exist:** prefer `progress.md` and warn the user:
+   > WARNING: Both .claude-pipeline/progress.txt and .claude-pipeline/progress.md exist. Using progress.md. Remove progress.txt manually if it is stale.
+
+Content restructuring is deferred — the old flat heading structure is tolerated after rename.
+
+---
+
 ## Phase Detection
 
 Determine the current pipeline phase by checking these conditions in order:
@@ -37,7 +50,7 @@ If `current_branch` does not match `pipeline_branch`, the phase is **no-pipeline
 | **no-pipeline** | Skill operates in standalone mode. No pipeline artifacts are read or written. Zero regression from pre-pipeline behavior. |
 | **prd-only** | Skill may reference the PRD for context but does not expect stories.json. |
 | **planning** | Skill may reference stories.json for upcoming work context. |
-| **executing** | Skill reads `progress.txt` top-level sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Reads `.claude-pipeline/explorations/` for codebase understanding when available. |
+| **executing** | Skill reads `progress.md` Knowledge Base sections (Codebase Patterns, Anti-Patterns, Architecture Decisions) for accumulated project knowledge. Reads `.claude-pipeline/explorations/` for codebase understanding when available. |
 | **complete** | Same as executing — accumulated knowledge is still useful. |
 
 ---
