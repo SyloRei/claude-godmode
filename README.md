@@ -1,10 +1,19 @@
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)
-
-## Claude God-Mode
+```
+  ___  _                 _         ___            _       __  __             _
+ / __|| | __ _  _  _  __| | ___   / __| ___   __| | ___ |  \/  | ___   __| | ___
+| (__ | |/ _` || || |/ _` |/ -_) | (_ |/ _ \ / _` ||___|| |\/| |/ _ \ / _` |/ -_)
+ \___||_|\__,_| \_,_|\__,_|\___|  \___|\___/ \__,_|     |_|  |_|\___/ \__,_|\___|
+```
 
 **Production-grade engineering workflow for Claude Code. Ship features, not prompts.**
+
+[![GitHub release](https://img.shields.io/github/v/release/SyloRei/claude-godmode?label=version)](https://github.com/SyloRei/claude-godmode/releases)
+[![License](https://img.shields.io/github/license/SyloRei/claude-godmode)](LICENSE)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)](https://github.com/SyloRei/claude-godmode)
+[![GitHub stars](https://img.shields.io/github/stars/SyloRei/claude-godmode)](https://github.com/SyloRei/claude-godmode/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/SyloRei/claude-godmode)](https://github.com/SyloRei/claude-godmode/commits)
+
+## Claude God-Mode
 
 Claude God-Mode is a Claude Code plugin that installs rules (focused config files loaded at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual files in `~/.claude/rules/` rather than a monolithic config, so you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
 
