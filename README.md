@@ -66,23 +66,18 @@ The value isn't replacing Claude Code; it's removing the manual overhead that si
 
 ## Getting Started
 
-<!-- Placeholder: US-005 will expand this section -->
+Check the [Prerequisites](#prerequisites) first, then follow these three steps to ship your first feature.
 
-Use `/explore-repo` first when working in an unfamiliar codebase -- it detects your stack, maps architecture, and reports patterns before you start changing things.
+### Step 1: Install
 
-### Option A: Plugin Marketplace (Recommended)
+#### Option A: Plugin Marketplace (Recommended)
 
 ```bash
-# Add the marketplace registry
 claude plugin marketplace add SyloRei/claude-marketplace
-
-# Install the plugin
 claude plugin install claude-godmode@sylorei-plugins
 ```
 
-After installing, run `/godmode` in Claude Code. It will detect that rules are not yet installed and offer to set them up automatically. Then run `/godmode statusline` to enable the status bar.
-
-### Option B: Manual Install
+#### Option B: Manual Install
 
 ```bash
 git clone https://github.com/sylorei/claude-godmode.git
@@ -90,7 +85,44 @@ cd claude-godmode
 ./install.sh
 ```
 
-The install script copies rule files to `~/.claude/rules/`, installs agents, skills, and hooks, and merges `settings.json` additively -- your existing permissions, plugins, and personal `CLAUDE.md` are preserved. If upgrading from v1.x, the installer detects and offers to clean up the old configuration.
+The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
+
+### Step 2: First Run
+
+Start a Claude Code session and set up rules:
+
+```
+You:    /godmode
+Claude: Detected 8 rule files not yet installed. Install now? [Y/n]
+You:    Y
+Claude: Installed 8 rules, 8 agents, 8 skills, 3 hooks. God-Mode is active.
+
+You:    /godmode statusline
+Claude: Statusline enabled. Context %, model, and cost now visible in status bar.
+```
+
+> **Tip:** Run `/explore-repo` in unfamiliar codebases -- it maps your stack before you start changing things.
+
+### Step 3: First Feature
+
+Ship a feature end-to-end with four steps:
+
+```
+You:    create a prd for adding full-text search to the API
+Claude: [asks clarifying questions, generates PRD]
+
+You:    /plan-stories
+Claude: Created stories.json with quality gates.
+
+You:    /execute
+Claude: [spawns @executor per story, @reviewer validates each]
+        All stories complete! Run /ship to push and create PR.
+
+You:    /ship
+Claude: Quality gates passed. PR #42 created: github.com/you/repo/pull/42
+```
+
+See [Pipeline](#pipeline) for the full reference.
 
 ### Uninstall
 
