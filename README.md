@@ -1,10 +1,21 @@
-![Version](https://img.shields.io/badge/version-1.4.1-blue)
-![License](https://img.shields.io/badge/license-MIT-green)
-![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)
-
-# Claude God-Mode
+```
+  ___  _                 _         ___            _       __  __             _
+ / __|| | __ _  _  _  __| | ___   / __| ___   __| | ___ |  \/  | ___   __| | ___
+| (__ | |/ _` || || |/ _` |/ -_) | (_ |/ _ \ / _` ||___|| |\/| |/ _ \ / _` |/ -_)
+ \___||_|\__,_| \_,_|\__,_|\___|  \___|\___/ \__,_|     |_|  |_|\___/ \__,_|\___|
+```
 
 **Production-grade engineering workflow for Claude Code. Ship features, not prompts.**
+
+[![GitHub release](https://img.shields.io/github/v/release/SyloRei/claude-godmode?label=version)](https://github.com/SyloRei/claude-godmode/releases)
+[![License](https://img.shields.io/github/license/SyloRei/claude-godmode)](LICENSE)
+[![Claude Code Plugin](https://img.shields.io/badge/Claude_Code-Plugin-blueviolet)](https://github.com/SyloRei/claude-godmode)
+[![GitHub stars](https://img.shields.io/github/stars/SyloRei/claude-godmode)](https://github.com/SyloRei/claude-godmode/stargazers)
+[![Last commit](https://img.shields.io/github/last-commit/SyloRei/claude-godmode)](https://github.com/SyloRei/claude-godmode/commits)
+
+## Claude God-Mode
+
+Claude God-Mode is a Claude Code plugin that installs rules (focused config files loaded at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual files in `~/.claude/rules/` rather than a monolithic config, so you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
 
 - **End-to-end pipeline** -- go from idea to merged PR with `/prd`, `/plan-stories`, `/execute`, `/ship`
 - **Quality gates enforcement** -- typecheck, lint, test, and security checks run automatically before anything ships
@@ -12,6 +23,128 @@
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
 - **Rules-based config** -- additive rule files in `~/.claude/rules/`, your `CLAUDE.md` is never touched
 - **Persistent memory** -- agents remember project patterns, conventions, and gotchas across sessions
+
+---
+
+### Table of Contents
+
+- [Who It's For](#who-its-for)
+- [Why Claude God-Mode?](#why-claude-god-mode)
+- [Getting Started](#getting-started)
+- [Pipeline](#pipeline)
+- [Agents](#agents)
+- [Skills](#skills)
+- [Standalone Workflows](#standalone-workflows)
+- [Hooks](#hooks)
+- [Rules-Based Configuration](#rules-based-configuration)
+- [Agent Memory](#agent-memory)
+- [Customization](#customization)
+- [Troubleshooting](#troubleshooting)
+- [FAQ](#faq)
+- [Contributing](#contributing)
+- [License](#license)
+
+---
+
+## Who It's For
+
+Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Claude Code workflow instead of ad-hoc prompting. Whether you're a solo developer or part of an engineering team, it brings code quality automation and AI engineering best practices to every session.
+
+**Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/prd` to define the feature, `/plan-stories` to break it into tasks, `/execute` to implement with automated review, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
+
+**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. Rules live in `~/.claude/rules/` as individual files, so teams can share a baseline while individuals customize their setup.
+
+**Contributor extending the plugin.** You want to add a new agent, skill, or rule. Each component is a self-contained markdown file with a clear contract. Drop a new agent into `agents/`, a new skill into `skills/`, or a new rule into `rules/` -- the plugin picks it up automatically.
+
+## Why Claude God-Mode?
+
+Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
+
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get an end-to-end pipeline (`/prd` through `/ship`), 8 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, build) run on every change automatically -- not when you remember to ask.
+
+The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
+
+## Getting Started
+
+Check the [Prerequisites](#prerequisites) first, then follow these three steps to ship your first feature.
+
+### Step 1: Install
+
+#### Option A: Plugin Marketplace (Recommended)
+
+```bash
+claude plugin marketplace add SyloRei/claude-marketplace
+claude plugin install claude-godmode@sylorei-plugins
+```
+
+#### Option B: Manual Install
+
+```bash
+git clone https://github.com/sylorei/claude-godmode.git
+cd claude-godmode
+./install.sh
+```
+
+The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
+
+### Step 2: Install Rules
+
+> **Important:** God-Mode's behavior comes from **rule files** in `~/.claude/rules/`. Without them, agents and skills won't follow the engineering workflow. This step is required for both install methods.
+
+Start a Claude Code session and run `/godmode`:
+
+```
+You:    /godmode
+Claude: Detected 8 rule files not yet installed. Install now? [Y/n]
+You:    Y
+Claude: Installed 8 rules to ~/.claude/rules/. God-Mode is active.
+```
+
+Then enable the status bar:
+
+```
+You:    /godmode statusline
+Claude: Statusline enabled. Context %, model, and cost now visible in status bar.
+```
+
+> **Tip:** Run `/explore-repo` in unfamiliar codebases -- it maps your stack before you start changing things.
+
+### Step 3: First Feature
+
+Ship a feature end-to-end with four steps:
+
+```
+You:    create a prd for adding full-text search to the API
+Claude: [asks clarifying questions, generates PRD]
+
+You:    /plan-stories
+Claude: Created stories.json with quality gates.
+
+You:    /execute
+Claude: [spawns @executor per story, @reviewer validates each]
+        All stories complete! Run /ship to push and create PR.
+
+You:    /ship
+Claude: Quality gates passed. PR #42 created: github.com/you/repo/pull/42
+```
+
+See [Pipeline](#pipeline) for the full reference.
+
+### Uninstall
+
+```bash
+./uninstall.sh
+```
+
+Removes godmode rule files, agents, skills, and hooks. Your personal config is never touched.
+
+### Requirements
+
+See [Prerequisites](#prerequisites) for the full checklist.
+
+### Updating
+
+Re-run the install command for your method (plugin: `claude plugin install`, manual: `git pull && ./install.sh`). The installer creates a backup before updating.
 
 ## Pipeline
 
@@ -44,38 +177,6 @@ You:    /ship
 Claude: [runs quality gates, pushes, creates PR, returns URL]
 ```
 
-## Quick Start
-
-### Option A: Plugin Marketplace (Recommended)
-
-```bash
-# Add the marketplace registry
-claude plugin marketplace add SyloRei/claude-marketplace
-
-# Install the plugin
-claude plugin install claude-godmode@sylorei-plugins
-```
-
-After installing, run `/godmode` in Claude Code. It will detect that rules are not yet installed and offer to set them up automatically. Then run `/godmode statusline` to enable the status bar.
-
-### Option B: Manual Install
-
-```bash
-git clone https://github.com/sylorei/claude-godmode.git
-cd claude-godmode
-./install.sh
-```
-
-The install script copies rule files to `~/.claude/rules/`, installs agents, skills, and hooks, and merges `settings.json` additively -- your existing permissions, plugins, and personal `CLAUDE.md` are preserved. If upgrading from v1.x, the installer detects and offers to clean up the old configuration.
-
-### Uninstall
-
-```bash
-./uninstall.sh
-```
-
-Removes godmode rule files, agents, skills, and hooks. Your personal config is never touched.
-
 ## Agents
 
 | Agent | Model | Memory | Effort | Purpose |
@@ -94,6 +195,7 @@ Removes godmode rule files, agents, skills, and hooks. Your personal config is n
 - Write agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
 - `@researcher` runs in background mode by default for non-blocking parallel research
 - `@security-auditor` has WebSearch for CVE and vulnerability lookups
+- Agents run in parallel -- spawn `@researcher` + `@security-auditor` simultaneously for independent tasks
 
 ## Skills
 
@@ -224,25 +326,7 @@ Agents have persistent memory that carries learnings across sessions. Each agent
 | **project** | `.claude/memory/` in repo | Team-shareable via git | Project conventions, quality gates, gotchas |
 | **local** | `.claude/local-memory/` | Never shared, gitignored | Security findings, sensitive audit results |
 
-### What Gets Remembered
-
-- Project patterns and conventions
-- Quality gate commands for this project
-- Debugging solutions for non-obvious problems
-- Architecture decisions and constraints
-
-### What Doesn't Get Remembered
-
-- Code (it's in the repo)
-- Git history (use `git log`)
-- Temporary task state
-- Anything already in the godmode rule files
-
-## How It Works
-
-Claude God-Mode is a Claude Code plugin defined by `plugin.json`. It installs **rules** (focused configuration files loaded automatically at session start), **agents** (specialized Claude instances with dedicated system prompts, model assignments, and memory scopes), **skills** (slash-command workflows composed of multiple steps), and **hooks** (shell scripts that fire on session events).
-
-The rule files in `~/.claude/rules/godmode-*.md` provide coding standards, quality gates, and routing logic that all agents inherit. Because rules are individual files rather than a single monolithic config, you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified -- godmode rules are purely additive.
+Memory persists between sessions -- agents remember project patterns, conventions, and debugging solutions automatically.
 
 ## Customization
 
@@ -253,7 +337,57 @@ After installing, customize to match your workflow:
 3. **Remove rules** -- Delete any `godmode-*.md` file to disable that behavior entirely
 4. **Add rules** -- Drop your own `.md` files into `~/.claude/rules/` for project-specific conventions
 
-## Context Monitoring
+For the full file structure and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Troubleshooting
+
+### Prerequisites
+
+Before installing, make sure you have:
+
+- [ ] **Claude Code CLI** -- [install guide](https://docs.anthropic.com/en/docs/claude-code). Verify: `claude --version`
+- [ ] **git** >= 2.20 -- required for worktree agents. Verify: `git --version`
+- [ ] **jq** -- used by install script to merge `settings.json`. Verify: `jq --version`
+- [ ] **macOS or Linux** -- Windows is not supported (Claude Code limitation)
+
+### Common Issues
+
+**`jq: command not found` during install**
+Cause: `jq` is not installed. Fix:
+```bash
+brew install jq        # macOS
+sudo apt install jq    # Debian/Ubuntu
+```
+
+**`claude: command not found`**
+Cause: Claude Code CLI is not installed or not in PATH. Fix:
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+**Rules not loading after install**
+Cause: Rule files are not in `~/.claude/rules/`. Fix:
+```bash
+ls ~/.claude/rules/godmode-*.md   # should list 8 files
+./install.sh                      # re-run if missing
+```
+
+**Permission denied running install.sh**
+Cause: Script not executable. Fix:
+```bash
+chmod +x install.sh && ./install.sh
+```
+
+**Plugin not appearing after marketplace install**
+Cause: Rules need a one-time setup step. Fix: run `/godmode` inside Claude Code -- it detects missing rules and installs them with your confirmation.
+
+### General Tips
+
+- **Start a new session** after making changes to rule files, agents, or hooks to pick up updates
+- **Quality gates are mandatory** -- no skill or agent skips them. If a gate fails, fix the issue rather than bypassing it.
+- **Long sessions are safe** -- the PostCompact hook restores critical context after `/compact`
+
+### Context Monitoring
 
 The statusline shows context capacity at all times (enable with `/godmode statusline`):
 
@@ -261,62 +395,7 @@ The statusline shows context capacity at all times (enable with `/godmode status
  myapp | main | Opus | ████░░░░░░ 42% | $0.45
 ```
 
-- **Green** (<60%) -- healthy, plenty of room
-- **Yellow** (60-80%) -- compact soon with `/compact`
-- **Red** (>80%) -- compact immediately or start new session
-- Run `/compact "preserve X"` proactively at ~70%
-- Use subagents (`@researcher`) for heavy research to keep main context clean
-- PostCompact hook automatically restores quality gates and available skills/agents
-
-## File Locations
-
-```
-~/.claude/
-  rules/
-    godmode-identity.md
-    godmode-workflow.md
-    godmode-coding.md
-    godmode-quality.md
-    godmode-git.md
-    godmode-testing.md
-    godmode-context.md
-    godmode-routing.md
-  agents/
-    writer.md, executor.md, reviewer.md, researcher.md,
-    architect.md, security-auditor.md, test-writer.md, doc-writer.md
-  skills/
-    prd.md, plan-stories.md, execute.md, ship.md,
-    debug.md, tdd.md, refactor.md, explore-repo.md
-  hooks/
-    session-start.sh, post-compact.sh, hooks.json
-  commands/
-    godmode.md
-  config/
-    statusline.sh, settings.template.json
-  settings.json
-```
-
-## Updating
-
-### Plugin
-
-```bash
-claude plugin marketplace add SyloRei/claude-marketplace
-claude plugin install claude-godmode@sylorei-plugins
-```
-
-### Manual
-
-```bash
-cd claude-godmode
-git pull
-./install.sh   # creates a new backup before updating
-```
-
-## Requirements
-
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
-- `jq` (for install script settings merge): `brew install jq`
+The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/compact "preserve X"`. Use subagents (`@researcher`) for heavy research to keep main context clean.
 
 ## FAQ
 
@@ -335,16 +414,6 @@ Yes. You can cherry-pick individual agents, skills, hooks, or rule files. Copy j
 ### What languages does this support?
 
 Claude God-Mode is language-agnostic. The SessionStart hook auto-detects your project's toolchain (package manager, test runner, linter, formatter, build system) and injects that context into every conversation.
-
-## Tips
-
-- **Start a new session** after making changes to pick up updates
-- **Use `/explore-repo` first** when working in an unfamiliar codebase
-- **Agents run in parallel** -- spawn `@researcher` + `@security-auditor` simultaneously
-- **Worktree agents** (`@writer`, `@executor`, `@test-writer`) work on isolated copies
-- **Quality gates are mandatory** -- no skill or agent skips them
-- **Long sessions are safe** -- post-compaction hook restores critical context
-- **Memory persists** -- agents remember project patterns between sessions
 
 ## Contributing
 
