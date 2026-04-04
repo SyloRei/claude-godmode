@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [1.6.0] - 2026-04-04
+
+### Added
+
+- ASCII art banner and dynamic shields.io badges (version, license, Claude Code Plugin, stars, last commit)
+- "Who It's For" section with three audience scenarios (solo dev, team, contributor)
+- "Why Claude God-Mode?" value differentiation section
+- Step-by-step Getting Started tutorial (install, first run, first feature)
+- Prerequisites checklist with version requirements and verify commands
+- Troubleshooting section with 5 common issues (symptom/cause/fix format)
+- GitHub topics for discoverability: claude-code, claude-code-plugin, ai-engineering, developer-tools, code-quality, ai-agents, workflow-automation, claude, anthropic
+
+### Changed
+
+- README restructured with logical reading flow: intro -> audience -> tutorial -> reference -> troubleshooting -> FAQ
+- Table of contents added for section navigation
+- Redundant content consolidated (How It Works, File Locations, Tips dissolved into relevant sections)
+- Agent Memory section trimmed to table + summary
+- Repository description updated for GitHub search discoverability
+- SEO keyword phrases added naturally to opening paragraphs
+
 ## [1.5.0] - 2026-04-04
 
 ### Added
