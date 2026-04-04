@@ -102,8 +102,7 @@ Removes godmode rule files, agents, skills, and hooks. Your personal config is n
 
 ### Requirements
 
-- [Claude Code](https://docs.anthropic.com/en/docs/claude-code) CLI installed
-- `jq` (for install script settings merge): `brew install jq`
+See [Prerequisites](#prerequisites) for the full checklist.
 
 ### Updating
 
@@ -304,7 +303,47 @@ For the full file structure and contribution guidelines, see [CONTRIBUTING.md](C
 
 ## Troubleshooting
 
-<!-- Placeholder: US-005 will expand this section -->
+### Prerequisites
+
+Before installing, make sure you have:
+
+- [ ] **Claude Code CLI** -- [install guide](https://docs.anthropic.com/en/docs/claude-code). Verify: `claude --version`
+- [ ] **git** >= 2.20 -- required for worktree agents. Verify: `git --version`
+- [ ] **jq** -- used by install script to merge `settings.json`. Verify: `jq --version`
+- [ ] **macOS or Linux** -- Windows is not supported (Claude Code limitation)
+
+### Common Issues
+
+**`jq: command not found` during install**
+Cause: `jq` is not installed. Fix:
+```bash
+brew install jq        # macOS
+sudo apt install jq    # Debian/Ubuntu
+```
+
+**`claude: command not found`**
+Cause: Claude Code CLI is not installed or not in PATH. Fix:
+```bash
+npm install -g @anthropic-ai/claude-code
+```
+
+**Rules not loading after install**
+Cause: Rule files are not in `~/.claude/rules/`. Fix:
+```bash
+ls ~/.claude/rules/godmode-*.md   # should list 8 files
+./install.sh                      # re-run if missing
+```
+
+**Permission denied running install.sh**
+Cause: Script not executable. Fix:
+```bash
+chmod +x install.sh && ./install.sh
+```
+
+**Plugin not appearing after marketplace install**
+Cause: Rules need a one-time setup step. Fix: run `/godmode` inside Claude Code -- it detects missing rules and installs them with your confirmation.
+
+### General Tips
 
 - **Start a new session** after making changes to rule files, agents, or hooks to pick up updates
 - **Quality gates are mandatory** -- no skill or agent skips them. If a gate fails, fix the issue rather than bypassing it.
