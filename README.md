@@ -87,16 +87,22 @@ cd claude-godmode
 
 The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
 
-### Step 2: First Run
+### Step 2: Install Rules
 
-Start a Claude Code session and set up rules:
+> **Important:** God-Mode's behavior comes from **rule files** in `~/.claude/rules/`. Without them, agents and skills won't follow the engineering workflow. This step is required for both install methods.
+
+Start a Claude Code session and run `/godmode`:
 
 ```
 You:    /godmode
 Claude: Detected 8 rule files not yet installed. Install now? [Y/n]
 You:    Y
-Claude: Installed 8 rules, 8 agents, 8 skills, 3 hooks. God-Mode is active.
+Claude: Installed 8 rules to ~/.claude/rules/. God-Mode is active.
+```
 
+Then enable the status bar:
+
+```
 You:    /godmode statusline
 Claude: Statusline enabled. Context %, model, and cost now visible in status bar.
 ```
