@@ -5,10 +5,8 @@ node_modules/
 # claude-godmode pipeline artifacts (v1.x runtime state)
 .claude-pipeline/
 
-# Planning artifacts kept local (commit_docs=false in config.json)
-# Already-tracked files under .planning/ stay tracked; this prevents
-# accidental staging of new briefs, plans, and per-brief work artifacts.
-.planning/
-
 # Bespoke v1 planning archive (Path A — kept local)
 .planning-archive-v1/
+
+# IDEA doc — input to /gsd-new-project, content lives in .planning/PROJECT.md
+IDEA.md
