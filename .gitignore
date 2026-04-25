@@ -9,3 +9,6 @@ node_modules/
 # Already-tracked files under .planning/ stay tracked; this prevents
 # accidental staging of new briefs, plans, and per-brief work artifacts.
 .planning/
+
+# Bespoke v1 planning archive (Path A — kept local)
+.planning-archive-v1/
