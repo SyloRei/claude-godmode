@@ -1,501 +1,578 @@
-# Pitfalls Research
+# Pitfalls — claude-godmode v2
 
-**Domain:** Claude Code plugin — multi-agent workflow orchestrator, v1 → v2 maturation
+**Domain:** Claude Code plugin maturation (brownfield)
 **Researched:** 2026-04-25
-**Confidence:** HIGH (hook schema from official docs, verified with GitHub issues; MEDIUM for orchestration patterns)
+**Vocabulary check:** Pitfalls below use the project's own names — Brief / Plan / Commit / `/godmode` / `/mission` / `/brief` / `/plan` / `/build` / `/verify` / `/ship`. Reference-plugin terms (phase, story, gsd-sdk, .claude-pipeline cycle, etc.) appear ONLY where they identify the failure mode being described (e.g. "leaking GSD vocabulary"); they are never the recommended path.
+
+Severity scale:
+- **Critical** — silently corrupts user state, breaks the published surface, or violates a hard PROJECT.md constraint
+- **High** — degrades trust, causes data loss for one user, or invalidates the v2 → v1 migration story
+- **Medium** — drift, doc rot, inconsistent UX between install paths
+- **Low** — minor hygiene, cosmetic, or marginal efficiency
+
+Brief mapping uses the v2 build briefs (working names, refined in roadmap):
+- **B-FOUND** — Foundation & Safety Hardening (install/uninstall, version SoT, hook hardening)
+- **B-AGENTS** — Agent Layer Modernization (model aliases, effort, isolation, frontmatter linter)
+- **B-HOOKS** — Hook Layer Expansion (PreToolUse, PostToolUse, dynamic skill list, JSON safety)
+- **B-SKILLS** — Skill Layer Rebuild (the 7-command happy path + 4 helpers)
+- **B-STATE** — `.planning/` Artifact Set & init-context.sh
+- **B-QUAL** — CI, Tests, Doc Parity, prompt-cache rule structure
 
 ---
 
-## Critical Pitfalls
+## Category A — v1.x carry-over (CONCERNS.md High items, must resolve in v2)
 
-### Pitfall 1: Distribution-Mode Divergence (Plugin vs Manual Drift)
+### A1. Silent overwrite of user-customized rules / agents / skills on reinstall
 
-**What goes wrong:**
-Plugin mode and manual mode are maintained in parallel across multiple files (`hooks/hooks.json`, `config/settings.template.json`, the installer's two merge branches). When a new hook event, timeout, or settings key is added, developers update one mode and forget the other. The failure is invisible: plugin-mode users experience correct behavior; manual-mode users get stale config. No test catches this because CI doesn't smoke-test both installation paths.
+**Severity:** Critical
+**Origin:** CONCERNS.md #1, #2 (`install.sh:97-110`, `install.sh:171-200`)
+**What goes wrong:** A user who edits `~/.claude/rules/godmode-coding.md` to add house-style notes loses them on the next `./install.sh`. Backup is created, but no per-file prompt. Manual mode doesn't even do the `diff` count — it blanket `cp -r`s agents and skills.
 
-**Why it happens:**
-The two modes share identical _intent_ but use different _config surfaces_. It feels like one config, so developers treat it as one — and then ship only half. The `timeout: 10` already present in `hooks/hooks.json` but absent from `config/settings.template.json` (CONCERNS #12) is the existing evidence of this drift.
+**Warning signs (early detection):**
+- New code that calls `cp -r` or `cp ... -*.md` over `~/.claude/{rules,agents,skills,commands}/` without a prior `diff -q` loop
+- Backup directory present but no `prompt_overwrite` or `confirm_replace` function in install.sh
+- Manual install path and plugin install path diverging on this check (one prompts, the other doesn't)
 
-**How to avoid:**
-- Treat `hooks/hooks.json` as the canonical hook binding source. At install time for manual mode, generate the `hooks` section of `settings.template.json` from `hooks/hooks.json` via a jq transform — one source of truth, two formats on output.
-- Add a CI step that installs in both modes into temp directories, then diffs the effective settings JSON to assert they agree on hook timeouts, async flags, and event names.
-- Every PR checklist: "Does this change require updating both hook configs?"
+**Prevention strategy (mechanism):**
+1. Single function `install_dir_with_diff <src_dir> <dst_dir>` used by both modes — for each file: `diff -q`; if changed, prompt `[d]iff / [s]kip / [r]eplace / [a]ll-replace / [q]uit`.
+2. Non-interactive default (stdin not a TTY) = **keep customizations**, log skipped files.
+3. Bats round-trip test: install → edit a rule → reinstall non-interactively → assert edit survives.
+4. CI: grep `install.sh` for `cp -r .* ~/\.claude` patterns NOT preceded by the diff function — fail on match.
+
+**Brief:** B-FOUND
+**Reference-plugin temptation:** None — this is pure v1.x carry-over.
+
+---
+
+### A2. JSON injection in hooks via unescaped branch / commit / path interpolation
+
+**Severity:** Critical
+**Origin:** CONCERNS.md #6 (`hooks/session-start.sh:50`, `hooks/post-compact.sh:43-49`)
+**What goes wrong:** Hooks build `additionalContext` by string interpolation inside a heredoc. A branch name like `feat/"quoted"`, a commit message containing a literal newline, or a path with `\` corrupts the JSON. Best case: Claude Code discards the hook output. Worst case: the injected fragment terminates the JSON early and following content is reinterpreted — a user with write access to `git config` or branch names could in principle smuggle text into the assistant's context. (Trust impact, even if exploitability is narrow.)
 
 **Warning signs:**
-- `hooks/hooks.json` and `config/settings.template.json` have different timeout values, event lists, or `async` settings.
-- A new hook event works in plugin mode but silently does nothing for manual-mode users.
-- The installer's plugin-mode and manual-mode branches have different lengths in `install.sh`.
+- Any hook script using `cat <<EOF ... "${VAR}" ... EOF` where `VAR` is git output, a file path, or anything user-controlled
+- `jq -n` not used to construct the final hook JSON
+- Bats / shellcheck not run against hooks under adversarial inputs
 
-**Phase to address:** Phase 1 (version unification and installer hardening) — this must be fixed before any new hooks are added, or every new hook will repeat the pattern.
+**Prevention strategy:**
+1. **Hard rule:** every hook constructs its output object via `jq -n --arg <name> "$VAR" '{...}'`. No string interpolation into JSON, anywhere. Document in `rules/godmode-hooks.md` (new file).
+2. CI grep gate: `grep -nE '"\$\{?[A-Z_][A-Z0-9_]*\}?"' hooks/*.sh | grep -v 'jq ' && exit 1` — flags raw shell-var-in-quoted-context inside hook scripts.
+3. Bats fixture set: branch names containing `"`, `\`, `$`, newline, `'`, ` ` injected via a temp git repo; assert hook output is valid JSON (`jq -e .`).
+4. shellcheck must be clean (catches some but not all of these).
+
+**Brief:** B-HOOKS (with B-QUAL CI gate)
+**Reference-plugin temptation:** Some reference plugins use `printf '%s'`-based JSON construction; we adopt the *micro-pattern* (always-jq-build) but keep our own naming.
 
 ---
 
-### Pitfall 2: Prompt-Cache Invalidation via Dynamic Hook Output
+### A3. Version drift across `plugin.json` / `install.sh` / `commands/godmode.md`
 
-**What goes wrong:**
-Hooks inject context into sessions via `additionalContext`. If that content includes anything that changes between invocations — timestamps, recent commit hashes, branch names with ticket numbers, current context percentage — the injected text changes every session and every time PostCompact fires. This invalidates the prompt cache prefix for all subsequent content. With the cache TTL now approximately 3 minutes in practice (down from the documented 5), even a well-structured session can burn the cache multiple times per hour, multiplying token costs by 5x on long Opus 4.7 sessions.
-
-**Why it happens:**
-The cache hierarchy is `tools → system → messages`. The hook's `additionalContext` is injected into the system layer. A single character change anywhere in the prefix invalidates everything that follows it. Dynamic content (timestamps, git log output) seems harmless because it's informative — but it's poisoning the cache on every compaction cycle.
-
-**How to avoid:**
-- Separate _stable_ context (project type, tech stack, available agents/skills, quality gates) from _dynamic_ context (branch name, recent commits, context%).
-- Inject stable context via rules files (loaded once at session start, cache-stable). Inject dynamic context only in the user-turn layer, not in `additionalContext`.
-- Never include timestamps, cost figures, or context% in hook-injected system content.
-- Verify: if two consecutive PostCompact outputs are identical byte-for-byte for a given project, the cache survives. If they differ, the cache is invalidated.
+**Severity:** High
+**Origin:** CONCERNS.md #10
+**What goes wrong:** Three files claim three different versions today (1.6.0 / 1.4.1 / 1.4.1). Plugin registry advertises one number, installer writes another to `~/.claude/.claude-godmode-version`, statusline / `/godmode` shows a third. Trust killer; release-note correctness collapses.
 
 **Warning signs:**
-- `cache_creation_input_tokens` is high and `cache_read_input_tokens` is near zero in session logs.
-- PostCompact hook output includes `$(date)`, `$(git log --oneline -3)`, or similar.
-- Statusline shows cost spiking after every compaction.
+- More than one file containing a literal version triplet `[0-9]+\.[0-9]+\.[0-9]+`
+- A `VERSION=` assignment in any `*.sh` file
+- Docs that bake a version number into prose
 
-**Phase to address:** Phase 2 (PostCompact and hook hardening). Also: every future phase that adds to hook-injected content must check cache-stability before merging.
+**Prevention strategy:**
+1. **Single source of truth:** `.claude-plugin/plugin.json:.version`. Period.
+2. `install.sh` reads it via `jq -r '.version' .claude-plugin/plugin.json` at runtime — no `VERSION=` constant.
+3. `commands/godmode.md` stops carrying a version number entirely (statusline carries it; README carries it via release-time tooling, not hand-edit).
+4. CI gate (`scripts/check-version-drift.sh`):
+   ```bash
+   canonical=$(jq -r '.version' .claude-plugin/plugin.json)
+   ! grep -rnE 'v?[0-9]+\.[0-9]+\.[0-9]+' install.sh uninstall.sh commands/ rules/ \
+     | grep -v "$canonical" | grep -vE '^\s*#'
+   ```
+5. README + CHANGELOG are checked at release time (not every PR — version bump is a release event).
 
-**Cross-reference:** Partially related to CONCERNS #9 (quality gates duplicated in hook). The fix is the same: make hook output structurally static by reading from stable files at runtime, not by embedding volatile data.
+**Brief:** B-FOUND (mechanism) + B-QUAL (CI gate)
+**Reference-plugin temptation:** None.
 
 ---
 
-### Pitfall 3: TaskOutput/run_in_background Race Conditions and Silent Hangs
+### A4. Hardcoded skill / agent lists in hooks and commands drift from filesystem
 
-**What goes wrong:**
-When `/execute` spawns parallel subagents with `run_in_background: true`, then calls `TaskOutput` with `block: true` to collect results, the session can freeze indefinitely. This happens when: (a) a background agent crashes or times out without updating its status, (b) `TaskOutput` is waiting on a condition that the crashed agent will never satisfy, or (c) output files remain empty even though the agent shows status "completed" (confirmed GitHub issue #21352). In Auto Mode, there is no human to interrupt — the session hangs silently until the overall session timeout.
-
-**Why it happens:**
-Claude Code's background agent runtime currently has no heartbeat or liveness check. A crashed agent stays listed as "running." `TaskOutput` with `block: true` is fundamentally a condition wait on a status flag that a dead agent will never flip.
-
-**How to avoid:**
-- Always pair `TaskOutput` with an explicit `timeout` parameter — never rely on the agent to signal completion.
-- Design parallel agent workflows defensively: each agent writes output to a named temp file; the orchestrator polls those files with a bounded retry loop rather than blocking on TaskOutput.
-- For the `/execute` skill, structure as: launch agents → wait with timeout → collect output files → if any file empty, re-run that story sequentially (fallback path).
-- Document this pattern in the `@executor` agent's description so future authors don't revert to naive blocking.
+**Severity:** High
+**Origin:** CONCERNS.md #8, #9
+**What goes wrong:** `hooks/post-compact.sh:70` lists `/prd, /plan-stories, /execute, /ship, /debug, /tdd, /refactor, /explore-repo` and `@researcher, @reviewer, @architect, @writer, @executor, @security-auditor, @test-writer, @doc-writer`. v2 changes the surface. Anyone who renames a skill in `skills/` and forgets to update `post-compact.sh` ships a hook that lies after every compaction.
 
 **Warning signs:**
-- Session stops producing output and does not error — it just waits.
-- Background agents show "running" in the task panel with no activity in the transcript.
-- Output files for completed agents are 0 bytes.
+- Any list of skill names (`/word, /word, ...`) or agent names (`@word, ...`) in a file other than `skills/*/` and `agents/*` themselves
+- A new agent file added in PR with no diff in `hooks/` or `commands/godmode.md`
 
-**Phase to address:** Phase 3 (agent modernization / parallel execution patterns). This is a new v2 capability area; the v1 pipeline is sequential and doesn't hit this pitfall, but v2 adoption of `run_in_background` will.
+**Prevention strategy:**
+1. `hooks/post-compact.sh` and `commands/godmode.md` rendering script enumerate live filesystem at runtime:
+   ```bash
+   skills=$(find "${CLAUDE_PLUGIN_ROOT:-.}/skills" -name SKILL.md -maxdepth 2 \
+     | xargs -I{} dirname {} | xargs -n1 basename | sort | tr '\n' ' ')
+   ```
+2. `commands/godmode.md` is a markdown file (no shell), so it cannot enumerate. **Resolution:** `commands/godmode.md` does NOT list skills/agents inline; it links to a section that's rendered via a SessionStart additionalContext block, OR it instructs the assistant to "list the contents of `${CLAUDE_PLUGIN_ROOT}/skills/`" rather than naming them.
+3. CI grep: `grep -rE '/(prd|plan-stories|execute|ship|debug|tdd|refactor|explore-repo|mission|brief|plan|build|verify|godmode)\b' hooks/ commands/godmode.md` — any match outside the canonical command file fails CI.
+4. Quality gates list (currently duplicated in `rules/godmode-quality.md` and `hooks/post-compact.sh`) → moved to `config/quality-gates.txt` (one line per gate); both consumers `cat` it.
+
+**Brief:** B-HOOKS (dynamic enumeration) + B-FOUND (quality-gates.txt SoT) + B-QUAL (CI grep)
+**Reference-plugin temptation:** Some references hardcode lists too — we don't follow them here.
 
 ---
 
-### Pitfall 4: Opus 4.7 with Extra High Effort Ignores Rules and Skills
+### A5. Hooks rely on `pwd` instead of stdin's `cwd` field
 
-**What goes wrong:**
-Claude Opus 4.7 with `effort: xhigh` (adaptive thinking) treats `CLAUDE.md`, rules files, and skill instructions as _soft suggestions_ rather than _hard constraints_ during extended reasoning. The model's inner reasoning can override workflow instructions: it skips quality gates, contradicts explicit prohibitions in rules files, and produces code that violates style rules. This was reproduced with Opus 4.6 and adaptive thinking (GitHub issue #23936, closed as "not planned"). With Opus 4.7 as the v2 default for high-leverage agents, every `/execute` run is exposed to this.
-
-**Why it happens:**
-Extended thinking allocates a private reasoning budget that operates before the model produces its final output. During that reasoning, the model can "reason past" rule constraints as if they were guidelines rather than requirements. The constraints are in the system prompt, but the thinking layer is allowed to interrogate and override them.
-
-**How to avoid:**
-- For agents where rule compliance is non-negotiable (executor, security-auditor), set `effort: high` not `effort: xhigh`. Reserve `xhigh` for agents where creative reasoning is valued (architect, writer) and rule-following is less critical.
-- Embed the most critical constraints (quality gate checklist, commit format) in the _task description_ passed to the agent at invocation time, not only in the rules files. This puts them in the user-turn layer, which is less likely to be reasoned past.
-- Add a PostToolUse hook that checks whether the agent's output contains a required marker (e.g., the quality gate checklist) and exits with code 2 to block if missing.
-- Test: run the executor agent on a fixture task that has an explicit rule violation in the naive solution. Verify the rule is respected.
+**Severity:** High
+**Origin:** CONCERNS.md #7
+**What goes wrong:** Both hooks check `package.json`, `Cargo.toml`, `.claude-pipeline/` relative to current directory. If invoked with cwd elsewhere (tested under bats fixture, or future Claude Code change), they silently report nothing.
 
 **Warning signs:**
-- Agent output violates explicit rules (missing typecheck, wrong commit format, no test coverage).
-- The thinking budget is exhausted (`stop_reason: "max_tokens"`) on routine tasks.
-- Rules files are loaded (confirmed by InstructionsLoaded hook) but their effects are absent in output.
+- Hook script body without `cd "$(jq -r '.cwd // "."' <<<"$INPUT")"` near the top
+- Tests that pipe `{}` and assert non-empty output — a fixture that pipes `{"cwd":"/tmp/empty"}` would catch nothing currently
 
-**Phase to address:** Phase 2 (rules hardening and model configuration). Model selection and effort levels must be locked before agents are used in real workflows.
+**Prevention strategy:**
+1. Standard preamble for every hook:
+   ```bash
+   INPUT="$(cat || echo '{}')"
+   PROJECT_ROOT="$(jq -r '.cwd // empty' <<<"$INPUT")"
+   [ -n "$PROJECT_ROOT" ] && [ -d "$PROJECT_ROOT" ] && cd "$PROJECT_ROOT" || true
+   ```
+2. Refactor into `hooks/_lib/preamble.sh` sourced by every hook (clean — one place to fix).
+3. Bats test: feed `{"cwd":"/path/to/fixture"}`; assert output reflects fixture's git/state, not the test runner's cwd.
+
+**Brief:** B-HOOKS
+**Reference-plugin temptation:** None.
 
 ---
 
-### Pitfall 5: Auto Mode / YOLO Mode Bypasses Workflow Gates
+### A6. Stdin-drain failure under `pipefail` aborts hook before useful work
 
-**What goes wrong:**
-In Auto Mode (`--dangerously-skip-permissions` or the Shift+Tab `auto-accept` setting), `/execute`'s quality gates (typecheck, lint, tests, no-secrets, no-regressions, matches-requirements) can be bypassed in two ways: (1) the permission auto-classifier approves shell commands that run quality checks but silently swallows their non-zero exit codes; (2) the agent proceeds to the next story even when a gate fails, because nothing is blocking it. The ship hook that requires gate passage is only effective if the agent actually checks exit codes and stops. Under YOLO mode, a `rm -rf` command was confirmed to delete a home directory (documented December 2025 incident).
+**Severity:** Medium
+**Origin:** CONCERNS.md #18
+**What goes wrong:** `cat > /dev/null` under `set -euo pipefail` aborts if Claude Code closes stdin first.
 
-**Why it happens:**
-Auto Mode was designed to minimize interruptions, not to enforce workflow invariants. Quality gates are enforced by the _skill's instructions_ telling the model to check — not by any mechanical enforcement. When the model reasons past the instruction (see Pitfall 4), or when a tool call returns non-zero and the permission classifier auto-approves continuation, gates are silently skipped.
+**Warning signs:** Any hook with `set -euo pipefail` and `cat > /dev/null` (no `|| true`).
 
-**How to avoid:**
-- Gate checks must be implemented as PreToolUse hooks that mechanically verify state, not as instructions that the model _might_ follow. A hook that exits code 2 when tests fail cannot be bypassed by Auto Mode.
-- For `/ship` specifically: implement a PreToolUse hook on any `gh pr create` call that runs the full quality gate suite and blocks if any gate fails.
-- Document in rules that `/execute` should _not_ proceed to the next story when a gate fails, even in Auto Mode — but add the hook as the backstop.
-- The deny-list in `config/settings.template.json` uses pattern matching, not parsing (CONCERNS security section). Document this limitation in CONTRIBUTING.md so future additions don't over-rely on deny patterns as safety mechanisms.
+**Prevention:** `cat > /dev/null || true` in the preamble (combine with A5 fix).
+
+**Brief:** B-HOOKS
+
+---
+
+### A7. No version-mismatch guard between installed marker and incoming uninstaller
+
+**Severity:** High
+**Origin:** CONCERNS.md #4
+**What goes wrong:** A user with v2.1 installed runs `./uninstall.sh` from a v2.0 checkout — files added in v2.1 are left behind, the user thinks they uninstalled cleanly, weird residue corrupts a future reinstall.
+
+**Prevention:**
+1. `uninstall.sh` reads `~/.claude/.claude-godmode-version`, compares against `jq -r '.version' .claude-plugin/plugin.json`, refuses (with `--force` override) if newer than its own.
+2. `uninstall.sh` enumerates files via the same logic `install.sh` uses (find `rules/godmode-*.md`, `agents/*.md`, etc.) at runtime — no hardcoded file list.
+
+**Brief:** B-FOUND
+
+---
+
+### A8. Settings merge silently drops new top-level keys
+
+**Severity:** High
+**Origin:** CONCERNS.md #3
+**What goes wrong:** The `jq -s '$existing * $template'` merge handles top-level keys, but if anyone adds a new top-level template key, existing-user upgrade paths must propagate it. Easy to forget.
+
+**Prevention:**
+1. Snapshot test: representative `~/.claude/settings.json` fixtures × template → diff against expected merged output. Bats + fixture files in `tests/fixtures/settings/`.
+2. The merge expression itself is documented inline in install.sh with a comment listing every top-level key it explicitly handles — so a new key in the template without an updated comment is a code-review smell.
+
+**Brief:** B-FOUND + B-QUAL
+
+---
+
+## Category B — New principle ("inspiration only") — vocabulary leakage and dependency creep
+
+### B1. Reference-plugin vocabulary leaks into agent prompts, skill bodies, or rule files
+
+**Severity:** Critical
+**Why it matters:** The Core Value asks for ONE workflow with names matching user intent. If `@planner`'s prompt says "produce a plan-phase artifact" or `/build` says "execute the next story", we've recreated the dependency we're escaping. Worse: the user can't tell if `claude-godmode` is its own thing or a GSD wrapper.
 
 **Warning signs:**
-- `/execute` marks a story `passes: true` before tests pass.
-- `gh pr create` runs without all quality gates reporting green.
-- Story-level commits contain failing tests.
+- Strings in `agents/*.md`, `skills/*/SKILL.md`, `rules/godmode-*.md`, `commands/*.md`, or `hooks/*.sh` matching:
+  - `\bphase\b`, `\bstory\b`, `\bstories\b`, `\bcycle\b` (in workflow sense)
+  - `gsd[ -_]?sdk`, `\bgsd\b` (outside attribution comments)
+  - `superpowers`, `everything-claude-code` (outside attribution comments)
+  - `plan-phase`, `discuss-phase`, `verify-work` (GSD command names)
+  - `\.claude-pipeline\b` references in v2 NEW files (the dirname survives in v1.x consumer state but is not a v2 *plugin* concept)
+- Frontmatter `description:` fields containing reference-plugin terms
 
-**Phase to address:** Phase 4 (quality gates mechanization). Phase 1 must include documentation of the issue so earlier phases don't create new gate violations.
+**Prevention:**
+1. CI gate `scripts/check-vocabulary.sh`:
+   ```bash
+   FORBIDDEN='\b(phase|story|stories|cycle|plan-phase|discuss-phase|verify-work)\b|gsd[-_ ]?sdk|\bgsd\b|\bsuperpowers\b|everything-claude-code'
+   ALLOW_FILES='\.planning/codebase/|\.planning/research/|\.planning/PROJECT\.md|CHANGELOG\.md|^docs/attribution\.md'
+   git ls-files | grep -vE "$ALLOW_FILES" \
+     | xargs grep -nIE "$FORBIDDEN" 2>/dev/null \
+     | grep -vE '<!-- attribution:' && exit 1 || exit 0
+   ```
+   Allowed: planning artifacts (this very file uses these terms to *forbid* them), CHANGELOG migration notes, an explicit `docs/attribution.md`. Disallowed: rules, agents, skills, commands, hooks, READMEs.
+2. PR template checkbox: "I checked that no reference-plugin vocabulary leaked into shipped artifacts."
+3. `@spec-reviewer` agent prompt explicitly lists forbidden terms and treats their presence as a review block.
+
+**Brief:** B-QUAL (CI gate) + B-AGENTS (reviewer prompt) + B-SKILLS (writing the new skill bodies)
 
 ---
 
-### Pitfall 6: v1.x Migration Data Loss and Surprise Behavior
+### B2. Adopting reference-plugin directory shape under a different name
 
-**What goes wrong:**
-v1.x users have `.claude-pipeline/` directories with `prds/`, `stories.json`, and `archive/` that represent real in-progress work. A v2 installer that simply creates `.planning/` alongside these (or worse, silently abandons them) leaves users with: (a) orphaned state that no v2 skill knows how to read, (b) no clear signal that migration happened, and (c) existing `/prd`/`/plan-stories`/`/execute`/`/ship` muscle memory that now points at changed skill files.
-
-**Why it happens:**
-v2 requires `.planning/` shape (PROJECT.md, ROADMAP.md, phases/). v1 required `.claude-pipeline/` shape (stories.json). These are fundamentally different schemas. The migration path is not automatic — it requires either a conversion script or an explicit "archive the old shape, start fresh" ritual. The installer currently offers a v1.x migration for `CLAUDE.md → rules/` (CONCERNS #5) but nothing for `.claude-pipeline/ → .planning/`.
-
-**How to avoid:**
-- The v2 installer must detect `.claude-pipeline/stories.json` in any project the user runs from and emit a prominent warning: "Found v1.x pipeline state in this project. Run `/godmode-migrate` to convert it to v2, or keep v1 state alongside v2 (they don't conflict but v2 skills won't read it)."
-- Provide a `/godmode-migrate` skill that: reads `stories.json`, creates `.planning/PROJECT.md` from PRD content, creates `.planning/ROADMAP.md` from story list, archives `.claude-pipeline/` to `.claude-pipeline/_archived-v1/`.
-- Never delete `.claude-pipeline/` automatically — only archive it, never destructively remove it.
-- The v2 skills (`/execute` etc.) must not silently fall back to reading `stories.json` as a compatibility shim — this creates ambiguity about which state is authoritative.
+**Severity:** High
+**What goes wrong:** Renaming `phases/` to `briefs/` is a rename. Renaming `phases/01-foundation/{CONTEXT,SPEC,RESEARCH,PLAN,EXECUTE,VERIFICATION,REVIEW}.md` to `briefs/01-foundation/{BRIEF,SPEC,...}.md` recreates the GSD shape with new labels — same file proliferation, same six-level hierarchy, same fan-out. Core Value demands two artifact files per active brief.
 
 **Warning signs:**
-- Users report "my stories are gone" after upgrading.
-- `.claude-pipeline/` and `.planning/` coexist in a project with no clear owner.
-- `/execute` behavior changes for existing projects without warning.
+- A new file appearing in `.planning/briefs/NN-name/` other than `BRIEF.md` or `PLAN.md`
+- Generators or templates that scaffold more than 2 files per brief
+- Skill prompts that reference a third artifact ("update the EXECUTE.md", "write to RESEARCH.md")
+- `.planning/briefs/NN-name/` directory containing a subdirectory (e.g. `tasks/`, `commits/`) — git log IS the execution log
 
-**Phase to address:** Phase 1 (installer migration) — this is a prerequisite to any user-facing v2 deployment. Must ship before any v2 skills land.
+**Prevention:**
+1. `rules/godmode-planning.md` (new): "A brief directory contains exactly two files: BRIEF.md and PLAN.md. No exceptions. Anything else lives in git history or in commit messages."
+2. CI gate:
+   ```bash
+   for d in .planning/briefs/*/; do
+     extras=$(find "$d" -mindepth 1 -maxdepth 2 ! -name BRIEF.md ! -name PLAN.md)
+     [ -n "$extras" ] && { echo "Forbidden artifact in $d: $extras"; exit 1; }
+   done
+   ```
+3. `@planner` agent prompt: "You write to PLAN.md only. You never create new files in the brief directory."
+4. Templates ship exactly two files; no scaffolding for additional ones.
+
+**Brief:** B-STATE + B-AGENTS + B-QUAL
 
 ---
 
-### Pitfall 7: Hardcoded Skill/Agent Lists Drifting from Filesystem
+### B3. Marketing the plugin as "GSD-compatible" or "Superpowers-compatible"
 
-**What goes wrong:**
-`hooks/post-compact.sh` embeds a literal list of skills and agents. `commands/godmode.md` embeds the same list. `plugin.json` embeds metadata. When a new agent or skill is added to the repo, 2-3 files must be updated manually. In practice, one is always missed. After compaction, users are told about agents that don't exist (if the list was over-eager) or miss agents that do exist (if the list was under-eager). This is already documented as CONCERNS #8.
+**Severity:** High (trust + dependency-direction)
+**What goes wrong:** Compatibility claim creates a dependency that we explicitly chose not to take. If a reference plugin renames a command, "GSD-compatible" becomes a maintenance burden or a lie.
 
-**Why it happens:**
-The list is used in human-readable text output, which makes it tempting to hand-author rather than generate. The lack of CI that validates the list against the actual filesystem means the drift is never caught automatically.
+**Prevention:**
+1. README explicitly states: "Inspired by GSD, Superpowers, and everything-claude-code. Not compatible with, dependent on, or interoperable with them. Use one or the other."
+2. CHANGELOG / release notes reviewed at ship time for compatibility claims; `@spec-reviewer` flags them.
+3. No `claude-godmode-gsd-bridge` style helper. Ever.
 
-**How to avoid:**
-- The PostCompact hook must generate the skills/agents list at runtime by scanning `${CLAUDE_PLUGIN_ROOT}/agents/*.md` and `${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md` (plugin mode), or `~/.claude/agents/*.md` and `~/.claude/skills/*/SKILL.md` (manual mode).
-- `commands/godmode.md` should include a note that the authoritative list is generated at runtime by `/godmode`; the static content in the file should be a template, not a literal list.
-- CI: `diff <(ls agents/*.md | sed 's/.md//') <(grep -oP '(?<=@)\w+' commands/godmode.md)` — fail if they diverge.
+**Brief:** B-QUAL (release-time review checklist)
+
+---
+
+### B4. Vendoring reference-plugin code or templates
+
+**Severity:** Critical (license + Out-of-Scope violation)
+**Origin:** PROJECT.md "Out of Scope": "Vendored copies of GSD, Superpowers, or everything-claude-code — license + maintenance burden; inverts the dependency direction."
+**What goes wrong:** Copy-pasting a useful template from a reference plugin and committing it to this repo creates a license-attribution obligation, drifts from upstream, and inverts the dependency direction.
 
 **Warning signs:**
-- Adding a new agent requires editing more than one file.
-- PostCompact output mentions an agent that doesn't exist in `agents/`.
-- A user reports "I tried `@new-agent` and Claude said it doesn't exist" after it was added.
+- New files in `templates/` or `skills/_shared/` whose first commit message mentions a reference plugin
+- Markdown files starting with attribution comments to reference plugins (other than `docs/attribution.md`)
+- Identical-byte-for-byte fragments matched by `comm` against checked-out reference repos
 
-**Phase to address:** Phase 1 (hook hardening, addresses CONCERNS #8 directly). Must be resolved before any new agents are added in v2.
+**Prevention:**
+1. PR template checkbox: "No content vendored from reference plugins. Specific micro-patterns adopted: <list with attribution>."
+2. `docs/attribution.md` — the ONLY place reference-plugin names appear in shipped content; lists adopted micro-patterns with explicit attribution.
+3. `@spec-reviewer` reviews any new template / shared file for vendored fragments.
+
+**Brief:** B-QUAL + B-AGENTS
 
 ---
 
-### Pitfall 8: Multi-Plugin Namespace Collisions
+## Category C — New workflow surface (Brief → Plan → Build hand-off failures)
 
-**What goes wrong:**
-Claude Code namespaces plugin skills as `<plugin-name>:<skill-name>` — but this behavior is not always optional. GitHub issue #15882 documents that "the namespace prefix is never optional even when you expect it to be." If a user installs claude-godmode, GSD (`/gsd-*` skills), and Superpowers simultaneously: (a) skills with the same underlying name in different plugins may be shadowed without warning; (b) the claude.ai Skills system injects `anthropic-skills:` namespaced versions of any skill that matches cloud skill names, creating a second copy that wastes tokens (GitHub issue #39686); (c) `@` agent names from multiple plugins can collide if two plugins both ship `@executor`.
+### C1. `/plan` runs without a fresh BRIEF.md and silently invents requirements
 
-**Why it happens:**
-Plugin namespacing is applied at the UI display layer but the actual invocation behavior (whether `@executor` refers to godmode's executor or another plugin's) depends on load order and conflict resolution logic that is not well-documented. Users who compose multiple plugins assume additive behavior, but get shadowing.
-
-**How to avoid:**
-- Prefix all public-facing agent names with `gm-` in the agent `name` frontmatter: `gm-executor`, `gm-architect`, etc. This is unglamorous but collision-proof.
-- The one user-facing command `/godmode` should remain unprefixed (it's the discovery entry point); all workflow skills should use a prefix that distinguishes them from GSD's `/gsd-*` and any Superpowers skills.
-- Document explicitly in README: "claude-godmode is not designed to coexist with GSD in the same user profile. If you use GSD, install claude-godmode per-project (`local` scope) to avoid hook and rule conflicts."
-- Add a SessionStart hook that detects competing plugins (by checking for `/gsd-*` skills or Superpowers signatures in `~/.claude/`) and emits a visible warning, not a silent failure.
+**Severity:** Critical
+**What goes wrong:** User runs `/plan 03` but BRIEF.md is empty / missing / stale (last edited two milestones ago). `@planner` proceeds with the empty file, hallucinates a tactical plan, the user runs `/build`, and a week of work later the plan reveals it was solving a misremembered problem.
 
 **Warning signs:**
-- User reports `@executor` doing something unexpected — it's routing to a different plugin's executor.
-- PostCompact reinjects context from two different plugins, doubling the token load.
-- `anthropic-skills:` namespace copies appear in `/skills` alongside godmode's skills.
+- A PLAN.md whose mtime is newer than its corresponding BRIEF.md by > 1 day
+- BRIEF.md with the literal string `<!-- TODO: fill from /brief -->` left in
+- `@planner` invocations with no upstream `/brief` in the same session
 
-**Phase to address:** Phase 1 (naming and plugin.json hardening). Agent name changes are breaking if external users reference them, so they must be decided before v2 ships publicly.
+**Prevention:**
+1. `/plan` command: pre-flight reads `.planning/briefs/NN-*/BRIEF.md`; if absent, missing required sections (Why / What / Spec), or contains TODO sentinels, it refuses with `Run /brief NN first.`
+2. `@planner` agent prompt: "You receive BRIEF.md as input. If it lacks Why / What / Spec, return an error block — do not invent."
+3. BRIEF.md template includes a closing sentinel `<!-- BRIEF-COMPLETE -->`; missing sentinel → `/plan` refuses.
+4. `@spec-reviewer` runs at brief completion (before `/plan` is offered).
+
+**Brief:** B-SKILLS + B-AGENTS + B-STATE
 
 ---
 
-### Pitfall 9: SessionStart Hook Blocking Session Startup
+### C2. `/build` runs without a fresh PLAN.md and skips verification gates
 
-**What goes wrong:**
-`session-start.sh` runs synchronously at session open. Any slow operation inside it — a `git log` on a repo with large history, a network call, a `find` traversal on a deep tree — delays the session start for every user, every time. The hook in `hooks/hooks.json` has a `timeout: 10` (seconds) for plugin mode; manual mode has no timeout (CONCERNS #12), so it defaults to 600 seconds. A hook that hangs for 10+ seconds is nearly indistinguishable from a broken install to a new user. Claude Code released a change in early 2026 to defer SessionStart hooks by ~500ms, which helps with perceived startup time but does not address a genuinely slow hook.
+**Severity:** Critical
+**What goes wrong:** User runs `/build 03` directly (skipping `/plan`). `@executor` finds no PLAN.md, falls back to "interpret BRIEF.md tactically", commits work without the verification status table that `/verify` depends on. `/verify` then has no commit-by-commit acceptance to check against.
 
-**Why it happens:**
-`session-start.sh` tries to be helpful by gathering all project context in one pass — tech stack detection, git branch, recent commits, pipeline state. Each of these is fast individually but they add up, and on slow machines or deep repos they can exceed the timeout.
+**Prevention:**
+1. `/build` pre-flight: `PLAN.md` must exist AND contain a `## Tactical Plan` section AND contain a `## Verification Status` table with rows.
+2. If absent → refuse: `Run /plan NN first.`
+3. `@executor` after each commit appends to `## Verification Status` (commit SHA + which spec line it satisfies).
+4. `/verify` reads `## Verification Status` and cross-checks every BRIEF.md spec line.
 
-**How to avoid:**
-- Set `async: true` on the SessionStart hook binding. This was released in January 2026. Async hooks run in background and do not block session startup. The tradeoff: the hook's `additionalContext` may arrive slightly after the first user prompt. For startup context, this is acceptable.
-- Bound all git operations with `--max-count` and `timeout 3 git ...` wrappers so a slow repo cannot exceed 3 seconds total.
-- Manual-mode settings must explicitly add `"timeout": 10` to match plugin-mode behavior (fixes CONCERNS #12).
-- Measure: add `time ./hooks/session-start.sh < /dev/null` to CI. Fail if it exceeds 2 seconds on a cold repo.
+**Brief:** B-SKILLS + B-AGENTS
+
+---
+
+### C3. Agent context drift across the chain — `@planner` sees brief, `@executor` doesn't see plan rationale
+
+**Severity:** High
+**What goes wrong:** Each subagent spawn starts with a fresh context window. `@planner` reads BRIEF.md and produces PLAN.md with rationale embedded. `@executor` only sees PLAN.md's task list, not the rationale, and "optimizes" by skipping a step that looked redundant — but it was load-bearing.
+
+**Prevention:**
+1. `init-context.sh` (skills/_shared) returns a structured JSON blob that includes BRIEF.md path, PLAN.md path, and current commit slot. Every skill sources it; every agent invocation passes both paths.
+2. PLAN.md format: each task has a `## Why` field beside `## What` — rationale travels with task.
+3. `@executor` prompt: "Read both BRIEF.md and PLAN.md before each commit. Do not skip steps marked load-bearing."
+4. Prompt-cache-aware structure: BRIEF.md and PLAN.md content live in the static preamble portion of agent prompts (per PROJECT.md cache-aware-rule-structure requirement).
+
+**Brief:** B-AGENTS + B-STATE + B-SKILLS
+
+---
+
+### C4. `/verify` produces COVERED for items that were never actually tested
+
+**Severity:** High
+**What goes wrong:** `@verifier` reads BRIEF.md spec lines and PLAN.md verification status; if rows are filled, marks COVERED. But "filled" is just a string match — `@executor` could write `[x] tested` without running tests.
+
+**Prevention:**
+1. `@verifier` is a *read-only* agent (declared `disallowedTools: Write,Edit`) and re-runs the relevant test/check/grep. It does not trust the table — it reproduces.
+2. PLAN.md verification rows include a `Check command` field; `@verifier` runs it and records actual exit code.
+3. `/verify` output template explicitly distinguishes:
+   - **COVERED (independently re-run)** — `@verifier` ran the check, exit 0
+   - **CLAIMED COVERED (not re-runnable)** — manual or visual verification, called out
+   - **PARTIAL** — re-run failed or check command missing
+   - **MISSING** — no verification row exists for the spec line
+
+**Brief:** B-AGENTS (`@verifier`) + B-SKILLS (`/verify`)
+
+---
+
+### C5. `/mission` and `/brief` silently mutate user intent ("auto-prompt-engineering")
+
+**Severity:** Critical (PROJECT.md Out of Scope explicit)
+**Origin:** PROJECT.md Out of Scope: "Auto-prompt-engineering of user requests — silent intent mutation breaks trust; explicit `/brief` Socratic discussion instead."
+**What goes wrong:** `@planner` or `/brief` rewrites the user's stated goal "more concretely" without asking — user wanted X, brief now says Y, plan delivers Y, user sees Y at `/verify` and is annoyed.
+
+**Prevention:**
+1. `/brief` is Socratic — it ASKS questions, doesn't ANSWER them on the user's behalf. Output BRIEF.md must contain a `## User Goal (verbatim)` section quoting the user's literal request.
+2. `@planner` prompt: "Never paraphrase the user goal. Quote the verbatim section from BRIEF.md. If you believe the goal is unclear, surface a question — do not resolve it silently."
+3. `@spec-reviewer` checks BRIEF.md `## User Goal (verbatim)` exists and is non-empty.
+
+**Brief:** B-SKILLS + B-AGENTS
+
+---
+
+## Category D — Claude Code primitives (Auto Mode, effort, prompt cache, hook timeouts, JSON safety)
+
+### D1. Auto Mode bypasses interactive quality gates and ships work the user didn't review
+
+**Severity:** Critical
+**What goes wrong:** Auto Mode tells the assistant to "minimize interruptions" and "prefer action over planning." If `/build` includes an interactive `AskUserQuestion` gate ("commit this?"), Auto Mode answers itself and ships. If the PreToolUse hook prompts on `--no-verify`, Auto Mode might re-issue the command with a workaround.
 
 **Warning signs:**
-- Session startup takes noticeably longer than `/claude` with no plugins.
-- Users report "Claude Code hangs at startup" on large monorepos.
-- The 10-second timeout fires and the hook is silently killed, producing no context injection.
+- A skill that uses `AskUserQuestion` for go/no-go on a destructive op without an Auto-Mode-aware fallback
+- An "Auto Mode Active" system reminder in a session that subsequently runs a destructive op without explicit confirmation logged
+- Hook bypass attempts (e.g. `git -c core.hooksPath=/dev/null commit`)
 
-**Phase to address:** Phase 1 (hook hardening). CONCERNS #12 is the existing ticket; `async: true` is the resolution.
+**Prevention:**
+1. **Every skill detects Auto Mode** by checking for the `Auto Mode Active` system reminder in its prompt, and **routes destructive operations differently**: in Auto Mode, destructive ops (rm -rf, force push, schema migrations, settings.json writes) are *refused* with a clear "explicit user confirmation required, exit Auto Mode" message — per the Auto Mode contract item 5 ("Anything that deletes data or modifies shared or production systems still needs explicit user confirmation").
+2. PreToolUse hook (per FOUND requirements) blocks `Bash(git commit --no-verify*)` and similar bypasses **regardless** of Auto Mode — the hook doesn't ask, it refuses.
+3. `rules/godmode-auto-mode.md` (new): canonical list of operations Auto Mode must NOT do without explicit user confirmation.
+4. Bats test: simulate Auto Mode marker; assert destructive op refuses.
+
+**Brief:** B-HOOKS (PreToolUse) + B-SKILLS (per-skill detection) + a new rule file
 
 ---
 
-### Pitfall 10: Statusline Invoking jq Four Times Per Render
+### D2. `effort: xhigh` on Opus 4.7 silently skips rules in code-writing agents
 
-**What goes wrong:**
-`config/statusline.sh` calls `jq` four separate times to parse four different fields from the session JSON. The statusline script runs on every terminal render cycle — potentially tens of times per minute in an active session. Four process spawns per render adds up. On slow machines or in Docker containers with constrained process limits, this creates visible statusline flicker or lag. CONCERNS #19 notes this is "fine but could be collapsed."
-
-**Why it happens:**
-Each `jq` call was added independently for its field. No one profiled the aggregate cost.
-
-**How to avoid:**
-- Collapse all four `jq` calls into a single invocation that outputs a delimited string: `jq -r '[.model, .cost, .context_pct, .cwd] | @tsv'` then split on tabs in bash. One process spawn per render.
-- If the statusline is triggered by Claude Code's internal render loop (not a shell prompt), verify whether `async` hooks could be used instead, reducing the criticality of per-call latency.
-- Add the single-jq version as a CI fixture: `time bash config/statusline.sh < test/fixtures/session.json`. Document the expected p99 latency.
+**Severity:** High
+**Origin:** PROJECT.md Key Decisions ("Code-writing agents use `effort: high`, not `xhigh`")
+**What goes wrong:** Empirically (per the project's own decision log), `xhigh` on Opus 4.7 has been observed skipping rule application during code generation. Design / audit agents tolerate this trade. Code-writing agents do not.
 
 **Warning signs:**
-- Statusline visibly lags or flickers on older hardware.
-- `ps aux | grep jq` shows multiple concurrent jq processes during an active session.
+- Frontmatter `effort: xhigh` AND any of `tools: ...Write...` / `Edit` / `MultiEdit` in the same file
+- A code-writing agent producing output that violates `rules/godmode-*` invariants
+- A diff that adds `effort: xhigh` to `@executor`, `@test-writer`, `@doc-writer`
 
-**Phase to address:** Phase 5 (performance polish). Low severity; fix after correctness issues are resolved.
+**Prevention:**
+1. Frontmatter linter rule: `if effort == 'xhigh' and tools.includes('Write'|'Edit'|'MultiEdit') → fail`. Pure-bash linter (per PROJECT.md), runs in CI.
+2. `rules/godmode-routing.md` (new): the policy is a rule, not just a frontmatter convention — so reviewers see it.
+3. PR template note: agent effort changes require a one-line rationale in the commit message.
+
+**Brief:** B-AGENTS (linter + routing rule) + B-QUAL (CI invocation)
 
 ---
 
-### Pitfall 11: Adding Skills That Make the Surface Worse
+### D3. Prompt cache invalidation from dynamic content in rule bodies
 
-**What goes wrong:**
-Every new skill added to the public surface (the set of user-invocable `/` commands) increases cognitive load for onboarding users. Skills that are "internally useful" (orchestration steps, sub-workflow helpers) but exposed as slash commands create confusion: users don't know which commands are for them vs. which are internal machinery. The v1.x surface already has 8+ commands; v2 targets ≤ 12. If each phase of v2 adds a skill "for completeness," the limit will be exceeded and the "one obvious workflow" promise breaks.
-
-**Why it happens:**
-Skills are easy to add and feel like features. Internal orchestration steps need names, and slash commands are the natural naming mechanism. There is no gate on "is this command user-facing or internal?"
-
-**How to avoid:**
-- Define a two-tier skill taxonomy in `plugin.json` or a naming convention: `skills/` contains user-facing commands; `agents/` contains internal orchestration. Never expose an agent as a skill just because it's useful.
-- Any new skill must pass a justification test: "Can this be achieved by composing existing skills?" If yes, it's not a new skill — it's documentation.
-- Internal orchestration steps belong as agents, not skills, because agents are invoked by other agents, not by users directly.
-- Run `/godmode` after each phase transition and ask: "Does this list of commands make sense to a new user?" If any command requires knowledge of the internal workflow to understand, it is not user-facing.
+**Severity:** Medium
+**Origin:** PROJECT.md Active requirements ("Prompt-cache-aware rule structure (static preamble first, no dates/branches/dynamic content in rule bodies)")
+**What goes wrong:** Claude Code caches prompts on a 5-minute TTL. If `rules/godmode-*.md` contains today's date, current branch, or anything else that changes per session, every session pays the full cost.
 
 **Warning signs:**
-- `/godmode` output lists commands that a new user would not know when to use.
-- Two skills do similar things with subtle differences (e.g. `/refactor` and `/execute --refactor-mode`).
-- Total user-facing command count exceeds 12.
+- `rules/godmode-*.md` containing date stamps, `pwd`-style paths, branch references, or `<!-- generated YYYY-MM-DD -->`-style markers
+- SessionStart hook injecting a giant preamble *before* rules in the order Claude Code assembles context
 
-**Phase to address:** Must be addressed in EVERY phase. Each new skill addition must pass the ≤ 12 user-commands check before it lands.
+**Prevention:**
+1. Rule structure convention: rules are static markdown. No dates, no branches, no dynamic anything. Dynamic info lives in SessionStart `additionalContext` — separately, in a known position.
+2. CI grep: `rules/godmode-*.md` must not contain `\b\d{4}-\d{2}-\d{2}\b`, `^Branch:`, or `<!-- generated`.
+3. `rules/godmode-cache.md` (or note in existing convention rule): "Rule files are static. Dynamic content goes in SessionStart additionalContext."
 
----
-
-### Pitfall 12: Internal Agents Leaking to User-Facing Surface
-
-**What goes wrong:**
-When plugin mode serves agents from `${CLAUDE_PLUGIN_ROOT}/agents/`, all `.md` files in that directory become visible and potentially invocable by users typing `@<agent-name>`. If orchestration-helper agents (e.g., a hypothetical `@phase-coordinator` or `@migration-runner`) are placed in `agents/`, they appear in the `/agents` UI and users can invoke them directly, bypassing the intended workflow guards. Users who invoke internal agents directly get undefined behavior — the agent's system prompt assumes it was called by an orchestrator with certain context, which won't be present in a direct user invocation.
-
-**Why it happens:**
-There is no Claude Code mechanism to mark an agent as "internal only" — all files in `agents/` are treated equally. The distinction between "user-facing agent" and "internal orchestration agent" is not enforced by the platform.
-
-**How to avoid:**
-- Use a naming convention to signal intent: user-facing agents get clean names (`executor`, `architect`); internal helpers get a `_` prefix or `internal-` prefix (`_phase-coordinator`, `internal-migration-runner`). Document in CONTRIBUTING.md that `_`-prefixed agents are not user-addressable.
-- The `description` frontmatter field should be written to discourage direct invocation of internal agents: "Internal orchestration agent. Invoke via `/execute`, not directly."
-- Audit the `agents/` directory before every release: any new file must be categorized as user-facing or internal and documented accordingly.
-
-**Warning signs:**
-- An agent's system prompt references variables (like `$ORCHESTRATOR_CONTEXT`) that would only be set by another agent.
-- A user reports invoking an agent directly and getting confusing output.
-- The `/agents` UI shows more agents than are listed in `/godmode`.
-
-**Phase to address:** Phase 2 (agent architecture). Naming convention and audit checklist must be established before any internal agents are created.
+**Brief:** B-FOUND (rule structure convention) + B-QUAL (CI grep) + B-HOOKS (SessionStart placement)
 
 ---
 
-### Pitfall 13: Atomic-Commit Discipline Breaking Under Phase Transitions
+### D4. Hook timeouts inconsistent between plugin mode and manual mode
 
-**What goes wrong:**
-The v2 requirement is atomic commits per workflow gate. In practice, multi-step operations (run quality gates → fix issues → commit) create temptation to batch commits: "let me just fix this small thing and bundle it." Once one exception is made, the pattern erodes. The git hooks enforce `--no-verify` is never called per PROJECT.md constraints, but nothing prevents batching multiple logical changes into one commit under a broad message.
+**Severity:** Medium
+**Origin:** CONCERNS.md #12
+**What goes wrong:** `hooks/hooks.json` (plugin) sets `timeout: 10`. `config/settings.template.json` (manual) does not — manual users get the 60s default. A slow `git log` blocks session start six times longer in manual mode.
 
-**Why it happens:**
-Atomic commits require discipline at the _task_ boundary, not the _session_ boundary. When `/execute` runs multiple stories in sequence, the natural rhythm is to commit all of them at the end. The pipeline v1 did exactly this.
+**Prevention:**
+1. Both files set `timeout: 10` for SessionStart and PostCompact, `timeout: 5` for PreToolUse, `timeout: 5` for PostToolUse.
+2. CI gate compares the hook timeouts in both files; mismatch = fail.
+3. Both files generated from a single source (a `config/hooks-canonical.json` consumed at install time) → eliminates the duplication entirely.
 
-**How to avoid:**
-- The `/execute` skill must commit after each individual story, not at the end of all stories. This is a behavioral constraint on the skill's instructions, plus a verification check in the PostToolUse hook on `git commit` calls (verify the commit message format matches story ID).
-- Add a PreToolUse hook for `gh pr create` that verifies the number of commits since `origin/main` equals the number of completed stories — if they differ, block and report.
-- Document: "One story = one commit" as an inviolable rule in `rules/godmode-git.md`.
-
-**Warning signs:**
-- `git log --oneline` shows a commit containing multiple story IDs.
-- `/ship` runs but there are no intermediate story commits.
-- Story commits have generic messages like "fix multiple issues."
-
-**Phase to address:** Phase 3 (execute skill redesign). Must be explicit in the `/execute` skill instructions and verified by a hook.
+**Brief:** B-FOUND + B-QUAL
 
 ---
 
-### Pitfall 14: Requirements Drift Between PROJECT.md and Actual Code
+### D5. Plugin mode and manual mode UX diverge silently
 
-**What goes wrong:**
-The "goal-backward verification" requirement means every phase goal must be traceable to a requirement in PROJECT.md. In practice, PROJECT.md drifts: new requirements are added ad-hoc without IDs, old requirements are satisfied but not marked, and the "Active" section accumulates items without graduation to "Validated." Over time, PROJECT.md becomes an artifact that looks authoritative but isn't actually checked by any verification step.
+**Severity:** Critical (PROJECT.md hard constraint: "Plugin-mode == manual-mode UX")
+**What goes wrong:** A new feature ships in plugin mode (via `hooks/hooks.json`) and forgets the manual-mode binding (`config/settings.template.json`). Plugin users get the new hook; manual users don't. Bug reports from manual users look like plugin-only regressions.
 
-**Why it happens:**
-PROJECT.md updates require human judgment at phase transitions — it's not automated. Under time pressure, the update gets deferred ("we'll mark it validated after the PR merges"). Deferred updates accumulate and the document becomes historical fiction.
+**Prevention:**
+1. Single canonical `config/hooks-canonical.json` listing all hook bindings; both `hooks/hooks.json` and the hooks block of `config/settings.template.json` are *generated* from it at install time (or at PR-CI-time for hooks.json which ships in-repo).
+2. CI gate: round-trip both files through the canonical generator; assert no diff.
+3. Bats parity test: install plugin mode → snapshot `~/.claude/`; uninstall; install manual mode → snapshot `~/.claude/`; diff snapshots; only allowed differences are intentional (e.g. `.claude-plugin/` symlink).
 
-**How to avoid:**
-- Every phase plan must include a `PROJECT.md audit` step as its last task: move satisfied requirements from Active to Validated with the phase reference.
-- Every skill that completes a workflow gate (e.g. `/ship`) must output a checklist that references requirement IDs.
-- The roadmap must map each phase to specific requirement IDs — so at phase-end, a human can mechanically verify that each ID moved to Validated.
-- Use a lint rule (implemented as a pre-commit hook or CI check) that verifies Active requirements have IDs and Validated requirements have phase references.
-
-**Warning signs:**
-- PROJECT.md Active section grows without Validated section growing proportionally.
-- A requirement in Active has been "pending validation" for more than one phase.
-- A phase completes but PROJECT.md is unchanged.
-
-**Phase to address:** Must be addressed in EVERY phase. Phase 1 must establish the requirement ID convention; every subsequent phase uses it.
+**Brief:** B-FOUND + B-QUAL
 
 ---
 
-## Technical Debt Patterns
+### D6. SessionStart hook reads `.planning/STATE.md` but it doesn't exist on consumer projects
 
-| Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Hardcoded agent/skill lists in hooks | Easy to write | Constant drift against filesystem (CONCERNS #8) | Never — generate at runtime |
-| String interpolation for hook JSON | Simple to read | Breaks on any special char in branch/commit (CONCERNS #6) | Never — always use `jq -n --arg` |
-| Parallel installer codepaths for plugin vs manual mode | Flexibility | Two surfaces that diverge over time (CONCERNS #11) | Never — generate one from the other |
-| Static timestamp in `additionalContext` | Informative for users | Invalidates prompt cache every session | Never — put timestamps in statusline only |
-| `effort: xhigh` for all agents | Maximizes reasoning quality | Rules ignored, token budget burned, runaway plans | Only for architect/writer where rule-skipping is tolerable |
-| Exposing internal agents as slash commands | Discoverable | Confuses users, pollutes surface | Never — use naming convention to hide internals |
-| Per-story sequential commits batched at end | Easier to implement | Violates atomic-commit discipline | Never — commit per story |
-| Adding a new skill for each workflow step | Feels complete | Exceeds ≤ 12 command limit, breaks "one obvious workflow" | Only if step cannot be composed from existing skills |
-| Backup accumulation without rotation | Simple to implement | Fills `~/.claude/backups/` over time (CONCERNS #13) | Acceptable for up to 5 backups; cap at 5 |
+**Severity:** Medium
+**What goes wrong:** New v2 SessionStart hook (per FOUND) reads `.planning/STATE.md` for current-brief context. On a fresh consumer project, this file doesn't exist. If the hook errors or emits nothing, fine; if it injects a "no state file" warning into every Claude Code session, it's noise.
+
+**Prevention:**
+1. Hook checks file existence first; absence is a quiet no-op (no `additionalContext`).
+2. Hook differentiates "no `.planning/` directory" (consumer hasn't run `/mission` yet — silent) from "`.planning/` exists but `STATE.md` is malformed" (broken state — surface a one-liner).
+
+**Brief:** B-HOOKS + B-STATE
 
 ---
 
-## Integration Gotchas
+## Category E — Reference-plugin influence (subtle pulls)
 
-| Integration | Common Mistake | Correct Approach |
-|-------------|----------------|------------------|
-| Claude Code prompt cache | Inject volatile data (git log, timestamps) into `additionalContext` | Put volatile data in statusline only; keep `additionalContext` structurally stable across sessions |
-| Claude Code hooks | Use `exit 1` to signal blocking errors | Use `exit 2` — only exit code 2 is treated as a blocking error; exit 1 is non-blocking per the hook spec |
-| Claude Code hooks | Omit `async: true` on SessionStart | Add `async: true` — blocking SessionStart delays every session open |
-| Claude Code plugin namespacing | Expect `/execute` to work without prefix | After other plugins are installed, `/execute` may require `/claude-godmode:execute` — design for this |
-| GSD coexistence | Install both GSD and claude-godmode in user scope | One or the other in user scope; the other in project/local scope — document this explicitly |
-| Opus 4.7 adaptive thinking | Set `effort: xhigh` for compliance-critical agents | Use `effort: high` for agents where rule-following is required; reserve `xhigh` for creative agents |
-| `run_in_background` + TaskOutput | Call `TaskOutput` with `block: true` and no timeout | Always specify a timeout; implement a file-polling fallback for empty output |
-| Settings JSON merge (`jq *`) | Add a new top-level key to template without updating merge expression | Update merge expression first; add snapshot test for merge output (CONCERNS #3) |
-| Plugin mode agent isolation | Set `permissionMode` in agent frontmatter | `permissionMode` is not supported for plugin-shipped agents; use `disallowedTools` instead |
-| Multi-plugin install | Assume `@executor` routes to this plugin | Prefix agent names with `gm-` to guarantee routing |
+### E1. Borrowing GSD's six-level vocabulary "by accident" via copy-pasted prompts
 
----
+**Severity:** High
+**What goes wrong:** When writing `@planner`'s prompt, the temptation is to paraphrase GSD's `@planner` prompt (because it works). A few words leak in: "phase-level breakdown", "story-level tasks". Now our agents speak a hybrid vocabulary.
 
-## Performance Traps
+**Prevention:**
+1. New agent prompts written from scratch, with the workflow vocabulary glossary (BRIEF/PLAN/Commit/etc.) attached as context.
+2. Vocabulary check (B1's CI gate) catches this.
+3. `@spec-reviewer` reads new agent prompts with vocabulary as an explicit checkpoint.
 
-| Trap | Symptoms | Prevention | When It Breaks |
-|------|----------|------------|----------------|
-| Four `jq` calls per statusline render | Statusline flicker, render lag | Collapse into one `jq` call with `@tsv` output | On machines with slow process spawn (Docker, old hardware, CI) |
-| `git log` in SessionStart without `--max-count` | Session startup blocked 5-30s on large repos | Add `--max-count=5` and `timeout 3` wrapper | Any repo with >10k commits |
-| Backup directory accumulation | `~/.claude/backups/` grows unboundedly | Keep last 5, prune on install (CONCERNS #13) | After ~50 installs (measurable at ~2 MB each) |
-| Parallel agents + synchronous TaskOutput | Session freeze, indefinite hang | Timeout + file-polling fallback | Any parallel `/execute` run with >2 agents |
-| PostCompact re-injecting all context including dynamic data | Cache miss after every compaction, 5x token cost spike | Separate static from dynamic context; static → rules, dynamic → statusline only | Every session longer than cache TTL (~3 min) |
-| `effort: xhigh` on routine tasks | Token budget exhausted, `stop_reason: max_tokens`, slow responses | Use `effort: high` for routine; `xhigh` only for design/architecture | Any agent handling O(n) routine stories in `/execute` |
+**Brief:** B-AGENTS
 
 ---
 
-## Security Mistakes
+### E2. Recreating per-task artifact files (TASK.md, EXECUTE.md) "for traceability"
 
-| Mistake | Risk | Prevention |
-|---------|------|------------|
-| Branch names/commit messages interpolated into hook JSON (CONCERNS #6) | Malformed JSON breaks hook contract; crafted branch names could inject into context | Always use `jq -n --arg VAR "$VALUE" '...'` — never string interpolation in JSON construction |
-| Permission deny patterns are substring-matched, not parsed (CONCERNS, security section) | `rm   -rf /` bypasses `Bash(rm -rf /)` deny pattern | Document this limitation; don't rely on deny patterns as the only safety layer — use PreToolUse hooks for structural checks |
-| Rule files world-readable on multi-user systems | Sensitive notes in customized rules are readable by other users on shared hosts | `chmod 600` when copying rule files (CONCERNS, security section) |
-| No version/checksum verification for plugin source | A user who clones a fork of unknown provenance gets no in-repo verification | Publish `SHA256SUMS`; `install.sh` optionally verifies before copying |
-| Ops 4.7 in Auto Mode with no gate hooks | Home directory deletion incident (Dec 2025) — `rm -rf ~/` executed without interruption | PreToolUse hook that pattern-matches dangerous `rm`, `git push --force`, and `DROP TABLE` patterns before they reach permission classifier |
+**Severity:** High (PROJECT.md Out of Scope)
+**Origin:** PROJECT.md Out of Scope: "Per-task artifact files (TASK.md) — git history IS the execution log."
+**What goes wrong:** Someone proposes "but we need to track what each commit does!" → adds `briefs/NN/commits/NN.md` → file proliferation we explicitly chose to avoid.
 
----
+**Prevention:**
+1. `rules/godmode-planning.md`: "Commit messages are the execution log. PLAN.md tracks status (PENDING / DONE / VERIFIED) only. No new files per commit."
+2. CI gate from B2 catches forbidden files in brief directory.
+3. `@spec-reviewer` rejects any PR that adds a per-task artifact concept.
 
-## UX Pitfalls
-
-| Pitfall | User Impact | Better Approach |
-|---------|-------------|-----------------|
-| Adding skills to solve every workflow variation | Users can't find the right command; decision paralysis | Compose with arguments (`/execute --dry-run`) rather than new commands |
-| Internal agent names visible in `/agents` UI | Users invoke internal agents directly and get confusing output | Naming convention (`_` prefix or `internal-` prefix) to signal non-user-facing agents |
-| Version drift across plugin.json / install.sh / godmode.md | Users see different version numbers in different places, lose trust | Single source of truth: `plugin.json` canonical; everything else reads it (CONCERNS #10) |
-| PostCompact reinjects long static boilerplate every compaction | Token waste on content that was already in context before compaction | PostCompact should inject only volatile deltas; stable content belongs in rules loaded at session start |
-| First-run experience requires reading README | New users don't know what to do after install | `/godmode` command should output a 5-line "what to do next" within first invocation |
-| Migration warning buried in output | v1.x users miss the migration prompt and continue with orphaned state | Emit migration warning as a prominent session-start notice with a visual separator |
-| Statusline shows raw cost/context figures without context | Users don't know if cost is high or expected | Add a threshold indicator (e.g., color change when context > 80% or cost > $0.50) |
+**Brief:** B-STATE + B-AGENTS
 
 ---
 
-## "Looks Done But Isn't" Checklist
+### E3. Adding a `/everything` mega-command
 
-- [ ] **Hook JSON safety:** Hooks produce valid JSON on branches named `feat/"quoted"/issue#123` — verify with `jq .` on hook output (CONCERNS #6).
-- [ ] **Mode parity:** Plugin-mode and manual-mode effective settings agree on hook timeouts, async flags, and event list — verify with install diff CI check.
-- [ ] **Agent list currency:** PostCompact output matches filesystem scan of `agents/*.md` — no hardcoded lists remain.
-- [ ] **Quality gates not bypassable in Auto Mode:** A PreToolUse hook blocks `gh pr create` when any gate is red — verify by running `/ship` with a failing test.
-- [ ] **Atomic commits enforced:** `/execute` produces one commit per story — verify with `git log --oneline` after a two-story run.
-- [ ] **Cache stability:** Two consecutive PostCompact outputs for the same project are byte-identical — verify by running PostCompact twice and diffing output.
-- [ ] **Migration path exists:** v1.x user with `.claude-pipeline/stories.json` gets a visible warning and a migration skill — verify by planting a `stories.json` and running the installer.
-- [ ] **Version unified:** `plugin.json`, `install.sh`, and `commands/godmode.md` all report the same version string — verify with grep.
-- [ ] **Command count:** `ls skills/ commands/` shows ≤ 12 user-facing items — verify before each release.
-- [ ] **Statusline single jq:** `strace -e trace=execve bash config/statusline.sh < fixture.json` shows exactly one `jq` invocation — verify after statusline refactor.
+**Severity:** Critical (PROJECT.md Out of Scope)
+**Origin:** PROJECT.md Out of Scope: "A `/everything` mega-command — hides workflow shape; defeats Core Value."
+**What goes wrong:** The convenience pull. "Just run `/everything` and the plugin figures it out." Hides the workflow shape, which IS the value.
 
----
+**Prevention:**
+1. ≤12 slash command cap (PROJECT.md hard constraint) — there's no slot for a mega-command after `/godmode`, `/mission`, `/brief`, `/plan`, `/build`, `/verify`, `/ship`, `/debug`, `/tdd`, `/refactor`, `/explore-repo`. The 12th slot is reserved, not for `/everything`.
+2. `commands/` directory CI count: `find commands -name '*.md' -maxdepth 1 | wc -l` must be ≤ 12.
+3. Documented in CONTRIBUTING.md.
 
-## Recovery Strategies
-
-| Pitfall | Recovery Cost | Recovery Steps |
-|---------|---------------|----------------|
-| Distribution-mode divergence discovered in production | MEDIUM | Audit both config surfaces; generate manual-mode section from hooks.json; ship patch release |
-| Prompt cache invalidation (dynamic content in additionalContext) | LOW | Remove dynamic content from hook; restart session to rebuild cache from stable content |
-| TaskOutput session freeze | HIGH | User must kill session; restart; file bug; move parallel story to sequential fallback |
-| Opus 4.7 ignoring rules | MEDIUM | Drop agent effort level to `high`; rerun task; add explicit constraint to task description |
-| Quality gate skipped in Auto Mode | HIGH | Roll back commit; add PreToolUse hook for the gate; re-run story from failed gate |
-| v1.x migration data loss | HIGH | Restore from installer backup (`~/.claude/backups/godmode-<timestamp>/`); run migration skill manually |
-| Multi-plugin agent collision | MEDIUM | Rename agents with `gm-` prefix; update all skill references; ship minor version bump |
-| Skill count exceeds 12 | MEDIUM | Audit and merge similar skills; move internal steps to agents; document the removed commands as composable |
-| Version drift across three files | LOW | Set all three to `plugin.json` value; ship patch; add CI check |
+**Brief:** B-SKILLS + B-QUAL
 
 ---
 
-## Pitfall-to-Phase Mapping
+## Category F — Hygiene / lifecycle (Medium severity, easy wins)
 
-| Pitfall | Prevention Phase | Verification |
-|---------|------------------|--------------|
-| Distribution-mode divergence (Pitfall 1, CONCERNS #11, #12) | Phase 1 | CI diff of plugin vs manual effective settings |
-| Prompt-cache invalidation via dynamic hooks (Pitfall 2, CONCERNS #9) | Phase 2 | Byte-diff of two consecutive PostCompact outputs |
-| TaskOutput race / run_in_background hangs (Pitfall 3) | Phase 3 | Integration test: 2-agent parallel run, verify no hang |
-| Opus 4.7 xhigh ignores rules (Pitfall 4) | Phase 2 | Fixture task with explicit rule — verify compliance |
-| Auto Mode bypasses quality gates (Pitfall 5) | Phase 4 | Run `/ship` with failing test in Auto Mode — verify block |
-| v1.x migration data loss (Pitfall 6, CONCERNS #5) | Phase 1 | Plant `stories.json`, run installer, verify warning + archive |
-| Hardcoded skill/agent list drift (Pitfall 7, CONCERNS #8) | Phase 1 | Add agent to filesystem, verify PostCompact output updates |
-| Multi-plugin namespace collision (Pitfall 8) | Phase 1 | Install godmode + GSD in same profile, verify no silent overrides |
-| SessionStart blocking startup (Pitfall 9, CONCERNS #12) | Phase 1 | `time bash hooks/session-start.sh < /dev/null` < 2s |
-| Statusline jq overhead (Pitfall 10, CONCERNS note) | Phase 5 | Single jq invocation verified by strace |
-| Surface area bloat from new skills (Pitfall 11) | Every phase | Command count check ≤ 12 before each phase merges |
-| Internal agents leaking to user surface (Pitfall 12) | Phase 2 | Audit `/agents` UI output vs `commands/godmode.md` public list |
-| Atomic-commit discipline (Pitfall 13) | Phase 3 | Git log after two-story execute run |
-| PROJECT.md drift from code (Pitfall 14) | Every phase | Requirement IDs in Active vs Validated sections audited at phase end |
+### F1. Backup directory accumulation in `~/.claude/backups/`
 
-### CONCERNS.md Cross-Reference Resolution Map
+**Severity:** Medium
+**Origin:** CONCERNS.md #13
+**Prevention:** Keep last 5 backups; prune older at install time. `uninstall.sh` already finds latest with `sort -r | head -1` — same pattern fits.
+**Brief:** B-FOUND
 
-| CONCERNS # | Description | Resolving Phase |
-|------------|-------------|-----------------|
-| #1 | Local rule customizations silently overwritten | Phase 1 (installer per-file diff/skip/replace) |
-| #2 | Manual-mode install overwrites agents/skills with no per-file check | Phase 1 (extend CUSTOMIZED count pattern to agents/skills) |
-| #3 | Settings merge can drop keys silently | Phase 1 (snapshot regression test for merge output) |
-| #4 | No version-mismatch detection in uninstall | Phase 1 (uninstall reads installed version, refuses if mismatch) |
-| #5 | v1.x migration removes CLAUDE.md after one keypress | Phase 1 (require literal `yes`; add .claude-pipeline migration) |
-| #6 | Branch names interpolated into hook JSON without escaping | Phase 1 (jq -n --arg pattern throughout) |
-| #7 | Hooks rely on cwd being project root without fallback | Phase 1 (read cwd from stdin JSON, explicit cd) |
-| #8 | Hardcoded skill/agent list in post-compact.sh | Phase 1 (generate from filesystem scan at runtime) |
-| #9 | Quality gates duplicated between rules and post-compact | Phase 2 (PostCompact reads from rules file) |
-| #10 | Plugin metadata version doesn't match installer version | Phase 1 (plugin.json canonical; installer reads from it via jq) |
-| #11 | Manual-mode and plugin-mode hook bindings in two files | Phase 1 (generate manual-mode section from hooks.json) |
-| #12 | hooks.json has timeout:10, settings.template.json does not | Phase 1 (add timeout:10 to manual-mode binding; add async:true) |
-| #13 | Backup accumulation without rotation | Phase 1 (keep last 5, prune on install) |
-| #14 | .claude/worktrees/ not cleaned up | Phase 3 (agent system deletes worktrees on completion; prune recipe in CONTRIBUTING.md) |
-| #15 | .claude-pipeline/archive/ grows forever | Phase 1 (cap + document hygiene) |
-| #16 | .DS_Store files committed | Phase 1 (git rm --cached; CI file check) |
-| #17 | jq prerequisite not prominent in README | Phase 1 (README and plugin manifest top-level note) |
-| #18 | set -euo pipefail + stdin consume race | Phase 1 (`cat > /dev/null || true` pattern) |
-| #19 | statusline.sh swallows errors silently | Phase 5 (optional debug log to /tmp/godmode-statusline.log) |
-| #20 | No automated test coverage | Phase 1 (shellcheck CI), Phase 2 (JSON schema validation), Phase 3 (smoke test round-trip) |
-| #21 | README and CHANGELOG drift | Phase 1 (version audit); every phase (documentation parity check) |
+### F2. `.claude/worktrees/` accumulation, no documented cleanup
+
+**Severity:** Low
+**Origin:** CONCERNS.md #14
+**Prevention:** CONTRIBUTING.md hygiene section with `git worktree prune` recipe; agent system deletes its worktree on completion (where supported).
+**Brief:** B-QUAL (docs) + B-AGENTS (cleanup-on-completion)
+
+### F3. README / CHANGELOG / `/godmode` drift on public-surface claims
+
+**Severity:** Medium
+**Origin:** CONCERNS.md #21
+**Prevention:** Release-time CI gate: README skill list, CHANGELOG, and `commands/godmode.md` enumerated content all match `find skills -name SKILL.md` and `find agents -name '*.md'`. PR template checkbox at version-bump time.
+**Brief:** B-QUAL
+
+### F4. `.DS_Store` files committed in subdirs
+
+**Severity:** Low
+**Origin:** CONCERNS.md #16
+**Prevention:** One-time `find . -name .DS_Store -exec git rm --cached {} \;`; `.gitignore` already covers it.
+**Brief:** B-FOUND (one-time) — trivial
+
+### F5. No automated tests at all
+
+**Severity:** High (catches everything else above)
+**Origin:** CONCERNS.md #20, TESTING.md
+**Prevention:** B-QUAL is the brief — bats round-trip + shellcheck CI + JSON schema validation + frontmatter linter + vocabulary CI gate.
+**Brief:** B-QUAL
+
+---
+
+## Phase-specific warning matrix
+
+| Brief | Top pitfalls to watch | Severity |
+|-------|----------------------|----------|
+| **B-FOUND** (Foundation) | A1 silent overwrite, A3 version drift, A7 uninstall version mismatch, A8 settings merge, D5 plugin/manual parity, F1 backup rotation | Critical / High |
+| **B-AGENTS** (Agent layer) | D2 effort xhigh, B1 vocabulary leakage, C3 context drift, C4 verifier trust, E1 borrowed prompts | Critical / High |
+| **B-HOOKS** (Hook layer) | A2 JSON injection, A4 hardcoded skill list, A5 cwd reliance, A6 stdin drain, D1 Auto Mode, D4 timeout parity, D6 missing STATE.md | Critical / High |
+| **B-SKILLS** (Skills) | C1 plan-without-brief, C2 build-without-plan, C5 silent intent mutation, D1 Auto Mode, E3 /everything, B1 vocabulary | Critical |
+| **B-STATE** (.planning/) | B2 file proliferation, C1/C2 hand-off gates, E2 per-task files, D6 STATE.md absence | Critical / High |
+| **B-QUAL** (CI / docs) | F5 no tests = catches everything, B1 vocabulary CI, A3 version drift CI, F3 doc drift, A2 hook fuzz tests | High |
 
 ---
 
 ## Sources
 
-- Claude Code Hooks Reference (official): https://code.claude.com/docs/en/hooks
-- Claude Code Plugins Reference (official): https://code.claude.com/docs/en/plugins-reference
-- Prompt cache TTL silently dropped: https://dev.to/whoffagents/claudes-prompt-cache-ttl-silently-dropped-from-1-hour-to-5-minutes-heres-what-to-do-13co
-- Plugin state changes cause full cache rewrite (GitHub issue #27048): https://github.com/anthropics/claude-code/issues/27048
-- TaskOutput hangs after background agent completes (GitHub issue #20236): https://github.com/anthropics/claude-code/issues/20236
-- Session freeze with multiple background agents + blocking TaskOutput (GitHub issue #17540): https://github.com/anthropics/claude-code/issues/17540
-- Background agent output files remain empty (GitHub issue #17147): https://github.com/anthropics/claude-code/issues/17147
-- Default high effort causes Opus 4.6 to ignore skills and CLAUDE.md (GitHub issue #23936, closed not-planned): https://github.com/anthropics/claude-code/issues/23936
-- Plugin commands always namespaced, namespace never optional (GitHub issue #15882): https://github.com/anthropics/claude-code/issues/15882
-- claude.ai skills silently injected into Claude Code context (GitHub issue #39686): https://github.com/anthropics/claude-code/issues/39686
-- SessionStart hook doesn't execute on first run with GitHub marketplace plugins (GitHub issue #10997): https://github.com/anthropics/claude-code/issues/10997
-- Multi-agent orchestration context window drift patterns: https://addyosmani.com/blog/code-agent-orchestra/
-- Prompt caching in Claude Code — dynamic content anti-patterns: https://www.claudecodecamp.com/p/how-prompt-caching-actually-works-in-claude-code
-- Opus 4.7 best practices for Claude Code (official blog): https://claude.com/blog/best-practices-for-using-claude-opus-4-7-with-claude-code
-- Effort levels and token budget: https://platform.claude.com/docs/en/build-with-claude/effort
-- YOLO Mode and Auto Mode security analysis (March 2026): https://gist.github.com/hartphoenix/698eb8ef8b08ad2ce6a99cf7346cd7cc
-- .planning/codebase/CONCERNS.md (v1.x codebase analysis): local file
+- `.planning/PROJECT.md` (Key Decisions, Out of Scope, Constraints) — confidence HIGH
+- `.planning/codebase/CONCERNS.md` (items 1-21) — confidence HIGH (project's own analysis 2026-04-25)
+- `.planning/codebase/TESTING.md` — confidence HIGH
+- `.planning/codebase/CONVENTIONS.md` — confidence HIGH
+- Claude Code primitives (Auto Mode contract, effort levels, prompt cache TTL, hook events) — confidence HIGH (current Anthropic primitives, knowledge cutoff Apr 2026 + system reminders)
+- Reference-plugin pitfalls (vocabulary leakage, vendoring temptation, mega-command pull) — confidence MEDIUM (drawn from the v1 → v2 re-init decision rationale in PROJECT.md "This is a re-init")
 
----
-*Pitfalls research for: claude-godmode v2 — multi-agent workflow orchestrator for Claude Code*
-*Researched: 2026-04-25*
+*Last updated: 2026-04-25*

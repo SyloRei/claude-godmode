@@ -1,456 +1,348 @@
 # Stack Research — claude-godmode v2
 
-**Domain:** Claude Code plugin (Bash + Markdown + JSON, no compiled artifacts)
-**Researched:** 2026-04-25
-**Confidence:** HIGH (all Claude Code surface verified against live docs; tooling versions verified against GitHub releases)
+**Domain:** Claude Code plugin (Bash + Markdown + JSON, no compiled artifacts).
+**Milestone:** v2 — polish mature version (brownfield maturation of shipped v1.x).
+**Researched:** 2026-04-26.
+**Overall confidence:** HIGH for the Claude Code authoring surface (verified against live `code.claude.com` docs); HIGH for dev-time tool versions (GitHub releases verified); MEDIUM only where noted.
+
+This file is the prescriptive stack reference for the v2 roadmap. v1.x baseline is in `.planning/codebase/STACK.md` — that's the factual snapshot; this file says **what changes**.
 
 ---
 
-## Summary: What Changes vs v1.x
+## Summary: What v2 Adds vs v1.x
 
-v1.x stack is a valid baseline. v2 adds nothing at runtime (jq remains the only mandatory dep). Changes fall into four buckets:
+v1.x is a valid baseline. v2 adds **nothing at runtime** — `jq` remains the only mandatory dependency. Changes fall into four buckets:
 
-1. **Agent frontmatter fields** — new fields available: `effort`, `memory`, `background`, `isolation: worktree`, `color`, `maxTurns`, `skills`. Use them in every agent `.md` file.
-2. **Hook events** — 21 hook events now exist (v1.x used only `SessionStart`, `PostCompact`). Six new events are immediately useful: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `PreCompact`, `SubagentStart`, `SubagentStop`.
-3. **Model lineup** — `opus` alias now resolves to Opus 4.7; `sonnet` to Sonnet 4.6; `haiku` to Haiku 4.5. New effort level `xhigh` exists only on Opus 4.7 and is the current default.
-4. **Dev-time tooling** — shellcheck (v0.11.0), bats-core (v1.13.0), jsonschema CLI (v14.16.2), and a pure-Bash frontmatter linter are added as dev-time-only CI tools with no effect on runtime.
-
-No new mandatory runtime dependencies. `gsd-sdk` is the GSD SDK and is already present on this machine — it is a dev tool for the GSD workflows that orchestrate godmode's development, not a runtime dep of godmode itself.
+1. **Authoring surface uplift.** Adopt the post-2025 plugin manifest fields (`userConfig`, `${CLAUDE_PLUGIN_DATA}`, `bin/`), the modern agent frontmatter (`effort`, `memory`, `isolation`, `maxTurns`, `background`, `color`), and the four new hook events that close v1.x's gaps (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionEnd`).
+2. **Model-alias discipline.** Every agent frontmatter declares `model: opus|sonnet|haiku` (never pinned IDs) and explicit `effort:`. Code-touching agents use `effort: high` (`xhigh` on Opus 4.7 is documented to skip rules — locked into `rules/godmode-routing.md`, not just frontmatter).
+3. **Dev-time CI guardrails.** Add `shellcheck` (v0.11.0), `bats-core` (v1.13.0), inline JSON Schema validation in `jq` (no Node), a pure-Bash frontmatter linter, and a GitHub Actions matrix (`macos-latest` + `ubuntu-latest`). All dev-time only — zero runtime impact, zero new mandatory deps.
+4. **Single source of truth for the public surface.** `.claude-plugin/plugin.json` is the canonical version. `install.sh` reads it via `jq`. Skills/agents are enumerated by scanning the filesystem at hook execution time, not from hardcoded lists.
 
 ---
 
 ## Recommended Stack
 
-### Core Technologies (unchanged from v1.x, documented here for completeness)
-
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|-----------------|
-| Bash | 3.2+ | Hooks, installer, statusline | Ships on every macOS/Linux; no install required. 3.2 compat keeps macOS default shell happy. |
-| jq | 1.6+ | JSON parsing in all shell scripts | Only mandatory runtime dep; already required. Use `--arg` / `--argjson` for safe interpolation (never string concat). |
-| Markdown + YAML frontmatter | — | Agent, skill, command, rule definitions | Claude Code's native format; no build step. |
-| JSON | — | Hook config, plugin manifest, settings merge | Claude Code protocol format for all IO. |
-
-### Claude Code Plugin Authoring Surface (v2 additions)
-
-#### Agent Frontmatter — Full Field Set
-
-All fields verified against `https://code.claude.com/docs/en/sub-agents` (2026-04-25).
-
-| Field | Valid Values | v1.x Used? | v2 Action |
-|-------|-------------|-----------|-----------|
-| `name` | kebab-case string | Yes | Keep |
-| `description` | string (triggers auto-delegation) | Yes | Rewrite — must be delegation-quality |
-| `model` | `opus`, `sonnet`, `haiku`, `opus[1m]`, `sonnet[1m]`, full model ID, or `inherit` | Yes | Update to use aliases, add `xhigh` effort |
-| `effort` | `low`, `medium`, `high`, `xhigh` (Opus 4.7 only), `max` | No | Add to every agent |
-| `maxTurns` | integer | Partial | Add explicit limits to all agents |
-| `tools` | array of tool names | Yes | Audit allowlists against current tool names |
-| `disallowedTools` | array of tool names | Yes | Prefer this over `tools` for minimal-surface agents |
-| `skills` | array of skill names | No | Add to agents that should invoke specific skills |
-| `memory` | `"user"` or `"project"` (v2.1.33+) | No | Add to `@researcher` and `@executor` — persistent learnings |
-| `background` | boolean | No | Use for long-running agents that can suspend |
-| `isolation` | `"worktree"` (only valid value for plugins) | No | Add to `@executor` — isolated worktree per story |
-| `color` | hex or color name | No | Add for UI identification (nice-to-have) |
-
-**Plugin restriction:** Plugin agents cannot declare `hooks`, `mcpServers`, or `permissionMode` (security constraint). These remain user-scope only.
-
-#### Hook Events — Full Surface (21 events as of 2026-04-25)
-
-Verified against `https://code.claude.com/docs/en/hooks`. Previously v1.x used only `SessionStart` and `PostCompact`.
-
-**Events v2 should adopt:**
-
-| Event | When | Key Input Fields | Key Output | v2 Use Case |
-|-------|------|-----------------|------------|-------------|
-| `SessionStart` | Session begins/resumes | `source`, `model`, `agent_type` | `additionalContext` | Keep — already in v1.x |
-| `PostCompact` | After compaction | (compaction context) | none | Keep — already in v1.x |
-| `PreToolUse` | Before any tool call | `tool_name`, `tool_input` | `permissionDecision`, `updatedInput`, `additionalContext` | NEW: block dangerous Bash patterns (unescaped shell meta in JSON), enforce no `--no-verify` commit rule |
-| `PostToolUse` | After tool call succeeds | `tool_name`, `tool_input`, `tool_response` | `decision`, `additionalContext` | NEW: detect failed quality gates, inject corrective context |
-| `UserPromptSubmit` | User submits prompt | `prompt` | `decision`, `additionalContext`, `sessionTitle` | NEW: auto-set session title from project name |
-| `PreCompact` | Before compaction | `reason` | `decision` | NEW: optionally block auto-compact during critical phase execution |
-| `SubagentStart` | Subagent spawned | `subagent_type`, `subagent_id` | none | NEW: log/track agent invocations |
-| `SubagentStop` | Subagent finishes | `subagent_type`, `subagent_id` | `decision` | NEW: detect stuck/looping agents |
-| `ConfigChange` | Config file changes during session | `config_source`, `changed_keys` | `decision` | NEW: warn user if godmode rules are hot-reloaded mid-session |
-| `InstructionsLoaded` | rules/*.md file loaded | `file_path`, `memory_type` | none | NEW: debug aid — log which rule files Claude actually loaded |
-
-**Events to skip in v2** (out of scope or not useful for this plugin type):
-- `WorktreeCreate` / `WorktreeRemove` — only needed if plugin manages worktree lifecycle (executor agents use `isolation: worktree` instead)
-- `Elicitation` / `ElicitationResult` — only relevant for MCP servers (out of scope per PROJECT.md)
-- `TeammateIdle` / `TaskCreated` / `TaskCompleted` — agent teams feature (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`); not stable
-- `FileChanged` — no watched files needed in godmode's architecture
-- `CwdChanged` — hook scripts already read `cwd` from stdin
-- `StopFailure` — output and exit code ignored; not actionable
-- `SessionEnd` — no cleanup needed in this plugin
-
-**Deprecated output format:** `decision: "approve"|"block"` on `PreToolUse` is deprecated. Use `hookSpecificOutput.permissionDecision: "allow"|"deny"|"ask"|"defer"` instead.
-
-#### Hook Types Available (v2 additions)
-
-v1.x used only `command` type. New types:
-
-| Type | Use Case | v2 Adopt? |
-|------|----------|-----------|
-| `command` | Shell script execution | Keep — primary type |
-| `http` | POST event JSON to a URL | No — no server, no telemetry |
-| `mcp_tool` | Call an MCP tool | Maybe — for future MCP integrations, not v2 baseline |
-| `prompt` | Evaluate a prompt with an LLM | No — adds latency/cost to every hook event |
-| `agent` | Run an agentic verifier | No — heavyweight; use for complex verification only, not in base hooks |
-
-#### Plugin Manifest (`.claude-plugin/plugin.json`) — v2 Additions
-
-| Field | v1.x | v2 Action |
-|-------|------|-----------|
-| `name` | Yes | Keep |
-| `version` | Yes (drifted: 1.6.0 vs 1.4.1) | Fix — make single source of truth |
-| `description`, `author`, `license`, `keywords` | Yes | Keep |
-| `skills`, `commands`, `agents`, `hooks` | Yes | Keep |
-| `monitors` | No | Consider — for statusline alternatives; requires Claude Code v2.1.105+ |
-| `userConfig` | No | Add — let users set model profile preference at install time |
-| `bin/` directory | No | Consider — expose `gsd-sdk`-equivalent helpers as bare commands |
-| `${CLAUDE_PLUGIN_DATA}` | No | Add to hooks that need persistent state (e.g., backup rotation tracking) |
-| `dependencies` | No | Skip — no plugin deps needed yet |
-| `channels` | No | Skip — out of scope |
-
-#### Skill Frontmatter — Full Field Set (verified against current docs)
-
-| Field | Notes |
-|-------|-------|
-| `name` | Required, kebab-case, max 64 chars |
-| `description` | Required, max 1024 chars — determines auto-delegation |
-| `allowed-tools` | Optional array — restrict tools for this skill's context |
-| `metadata` | Optional object — arbitrary key/value for future use |
-| `argument-hint` | Optional — shown in `/` picker |
-| `shell` | Optional — `"powershell"` for Windows skills (skip in godmode) |
-
-### Model Lineup (v2)
-
-Verified against `https://code.claude.com/docs/en/model-config` (2026-04-25).
+### Runtime (unchanged — listed for completeness)
 
-**Model aliases (use these in frontmatter, not pinned IDs):**
+| Technology | Version | Purpose | Notes |
+|---|---|---|---|
+| Bash | 3.2+ | hooks, installer, statusline, `init-context` helper | macOS default. No 4.x-only constructs (`mapfile`, associative arrays in some forms, `${var,,}`). |
+| jq | 1.6+ | every JSON read/write/merge | Only mandatory runtime tool. **All** generated JSON uses `jq -n --arg`/`--argjson` (never string interpolation). |
+| Markdown + YAML frontmatter | — | rules, agents, skills, commands | Native Claude Code format. No build step. |
+| JSON | — | `plugin.json`, `hooks.json`, `settings.template.json`, hook stdin/stdout | Claude Code's IO contract. |
 
-| Alias | Resolves to (Anthropic API) | Effort Levels | v2 Tier |
-|-------|---------------------------|---------------|---------|
-| `opus` | claude-opus-4-7 | low, medium, high, xhigh, max | High-leverage agents |
-| `sonnet` | claude-sonnet-4-6 | low, medium, high, max | Mid-tier agents |
-| `haiku` | claude-haiku-4-5 | (inherits session effort) | Utility agents |
-| `opusplan` | opus during plan mode, sonnet during execution | — | Skills that span planning+execution |
+**Confidence:** HIGH. Same as v1.x. **Constraint enforced:** no Node, no Python, no Ruby, no compiled binary in the runtime path.
 
-**Use aliases not pinned IDs** — aliases update automatically when Anthropic releases new models. Pin only when third-party provider requires it (Bedrock/Vertex/Foundry). For this plugin, aliases are correct.
-
-**Default effort as of v2.1.117:** `xhigh` on Opus 4.7, `high` on Opus 4.6 and Sonnet 4.6.
-
-**Effort in agent frontmatter:** Set `effort: xhigh` explicitly for architecture/design agents on Opus. Set `effort: high` for sonnet agents. Let haiku agents inherit session default (no explicit effort field needed).
-
-**Effort recommendation by agent:**
-
-| Agent | Model | Effort | Rationale |
-|-------|-------|--------|-----------|
-| `@architect` | `opus` | `xhigh` | Highest-leverage decisions; reasoning quality matters most |
-| `@executor` | `opus` | `high` | Follows explicit plan — `xhigh` wastes tokens |
-| `@security-auditor` | `opus` | `xhigh` | Threat analysis benefits from maximum reasoning depth |
-| `@writer` | `opus` | `high` | Prose quality over depth of reasoning |
-| `@reviewer` | `sonnet` | `high` | Review is pattern-matching, not deep architecture |
-| `@test-writer` | `sonnet` | `high` | Follows test patterns; medium would suffice |
-| `@doc-writer` | `sonnet` | `medium` | High volume, lower complexity |
-| `@researcher` | `sonnet` | `high` | Research benefits from reasoning; haiku is too shallow |
-
-#### Claude Code Tool Primitives — v2 Adoption
-
-Verified against `https://code.claude.com/docs/en/tools-reference` (2026-04-25).
-
-**Adopt in v2 skill instructions:**
-
-| Tool | Status | v2 Role |
-|------|--------|---------|
-| `TaskCreate` | Stable | Replace `.claude-pipeline/stories.json` task tracking for in-session multi-task workflows |
-| `TaskList` | Stable | Expose in `/godmode` quick reference as session progress view |
-| `TaskUpdate` | Stable | Mark stories done in `/execute` skill |
-| `TaskGet` | Stable | Retrieve full task detail for sub-agent handoff |
-| `Agent` | Stable | Primary mechanism for spawning named agents |
-| `AskUserQuestion` | Stable | Gate user approvals in `/execute` (replaces ad-hoc markdown prompts) |
-| `EnterPlanMode` | Stable | Use at start of `/plan-stories` / `.planning` phase skills |
-| `ExitPlanMode` | Stable (requires permission) | Exit after presenting plan for user approval |
-| `CronCreate` | Stable | Schedule reminders for long-running phases (e.g., "check back in 10 min") |
-| `Monitor` | Stable (v2.1.98+) | Watch CI output or log files during `/execute` — report failures without polling |
-| `EnterWorktree` | Stable (main session only, not in subagents) | Use in `/execute` for isolated story execution |
-
-**Do NOT reference in v2:**
-
-| Tool | Reason |
-|------|--------|
-| `TaskOutput` | Deprecated — use `Read` on task output file |
-| `TodoWrite` | Non-interactive / SDK mode only — not available in interactive sessions |
-| `ScheduleWakeup` | Removed — use `CronCreate` instead |
-| `TeamCreate` / `SendMessage` | Experimental (`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`) — not stable |
-| `PowerShell` | Windows only / opt-in — out of scope for godmode (WSL2 path) |
-
-### Prompt Caching — Plugin-Author Guidance
-
-Verified against `https://code.claude.com/docs/en/model-config#prompt-caching-configuration` and community sources.
-
-Claude Code handles prompt caching automatically. Plugin authors cannot control cache placement directly, but can maximize cache hit rates by:
-
-1. **Rule files (`rules/godmode-*.md`):** Keep them stable between sessions. Avoid injecting dynamic content (timestamps, branch names, git status) into rule files — that content belongs in `SessionStart` hook output (`additionalContext`), not in the rules themselves.
-2. **Agent system prompts:** The markdown body of each `agents/*.md` file is the system prompt. Keep it static. Dynamic context (project name, phase, task) goes into the `Task()` prompt argument, not the system prompt.
-3. **Session-start `additionalContext`:** This is already correct in v1.x — dynamic context injected via hook output reaches the model's message layer, not the system prompt layer, preserving cache hits.
-4. **Context window:** Sonnet 4.6 and Opus 4.7 support 1M context window (automatically activated on Max/Team/Enterprise). Plugin rules are small enough that this never becomes a constraint.
-5. **Effort and caching:** Higher effort levels consume more tokens per turn but do not affect prompt cache TTL (5 min Pro/API, 1 hr Max/Team).
-
-### GSD Plugin (`gsd-sdk`) — Stack Summary
-
-The GSD plugin installed at `~/.claude/get-shit-done/` (version 1.38.3) provides the workflow orchestration layer for claude-godmode's own development. Understanding its stack clarifies what v2 should interoperate with vs. what it replaces.
-
-**GSD directory shape (actual, inspected locally):**
-
-```
-~/.claude/get-shit-done/
-├── workflows/          # ~70 slash commands (implemented as GSD-format markdown, not SKILL.md)
-├── bin/
-│   └── gsd-tools.cjs   # The SDK implementation
-│   └── lib/            # 25 CJS modules (roadmap.cjs, phase.cjs, state.cjs, milestone.cjs, etc.)
-├── contexts/           # Per-role agent context fragments (dev.md, research.md, review.md)
-├── references/         # ~50 reference docs (model-profiles.md, planning-config.md, agent-contracts.md, etc.)
-└── templates/          # Project scaffolding templates (including research STACK.md template)
-```
-
-**GSD skills (installed separately at `~/.claude/skills/`):**
-GSD installs ~40+ skills into `~/.claude/skills/` including `gsd-plan-phase`, `gsd-execute-phase`, `gsd-new-project`, `gsd-discuss-phase`, `gsd-research-phase`, `gsd-autonomous`, `gsd-review`, `gsd-undo`, `gsd-ship`, and many more.
-
-**gsd-sdk CLI (available as npm global: `gsd-sdk`):**
-
-| Command | Purpose |
-|---------|---------|
-| `gsd-sdk run <prompt>` | Run a full milestone from text |
-| `gsd-sdk auto` | Full autonomous lifecycle |
-| `gsd-sdk init [input]` | Bootstrap project from PRD |
-| `gsd-sdk query <handler>` | Query registered handlers (roadmap state, phase info, agent skills, etc.) |
-
-Key query handlers: `init.phase-op`, `init.plan-phase`, `roadmap.get-phase`, `agent-skills <name>`, `config-get <key>`, `commit <message>`.
-
-**GSD subagent types (exact names that skills spawn):**
-
-| Agent Name | Role |
-|-----------|------|
-| `gsd-planner` | Creates PLAN.md files |
-| `gsd-executor` | Executes plans |
-| `gsd-phase-researcher` | Phase-scoped research |
-| `gsd-project-researcher` | Project-wide research |
-| `gsd-research-synthesizer` | Synthesizes parallel research |
-| `gsd-roadmapper` | Creates/revises ROADMAP.md |
-| `gsd-plan-checker` | Validates plan quality |
-| `gsd-verifier` | Post-execution verification |
-| `gsd-codebase-mapper` | Codebase analysis |
-| `gsd-debugger` | Debug investigation |
-| `gsd-security-auditor` | Security audit |
-
-**GSD model profiles (defined in `references/model-profiles.md`):**
-
-| Profile | When to use |
-|---------|------------|
-| `quality` | Opus everywhere; quota-unlimited situations |
-| `balanced` | Default; Opus for planning, Sonnet for execution |
-| `adaptive` | Role-based: Opus for plan+debug, Sonnet for exec, Haiku for audit |
-| `budget` | Minimal Opus; Sonnet for code, Haiku for research |
-| `inherit` | Non-Anthropic runtimes; follows session model |
-
-**GSD `.planning/` directory shape created for consumer projects:**
-
-```
-.planning/
-├── PROJECT.md          # Project definition, requirements, key decisions
-├── REQUIREMENTS.md     # Numbered requirements (REQ-NNN)
-├── ROADMAP.md          # Phase list with descriptions, goals, dependencies
-├── STATE.md            # Running decisions log
-├── codebase/           # STACK.md, ARCHITECTURE.md, STRUCTURE.md, CONCERNS.md, CONVENTIONS.md, INTEGRATIONS.md, TESTING.md
-├── research/           # Per-phase or project-wide research files
-└── phases/
-    └── 01-<slug>/
-        ├── CONTEXT.md      # Phase decisions from /gsd-discuss-phase
-        ├── RESEARCH.md     # Phase research
-        ├── PLAN.md         # Executor prompt
-        └── SUMMARY.md      # Post-execution summary
-```
-
-**What claude-godmode v2 should adopt from GSD (ideas, not code):**
-- `.planning/` directory shape and artifact set (replace `.claude-pipeline/`)
-- Phase lifecycle: discuss → spec → plan → execute → verify → secure → ship
-- Completion marker convention (`## RESEARCH COMPLETE`, `## PLAN COMPLETE`, etc.) for agent handoff detection
-- Model profile concept — expose as `/godmode set-profile quality|balanced|budget`
-- Atomic-commit discipline per workflow gate
-
-**What NOT to adopt:**
-- `gsd-sdk` as a runtime dependency of godmode — it's a development tool for GSD-using projects, not a dependency for godmode's own runtime
-- GSD's 70+ workflow commands — godmode targets ≤ 12 user-facing skills
-- GSD's CJS module system — godmode stays pure Bash + Markdown
-
-### Superpowers Plugin — Pattern Audit
-
-Source: `https://github.com/obra/superpowers` (accepted into Anthropic official marketplace Jan 15, 2026).
-
-**Key patterns worth selective adoption:**
-
-| Pattern | What it does | Adopt in v2? |
-|---------|-------------|-------------|
-| **Thin command + skill** | Commands are 1-line entry points; full logic lives in `skills/`; zero startup overhead | Yes — already aligned in v1.x; ensure commands stay minimal |
-| **Git worktree per parallel agent** | Each parallel subagent gets `isolation: worktree` — prevents file conflicts | Yes — add `isolation: worktree` to `@executor` agent |
-| **TDD enforcement gate** | Deletes code written before tests; hard gate before implementation | Yes — add pre-implementation test gate to `/tdd` skill |
-| **Four-phase debug discipline** | Root cause before fix; prohibits speculative patching | Yes — formalize in `@researcher` agent description |
-| **Spec compliance + code quality two-stage review** | Every story gets spec-compliance review, then code-quality review | Yes — aligns with v1.x `@reviewer`; split into two passes |
-| **Cross-platform plugin manifests** | `.claude-plugin`, `.codex-plugin`, `.cursor-plugin` co-located | No — out of scope; godmode is Claude Code only |
-
-**What NOT to adopt from Superpowers:**
-- The 14-skill surface (godmode already has its own ≤ 12 skill discipline)
-- MCP server bundling (out of scope)
-- Cross-IDE portability layer (godmode is Claude Code native)
-
-### everything-claude-code — Pattern Audit
-
-Source: `https://github.com/affaan-m/everything-claude-code`
-
-**Key patterns worth selective adoption:**
-
-| Pattern | What it does | Adopt in v2? |
-|---------|-------------|-------------|
-| **Stop-hook pattern extraction** | `Stop` event hook harvests error solutions and idioms from session transcript; stores as timestamped "instincts" | Partial — use `Stop` hook to write a lightweight session summary to `.planning/` without SQLite |
-| **Strategic compaction** | Suggest `/compact` at logical breakpoints (post-research, post-phase) rather than waiting for auto-compact at 95% | Yes — add `PreCompact` hook that warns when compaction is manual vs. automatic |
-| **Secret detection hooks** | `PreToolUse` on `Bash`/`Write` to block `.env`, `*.pem`, AWS key patterns | Yes — add minimal secret detection to `PreToolUse` hook |
-| **Rule organization: common/ + language-specific/** | Rules split by concern; language-specific rules loaded on detection | Partial — godmode already splits by concern; language-specific detection is already in session-start hook |
-| **Package manager detection from lockfiles** | Hierarchical detection with fallback | Already in v1.x — keep |
-| **AgentShield security scanning** | 102-rule static analysis for CLAUDE.md, settings.json, hooks, agent configs | No — 1282-test Node.js suite violates "no new mandatory deps" constraint; adopt the pattern (shellcheck + JSON schema validate) not the tool |
-
-**What NOT to adopt:**
-- SQLite instinct store — Node.js runtime dep, violates constraint
-- 183-skill surface — scope bloat
-- 48-agent roster — surface-area violation
-- Cross-IDE adapters — out of scope
-
-### Dev-Time Tooling (CI-only, zero runtime impact)
+### Authoring surface — Claude Code primitives v2 must adopt
+
+#### Plugin manifest (`.claude-plugin/plugin.json`)
+
+Verified against `https://code.claude.com/docs/en/plugins-reference` (2026-04-26).
+
+| Field | v1.x | v2 action | Rationale |
+|---|---|---|---|
+| `name`, `description`, `author`, `homepage`, `repository`, `license`, `keywords` | ✓ | keep | metadata; nothing breaks. |
+| `version` | ✓ but drifted (1.6.0 here, 1.4.1 in `install.sh`, 1.4.1 in `commands/godmode.md`) | **canonical** — every other file reads this at runtime via `jq`; CI gate prevents drift | resolves CONCERNS #10. |
+| `skills`, `commands`, `agents`, `hooks` | ✓ | keep | components. |
+| `userConfig` | ✗ | **add** — single key `model_profile` (string, default `balanced`, options `quality\|balanced\|budget`) | gives the user one knob without hand-editing `settings.json`. Substituted as `${user_config.model_profile}` in hook commands and exported as `CLAUDE_PLUGIN_OPTION_MODEL_PROFILE` in subprocesses. |
+| `${CLAUDE_PLUGIN_DATA}` | ✗ | **add** — backup-rotation cursor, install marker, last-version-seen | survives plugin updates (unlike `${CLAUDE_PLUGIN_ROOT}`). Resolves to `~/.claude/plugins/data/<id>/`. |
+| `bin/` directory | ✗ | **add** — internal helpers (e.g. `init-context`, `hash-rules`) become bare commands when plugin is enabled | clean way to give skills shell helpers without leaking absolute paths. |
+| `monitors` | ✗ | **skip** — would require a long-running shell process; out of scope for v2. | requires Claude Code v2.1.105+; statusline is sufficient. |
+| `lspServers`, `themes`, `outputStyles`, `channels`, `dependencies` | ✗ | **skip** | out of scope per PROJECT.md. |
+| `mcpServers` | ✗ | **skip** | "no bundled MCP server" is in PROJECT.md Out-of-Scope. |
+
+**Confidence:** HIGH (full manifest schema fetched directly from docs).
+
+#### Agent frontmatter — every `agents/*.md`
+
+Verified against `https://code.claude.com/docs/en/sub-agents` and the plugins reference (2026-04-26). The plugins reference is explicit: plugin agents support `name`, `description`, `model`, `effort`, `maxTurns`, `tools`, `disallowedTools`, `skills`, `memory`, `background`, `isolation`. Plugin agents **cannot** declare `hooks`, `mcpServers`, or `permissionMode` (security constraint).
+
+| Field | Type | v1.x | v2 action |
+|---|---|---|---|
+| `name` | kebab-case string | ✓ | keep. |
+| `description` | string | ✓ | rewrite each — must read like a delegation prompt ("use this when X"), not a job title. |
+| `model` | `opus`, `sonnet`, `haiku`, full ID, or `inherit` | mixed | **alias only**, never pinned IDs. |
+| `effort` | `low`, `medium`, `high`, `xhigh`, `max` | partial | **explicit on every agent**. Code-touching agents = `high` (avoids the `xhigh`-skips-rules failure mode); design/audit agents = `xhigh`. |
+| `maxTurns` | integer | partial | **explicit on every agent** — defensive ceiling, not a soft hint. |
+| `tools` / `disallowedTools` | array | ✓ | audit allowlists; prefer `disallowedTools` for read-only agents (smaller, safer surface). |
+| `skills` | array of skill names | ✗ | declare for agents that should call specific skills (e.g. `@verifier` declares `verify`). |
+| `memory` | `"user"` or `"project"` | ✗ | add `memory: project` to `@researcher` (persistent learnings). Requires Claude Code v2.1.33+. |
+| `background` | boolean | ✗ | use for read-only researchers that can suspend (`@researcher`, optionally `@spec-reviewer`). |
+| `isolation` | only valid value: `"worktree"` | ✗ | add to every code-writing agent (`@executor`, `@test-writer`, `@writer`). Resolves the parallel-execution file-conflict class. |
+| `color` | hex / name | ✗ | optional — only if it materially improves the `/agents` UI. Low priority. |
+
+**Confidence:** HIGH. The plugins reference (line 70 of the fetched doc) names the exact set verbatim.
+
+#### Hook events — full v2 surface
+
+Verified against `https://code.claude.com/docs/en/hooks` (2026-04-26). 24 events exist. v1.x uses two: `SessionStart`, `PostCompact`. v2 adds five.
+
+| Event | Adopt? | v2 use |
+|---|---|---|
+| `SessionStart` | keep | inject project context + `.planning/STATE.md` current-brief snippet. |
+| `PostCompact` | keep | re-inject quality gates and live-scanned skill/agent lists. |
+| `PreToolUse` | **add** | block `Bash(git commit --no-verify*)` and similar quality-gate-bypass; refuse hardcoded-secret patterns in tool input. |
+| `PostToolUse` | **add** | detect non-zero exit on test/lint/typecheck Bash calls; surface a corrective `additionalContext` in the next turn. |
+| `UserPromptSubmit` | **add** | detect "Auto Mode" enable; emit a one-line note describing the brief lifecycle so /build doesn't surprise the user. |
+| `SessionEnd` | **add** | rotate backups in `~/.claude/backups/` (keep last 5). Cheap, idempotent, prevents unbounded growth (CONCERNS #13). |
+| `PreCompact` | skip | no clear win; manual `/compact` already covers logical breakpoints. |
+| `SubagentStart` / `SubagentStop` | skip in v2 baseline | useful for telemetry; we don't ship telemetry. Reserve for a later observability brief. |
+| `InstructionsLoaded` | skip | debug aid only; not user-facing. |
+| `ConfigChange` / `CwdChanged` / `FileChanged` | skip | no use case in this plugin. |
+| `WorktreeCreate` / `WorktreeRemove` | skip | `isolation: worktree` handles lifecycle automatically. |
+| `Notification` / `Stop` / `StopFailure` | skip | no user-facing notification surface. |
+| `PermissionRequest` / `PermissionDenied` / `Elicitation` / `ElicitationResult` | skip | MCP-server-specific. |
+| `TaskCreated` / `TaskCompleted` / `TeammateIdle` | skip | agent-teams feature; not stable. |
+
+**Hook output: never use the deprecated `decision: "approve"|"block"` shape.** Use `hookSpecificOutput.permissionDecision: "allow"|"deny"|"ask"` for `PreToolUse`. All decisions go through this shape.
+
+**Hook timeouts.** The `command` hook default is **600 seconds** (verified against the hooks doc, 2026-04-26). Both `hooks/hooks.json` (plugin-mode) and `config/settings.template.json` (manual-mode) currently disagree on `timeout` — plugin-mode declares 10s, manual-mode is silent and defaults to 600s. v2 fix: declare the same explicit `"timeout": 10` in **both** files. Hooks should never run for 10 minutes.
+
+**Hook types.** Use `command` exclusively. Reject `prompt` and `agent` hook types in v2 — they invoke the model on every event and would dwarf any per-tool latency budget. `http` and `mcp_tool` are out of scope (no server, no bundled MCP).
+
+**Confidence:** HIGH (full event matrix verified; timeout default verified directly).
+
+#### Skill (`SKILL.md`) frontmatter
+
+Verified against `https://code.claude.com/docs/en/skills` (2026-04-26).
+
+| Field | Required | v2 use |
+|---|---|---|
+| `name` | yes | becomes `/<name>`. kebab-case, `[a-z0-9-]+`, ≤ 64 chars. |
+| `description` | yes | the auto-delegation signal. Include both **what** and **when**. ≤ 1024 chars. |
+| `allowed-tools` | no | declare per skill — narrower-than-session set is the win. |
+| `argument-hint` | no | shown in `/` autocomplete. Use for `/brief N`, `/plan N`, `/build N`, `/verify N`. |
+| `disable-model-invocation` | no | useful for `/refactor` and other skills the user must trigger explicitly. Skip in v2 baseline; reconsider per-skill. |
+| `model` | no | overrides the session model for this skill. Skip — let the agent frontmatter own model choice. |
+
+**Confidence:** HIGH.
+
+#### Slash commands (`commands/*.md`)
+
+Lighter weight than skills (flat file, no SKILL.md envelope). v2 keeps `commands/godmode.md` as the entry point and adds the rest as **skills** (`/mission`, `/brief`, `/plan`, `/build`, `/verify`, `/ship`, `/debug`, `/tdd`, `/refactor`, `/explore-repo`) so they can carry `allowed-tools` and richer instructions.
+
+### Model lineup — `model:` aliases
+
+Verified against the plugins reference and Anthropic model docs (2026-04-26).
+
+| Alias | Resolves to | When |
+|---|---|---|
+| `opus` | claude-opus-4-7 | high-leverage agents (`@architect`, `@security-auditor`, `@planner`, `@verifier`). |
+| `sonnet` | claude-sonnet-4-6 | mid-tier agents (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@researcher`, `@doc-writer`). |
+| `haiku` | claude-haiku-4-5 | fast bounded helpers (e.g. classifiers, summarizers). |
+| `inherit` | session model | use **only** in third-party-runtime contexts (Bedrock/Vertex). Not in v2 frontmatter. |
+
+**Effort assignments — locked into `rules/godmode-routing.md`, not just frontmatter:**
+
+| Agent | Model | Effort | Why |
+|---|---|---|---|
+| `@architect` | opus | xhigh | design quality > rule adherence. |
+| `@security-auditor` | opus | xhigh | threat modelling benefits from depth; agent is read-only so rule-skip risk is bounded. |
+| `@planner` | opus | xhigh | brief → plan synthesis benefits from reasoning depth; read-mostly. |
+| `@verifier` | opus | xhigh | goal-backward audit; read-only. |
+| `@executor`, `@writer`, `@test-writer` | opus / sonnet | **high** | code-touching. `xhigh` on Opus 4.7 has documented rule-skip behavior — `high` is the safe default. |
+| `@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@researcher`, `@doc-writer` | sonnet | high | fits Sonnet's strength profile; cheaper and faster than Opus for these. |
+
+**Confidence:** HIGH for aliases; HIGH for the effort-on-Opus-4.7 caveat (documented in PROJECT.md "Key Decisions").
+
+### Dev-time tooling (CI-only — zero runtime cost)
 
 #### shellcheck v0.11.0
 
-- **What:** Static analysis for shell scripts. Catches unquoted variables, unescaped JSON interpolation, SC2064 trap issues, etc.
-- **Why:** v1.x has known hook fragility under adversarial inputs (unescaped JSON interpolation is a critical concern). shellcheck catches these statically.
-- **Install (CI):** `brew install shellcheck` (macOS) / `apt install shellcheck` (Linux) / `actionshub/shellcheck-problem-matchers` in GitHub Actions.
-- **Config:** `.shellcheckrc` at repo root — set `shell=bash`, `external-sources=true`, explicitly disable any rules that are intentional (e.g., SC1091 for sourced files).
-- **Do NOT use:** `shellcheck` as a runtime dep — it's a linter. Do NOT use `shfmt` as a formatter enforced in CI (opinionated on indentation, breaks existing style).
+- **What:** static analysis for shell. Catches unquoted variables, unescaped JSON interpolation, the SC2064-class trap fragility, etc.
+- **Why:** v1.x has documented hook fragility under adversarial inputs (CONCERNS #6). `shellcheck` catches these statically.
+- **Version:** v0.11.0, released 2025-08-04 (verified against `https://github.com/koalaman/shellcheck/releases`).
+- **Install:** `brew install shellcheck` (macOS), `apt install shellcheck` (Linux), `ludeeus/action-shellcheck@master` in CI. No runtime install.
+- **Config:** `.shellcheckrc` at repo root: `shell=bash`, `external-sources=true`, intentional disables enumerated (e.g. `disable=SC1091` for sourced files we know exist at install time).
+- **Don't use:** `shfmt`. Reformatter; opinionated on indentation; would churn the entire codebase for no v2 win.
+- **Confidence:** HIGH.
 
 #### bats-core v1.13.0
 
-- **What:** TAP-compliant Bash testing framework. Tests `install.sh`, `uninstall.sh`, hook scripts, `statusline.sh` in isolation.
-- **Why:** No automated test suite exists in v1.x. bats covers the install→use→uninstall smoke test requirement.
-- **Install (CI):** `npm install --save-dev bats` or `brew install bats-core`. Companion libraries: `bats-support` and `bats-assert` from the bats-core org.
-- **Test location:** `tests/` at repo root. Files: `tests/install.bats`, `tests/uninstall.bats`, `tests/hooks.bats`, `tests/statusline.bats`.
-- **Do NOT use:** `sstephenson/bats` (original, archived, Bash 4+ only — breaks Bash 3.2 compat). Use `bats-core/bats-core` exclusively.
-- **Bash 3.2 note:** bats-core v1.13.0 requires Bash 3.2+ — explicitly compatible with macOS default shell.
+- **What:** TAP-compliant Bash test runner. Tests `install.sh`, `uninstall.sh`, hook scripts, `statusline.sh` in a temporary `$HOME`.
+- **Why:** v1.x has zero automated tests (CONCERNS #20). bats covers the install → `/godmode` → uninstall round trip required by the QUAL-05 requirement.
+- **Version:** v1.13.0, released 2024-11-07 (verified against `https://github.com/bats-core/bats-core/releases`). Bash 3.2 compatible — works on macOS default shell.
+- **Install (CI):** `brew install bats-core` (macOS) / `apt install bats` (Linux), companions `bats-support` and `bats-assert` from the bats-core org. No runtime install.
+- **Test layout:** `tests/install.bats`, `tests/uninstall.bats`, `tests/hooks.bats`, `tests/statusline.bats`. Each test is hermetic — runs in `mktemp -d` as `$HOME`.
+- **Don't use:** `sstephenson/bats` (original; archived; Bash 4+ only — would break the macOS-default-shell guarantee). Don't use `shunit2` (no TAP, no fixture support).
+- **Confidence:** HIGH.
 
-#### sourcemeta/jsonschema CLI v14.16.2
+#### JSON Schema validation — pure jq, no Node
 
-- **What:** C++ CLI for JSON Schema validation. Zero Node.js dependency. Validates `plugin.json`, `hooks.json`, `settings.template.json` against authored schemas.
-- **Why:** JSON schema validation must work in a pure-shell environment without `npm` at test time. The sourcemeta CLI is a single binary — `brew install jsonschema` / GitHub releases for Linux.
-- **License:** AGPL, but using as a CLI tool in CI does not trigger copyleft on the plugin's own code (confirmed in project docs).
-- **Schemas to author:** `.schemas/plugin.schema.json`, `.schemas/hooks.schema.json` — written once, validate at CI time.
-- **Do NOT use:** `ajv-cli` (Node.js dep), `jsonschema` Python package (Python dep) — both violate the "no new mandatory deps" principle for CI environments that must be dependency-light.
+This is where the jq-only constraint forces a deliberate choice.
 
-#### Frontmatter Linting — Pure Bash
+- **What we need:** structural checks on `plugin.json`, `hooks.json`, `settings.template.json`, and `.planning/config.json`.
+- **What we don't need:** full JSON-Schema-2020-12 conformance. We need ~20 assertions per file — required keys present, types correct, hook events from the known set, `model:` from `{opus, sonnet, haiku}`.
+- **Recommended:** **inline jq assertions** in `scripts/lint-json.sh`. One file per schema, each assertion a `jq -e` expression; failure is a nonzero exit and a readable error message. Example: `jq -e '.version | type == "string" and test("^[0-9]+\\.[0-9]+\\.[0-9]+$")' plugin.json`.
+- **Why not ajv-cli / jsonschema (Python) / sourcemeta-jsonschema (C++ binary):** `ajv-cli` adds Node.js as a CI dep; the Python `jsonschema` adds a Python dep; `sourcemeta/jsonschema` is AGPL (using only as a CI tool doesn't trigger copyleft on our code, but it's a 30+ MB single-platform binary to manage in CI). jq is already a project requirement — extending its use to validation is the lowest-friction option and keeps the jq-only constraint clean even at CI time.
+- **Cost:** ~150 lines of `jq -e` checks total across four schemas. Each check is self-documenting.
+- **Confidence:** HIGH for the approach (jq is sufficient for the assertions we actually need); MEDIUM for skipping a "real" JSON Schema validator (we trade conformance for dependency-cleanliness — a deliberate, documented tradeoff).
 
-- **What:** No dedicated frontmatter linter fits all constraints (most are Node.js: `markdownlint-cli2`, `remark-lint-frontmatter-schema`). Author a purpose-built `scripts/lint-frontmatter.sh` using `awk` to extract YAML between `---` delimiters and validate required fields per component type.
-- **Why:** v1.x has no validation that agent/skill frontmatter has required fields (`name`, `description`, `model`, `effort`). Drift between filesystem and hardcoded lists is a known concern. A 50-line Bash script with `grep`/`awk` is sufficient and zero-dep.
-- **Fields to validate per type:**
-  - Agents: `name`, `description`, `model`, `effort`
-  - Skills: `name`, `description`
-  - Commands: `description`
-- **Do NOT use:** `markdownlint-cli2` or `remark-lint-frontmatter-schema` — both require Node.js; both are overkill for checking 5 YAML fields.
+#### Frontmatter linter — pure Bash + awk
 
-#### GitHub Actions CI Workflow
+- **What:** `scripts/lint-frontmatter.sh` extracts the YAML between `---` markers in `agents/*.md`, `skills/*/SKILL.md`, `commands/*.md` and asserts required fields per type.
+- **Why:** drift between filesystem and hardcoded lists is a v1.x concern (CONCERNS #8). Catching missing `description` or invalid `model:` in CI is a one-script fix.
+- **Required fields by type:**
+  - **agents:** `name`, `description`, `model ∈ {opus, sonnet, haiku}`, `effort ∈ {low, medium, high, xhigh, max}`, `maxTurns` (integer).
+  - **skills:** `name` (kebab-case), `description` (≤1024 chars).
+  - **commands:** `description`.
+- **Implementation:** awk to extract block, grep for required keys, jq to validate enums (after converting YAML to JSON via a 20-line awk filter — sufficient for our flat YAML, no nested structures used).
+- **Don't use:** `markdownlint-cli2`, `remark-lint-frontmatter-schema`, `frontmatter-lint`. All Node.js. Overkill for ≤6 fields per file.
+- **Confidence:** HIGH.
 
-- **Shape:** Two matrix jobs — `macos-latest` and `ubuntu-latest`.
-- **Steps:**
-  1. `shellcheck` on all `*.sh` files
-  2. `jsonschema validate` on all `*.json` files with schema
-  3. `bash scripts/lint-frontmatter.sh` on all `agents/*.md`, `skills/*/SKILL.md`, `commands/*.md`
-  4. `bats tests/` — smoke-test install→use→uninstall
-- **Do NOT add:** macOS ARM-only runner (`macos-14`/M-series) as the only macOS CI job — it does not test Intel macOS which many users still run. Use `macos-latest` (currently Intel).
-- **Do NOT add:** Docker-based CI for the smoke tests — `install.sh` modifies `~/.claude/`, which requires a real home directory, not a container FS.
+#### GitHub Actions workflow
 
----
-
-## Alternatives Considered
-
-| Recommended | Alternative | Why Not |
-|-------------|-------------|---------|
-| `shellcheck v0.11.0` | `shfmt` (formatter) | Formatting changes break existing indentation style; linting is the v2 need, not reformatting |
-| `bats-core v1.13.0` | `shunit2` | shunit2 lacks TAP output, fixture support, and bats-assert helpers; bats-core is the community standard |
-| `sourcemeta/jsonschema` (binary CLI) | `ajv-cli` (Node.js) | ajv-cli adds Node.js as a CI dep; sourcemeta ships a self-contained binary |
-| Pure-Bash frontmatter linter (custom) | `markdownlint-cli2` | Node.js dep; validates Markdown formatting, not semantic frontmatter fields |
-| Model aliases (`opus`, `sonnet`, `haiku`) | Pinned model IDs (`claude-opus-4-7`) | Aliases track current recommended model per provider; pinned IDs require manual bumping on each Anthropic release |
-| `effort` in frontmatter | Session-level `/effort` command | Agents need per-agent effort control; session-level effort is the user's choice for their own work |
-| `isolation: worktree` on `@executor` | Shared working directory | Parallel story execution in v1.x caused file conflicts; worktree isolation eliminates the class of bug |
-| `.planning/` directory (GSD shape) | `.claude-pipeline/` (v1.x) | `.claude-pipeline/` is godmode-specific and not understood by GSD or other tools; `.planning/` is the emerging standard |
+- **Shape:** one workflow `.github/workflows/ci.yml` with a matrix of `[ubuntu-latest, macos-latest]`. One job, four steps: `shellcheck`, `bash scripts/lint-json.sh`, `bash scripts/lint-frontmatter.sh`, `bats tests/`.
+- **`actions/checkout@v4`** for the checkout step.
+- **`ludeeus/action-shellcheck@master`** for shellcheck. The action handles installing `shellcheck` on both macOS and Ubuntu runners.
+- **bats install:** `brew install bats-core` on macOS; `sudo apt-get install -y bats` on Ubuntu.
+- **No Node setup step.** No `actions/setup-node`. No `npm install`. The CI itself respects the runtime-dep constraint.
+- **Don't use:** Docker-based jobs. `install.sh` modifies `$HOME/.claude/`; smoke tests need a real home directory, not a containerized one.
+- **Don't use:** `macos-14`/M-series-only runners. Many users still run Intel macOS; `macos-latest` covers Intel today.
+- **Confidence:** HIGH.
 
 ---
 
-## What NOT to Add
+## Constraints (re-asserted, with the rule-out impact)
 
-| Avoid | Why | What Instead |
-|-------|-----|-------------|
-| `gsd-sdk` as runtime dep | Node.js binary; breaks pure-shell environments; gsd-sdk is for developing-with-GSD, not for plugin users | godmode uses its own Bash scripts for any state management |
-| Python/Node.js scripts in hooks | Breaks macOS default Bash-only environments; violates "no new mandatory deps" | Pure jq + Bash in all hook scripts |
-| MCP server bundled with plugin | Out of scope per PROJECT.md; adds Node.js server process as runtime dep | Document recommended MCP servers (Context7, etc.) in README only |
-| SQLite for instinct/pattern storage | Node.js or system dep; overkill for Markdown-based plugin | Write session summaries to `.planning/` as Markdown files |
-| `agent` or `prompt` hook types | Adds per-event LLM call cost; unacceptable latency in hooks that fire on every tool call | Use `command` hooks for all validation; surface findings in `additionalContext` |
-| Pinned model IDs in frontmatter | Manual maintenance burden; breaks when Anthropic releases new models | Use `opus`, `sonnet`, `haiku` aliases |
-| Windows PowerShell support | Out of scope per PROJECT.md; WSL2 is supported path | Document WSL2 requirement explicitly |
-| `everything-claude-code` AgentShield | 1282-test Node.js suite; violates constraints | Implement equivalent checks as 50-line shellcheck + JSON schema rules |
-| `markdownlint-cli2` in CI | Node.js dep; validates Markdown formatting not semantic fields | Custom pure-Bash frontmatter linter |
-| Vendored copies of GSD, Superpowers, or everything-claude-code | Inverts dependency direction; license/maintenance burden | Adopt ideas, not code |
+### "jq is the only mandatory runtime dep"
+
+This rules out:
+
+| Tool | What it would have given us | What we use instead |
+|---|---|---|
+| Node.js (`ajv-cli`, `markdownlint-cli2`, `remark`, `gsd-sdk`) | first-class JSON Schema validation, frontmatter linting, workflow CLI | inline `jq -e` assertions, pure-Bash awk extractor, bash + jq for any state op |
+| Python (`jsonschema`, `yamllint`, `pre-commit`) | richer schema/lint surface, framework for git hooks | `jq -e` for JSON, the bash frontmatter linter for YAML, native git hooks if we ever need them |
+| SQLite | structured session/agent memory | Markdown files in `.planning/` (which is what humans read anyway) |
+| Compiled binary (`sourcemeta/jsonschema`, `ajv` standalone) | full JSON Schema 2020-12 conformance | targeted `jq -e` checks (we don't need conformance — we need the ~20 assertions per schema we actually care about) |
+| MCP server bundled with the plugin | first-party tool surface | document recommended user-installed MCP servers (Context7, etc.) in the README |
+
+**Workaround when something genuinely needs Node/Python:** ship as a `bin/` helper that shells out to `command -v node` first and falls back to a pure-bash path, **or** keep it dev-time-only (CI / contributor tooling) and document the workflow. v2 has zero current cases that need this — every gap above closes with bash + jq.
+
+### "≤ 12 user-facing slash commands"
+
+The locked v2 surface (per PROJECT.md):
+
+```
+/godmode  /mission  /brief N  /plan N  /build N  /verify N  /ship
+/debug    /tdd      /refactor /explore-repo
+```
+
+11 commands. One slot reserved.
+
+Implementation: `/godmode` stays a flat command (`commands/godmode.md`). The other 10 are skills (`skills/<name>/SKILL.md`) so they can carry `allowed-tools`, `argument-hint`, and richer system prompts. **Internal orchestrators (e.g. anything for sub-step routing) are subagents (`agents/*.md`), not user-facing commands.**
+
+### "Plugin-mode UX == manual-mode UX"
+
+Implications carried forward:
+
+- `hooks/hooks.json` and `config/settings.template.json` must declare the same hook events with the same `timeout` values. CI gate: `scripts/lint-json.sh` asserts both files reference identical hook event sets.
+- Both modes resolve plugin paths via `${CLAUDE_PLUGIN_ROOT}` (plugin mode) or absolute paths under `$HOME/.claude/` (manual mode). Hook scripts must work under both — never assume cwd.
+- `userConfig` works only in plugin mode; manual-mode users get the default profile and can edit a single file (`~/.claude/settings.json`'s `pluginConfigs.claude-godmode.options`) by hand.
 
 ---
 
-## Integration: Where Each v2 Addition Lives in the Repo
+## Version compatibility floor
 
-| Addition | Location in Repo | Notes |
-|----------|-----------------|-------|
-| Agent frontmatter updates | `agents/*.md` | Add `effort`, `memory`, `isolation`, `maxTurns` to each agent file |
-| New hook bindings (PreToolUse, PostToolUse, etc.) | `hooks/hooks.json` (plugin mode), `config/settings.template.json` (manual mode) | Add JSON entries for each new event |
-| New hook scripts | `hooks/pre-tool-use.sh`, `hooks/post-tool-use.sh`, `hooks/user-prompt-submit.sh` | New files alongside existing `session-start.sh`, `post-compact.sh` |
-| `.planning/` support in session-start hook | `hooks/session-start.sh` | Detect `.planning/` alongside `.claude-pipeline/`; prefer `.planning/` if present |
-| shellcheck config | `.shellcheckrc` | Repo root; checked in |
-| bats tests | `tests/` | `tests/install.bats`, `tests/hooks.bats`, `tests/statusline.bats` |
-| JSON schemas | `.schemas/` | `plugin.schema.json`, `hooks.schema.json` |
-| Frontmatter lint script | `scripts/lint-frontmatter.sh` | Pure Bash, no deps |
-| GitHub Actions CI | `.github/workflows/ci.yml` | Matrix: macos-latest + ubuntu-latest |
-| Version source of truth | `.claude-plugin/plugin.json` `version` field | installer and `/godmode` command read this at runtime via `jq` |
-| Model profile reference | `rules/godmode-routing.md` (or new `rules/godmode-models.md`) | Document alias→tier→effort mapping so agents self-configure |
-| `userConfig` for model profile | `.claude-plugin/plugin.json` `userConfig` block | Prompt at install time: `model_profile: quality|balanced|adaptive|budget` |
+| Feature | Min Claude Code | Action |
+|---|---|---|
+| `memory: project` agent frontmatter | v2.1.33 (Feb 2026) | declare in README under "Requirements". |
+| `monitors` plugin manifest | v2.1.105 | not used in v2. |
+| Opus 4.7 (`opus` alias) | v2.1.111 | declare minimum CC version in README. |
+| Default effort `xhigh` on Opus | v2.1.117 | already the session default; explicit `effort:` in agent frontmatter overrides correctly. |
+| `userConfig` sensitive keychain storage | v2.1.x (current) | `model_profile` is non-sensitive; no keychain dependency. |
+
+**Recommended floor:** Claude Code v2.1.111 (for the `opus` alias). Document in README. Don't pin tighter — plugin features beyond that are optional (`monitors`) or not used.
+
+**Confidence:** HIGH for the specific feature → version mapping. Document the floor; don't assert features above it.
 
 ---
 
-## Version Compatibility
+## Alternatives considered (and rejected)
 
-| Component | Minimum Claude Code Version | Notes |
-|-----------|---------------------------|-------|
-| `memory` frontmatter field | v2.1.33 | Feb 2026; safely gated by capability check |
-| `monitor` plugin feature | v2.1.105 | Consider optional feature flag in plugin.json |
-| `PreToolUse` with `defer` | v2.1.89 | Not needed in v2 baseline; skip |
-| Opus 4.7 (`opus` alias) | v2.1.111 | Required for `xhigh` effort; document minimum Claude Code version |
-| `xhigh` effort default | v2.1.117 | Already the session default; frontmatter `effort: xhigh` is explicit |
+| Recommended | Alternative | Why not |
+|---|---|---|
+| `shellcheck` v0.11.0 | `shfmt` formatter | reformats on save; would churn the entire codebase for no v2 win. |
+| `bats-core` v1.13.0 | `shunit2` | no TAP output, no fixture support, no `bats-assert`-equivalent. |
+| Inline `jq -e` assertions | `ajv-cli` | adds Node.js as a CI dep. Violates the spirit of the runtime constraint even at CI time. |
+| Inline `jq -e` assertions | `sourcemeta/jsonschema` (C++ binary) | AGPL; 30+ MB single-platform binary; far more conformance than we need. |
+| Pure-Bash frontmatter linter | `markdownlint-cli2` | Node.js dep; checks Markdown formatting, not the semantic frontmatter fields we care about. |
+| Model aliases (`opus`/`sonnet`/`haiku`) | Pinned IDs (`claude-opus-4-7`) | manual maintenance; aliases auto-update when Anthropic ships new tier. |
+| `effort: high` on code-touching agents | `effort: xhigh` | Opus 4.7's `xhigh` has documented rule-skip behavior (PROJECT.md Key Decisions). |
+| `isolation: worktree` on `@executor` etc. | Shared cwd | parallel execution in v1.x produces file conflicts; worktree isolation eliminates the class. |
+| Inline jq with `--arg`/`--argjson` for hook JSON | String-interpolated heredoc JSON | adversarial branch names break v1.x hooks (CONCERNS #6). |
+| `${CLAUDE_PLUGIN_DATA}` for backup-rotation cursor | Writing under `${CLAUDE_PLUGIN_ROOT}` | ROOT changes on plugin update; DATA persists. The whole point of DATA is exactly this case. |
+
+---
+
+## What NOT to add (explicit)
+
+| Avoid | Why | Instead |
+|---|---|---|
+| Any Node, Python, or Ruby in the runtime path | violates the jq-only constraint | bash + jq exclusively. |
+| Bundled MCP server | out of scope per PROJECT.md | recommend Context7 etc. in the README. |
+| `agent` or `prompt` hook types | LLM call per hook event = unacceptable latency | `command` only. |
+| Pinned model IDs in any frontmatter | manual maintenance burden | `opus`/`sonnet`/`haiku` aliases. |
+| New Claude Code experimental features (agent teams, PowerShell, channels) | unstable / out of scope | revisit in a later milestone if demand emerges. |
+| `pre-commit` framework | Python dep; we have native git hooks already | `hooks.json` for Claude Code lifecycle, native git hooks (if needed) for git lifecycle. |
+| `Dockerfile` for development | "install.sh modifies $HOME" makes Docker testing more pain than it's worth | bats in a temporary `$HOME` (`mktemp -d`). |
+| `make`-based build | nothing to build; `bash install.sh` is the entry point | keep the installer as the single entry. |
+
+---
+
+## Where each v2 addition lives in the repo
+
+| Addition | Path | Notes |
+|---|---|---|
+| Agent frontmatter modernization | `agents/*.md` | every agent: explicit `effort`, `maxTurns`, `isolation` (where applicable), `memory` (where applicable). |
+| New hook scripts | `hooks/pre-tool-use.sh`, `hooks/post-tool-use.sh`, `hooks/user-prompt-submit.sh`, `hooks/session-end.sh` | alongside existing `session-start.sh`, `post-compact.sh`. All emit JSON via `jq -n --arg`. |
+| Hook bindings (plugin mode) | `hooks/hooks.json` | every event listed; explicit `"timeout": 10`. |
+| Hook bindings (manual mode) | `config/settings.template.json` | identical event set; identical `"timeout": 10`. |
+| Quality gates source-of-truth | `config/quality-gates.txt` | one gate per line; `post-compact.sh` reads it. Resolves CONCERNS #9. |
+| Live skill/agent enumeration | `hooks/post-compact.sh` | scan `${CLAUDE_PLUGIN_ROOT}/skills/*/SKILL.md` and `${CLAUDE_PLUGIN_ROOT}/agents/*.md` at runtime. Resolves CONCERNS #8. |
+| Backup rotation | `hooks/session-end.sh` | keep last 5 in `~/.claude/backups/`. Resolves CONCERNS #13. |
+| `${CLAUDE_PLUGIN_DATA}` use | `install.sh`, `hooks/session-end.sh` | install marker, last-version-seen, rotation cursor. |
+| Version SOT | `.claude-plugin/plugin.json` `version` field | `install.sh` reads via `jq`; `commands/godmode.md` drops the literal version (statusline carries it). |
+| `userConfig` block | `.claude-plugin/plugin.json` | single key `model_profile` (default `balanced`). |
+| `bin/` helpers | `bin/init-context`, `bin/hash-rules` (if needed) | exposes shell helpers as bare commands when plugin is enabled. |
+| shellcheck config | `.shellcheckrc` | repo root. |
+| JSON schema lint | `scripts/lint-json.sh` | inline `jq -e` per file. |
+| Frontmatter lint | `scripts/lint-frontmatter.sh` | pure Bash + awk + jq. |
+| bats tests | `tests/install.bats`, `tests/uninstall.bats`, `tests/hooks.bats`, `tests/statusline.bats` | each runs in `mktemp -d` as `$HOME`. |
+| CI workflow | `.github/workflows/ci.yml` | matrix `[ubuntu-latest, macos-latest]`; four steps. |
+
+---
+
+## Confidence assessment per recommendation
+
+| Area | Confidence | Note |
+|---|---|---|
+| Plugin manifest fields (`userConfig`, `${CLAUDE_PLUGIN_DATA}`, `bin/`) | HIGH | full schema fetched from `code.claude.com/docs/en/plugins-reference`. |
+| Agent frontmatter set (`effort`, `memory`, `isolation`, `background`, `color`, `skills`) | HIGH | plugins reference enumerates the exact set; restriction on `hooks`/`mcpServers`/`permissionMode` is verbatim. |
+| Hook event matrix | HIGH | full 24-event table fetched from `code.claude.com/docs/en/hooks`; deprecated output shape verified. |
+| Hook `command` default timeout = 600s | HIGH | verified directly against the hooks doc — corrects the CONCERNS-implied assumption of 60s. |
+| Model aliases | HIGH | matches Anthropic's documented alias semantics; `opus[1m]` 1M-context variant exists for Opus. |
+| `effort: xhigh` rule-skip behavior on Opus 4.7 | HIGH (per PROJECT.md Key Decisions); MEDIUM externally | locked into our routing rule regardless. |
+| shellcheck v0.11.0 | HIGH | release verified Aug 2025. |
+| bats-core v1.13.0 | HIGH | release verified Nov 2024; Bash 3.2 compatibility documented. |
+| Inline jq for JSON schema (vs ajv/sourcemeta) | HIGH on the choice; MEDIUM on covering every future schema need | deliberate tradeoff: dependency cleanliness > full conformance. Documented. |
+| Pure-Bash frontmatter linter | HIGH | scope is small (≤6 fields per type); awk + jq is sufficient. |
+| GitHub Actions matrix shape | HIGH | both `actions/checkout@v4` and `ludeeus/action-shellcheck@master` are current standards. |
 
 ---
 
 ## Sources
 
-- `https://code.claude.com/docs/en/hooks` — All 21 hook events, input/output fields, version notes. Confidence: HIGH.
-- `https://code.claude.com/docs/en/plugins-reference` — Plugin manifest schema, component paths, agent frontmatter fields, `${CLAUDE_PLUGIN_DATA}`. Confidence: HIGH.
-- `https://code.claude.com/docs/en/sub-agents` — Full agent frontmatter schema including `memory`, `background`, `isolation`, `color`. Confidence: HIGH.
-- `https://code.claude.com/docs/en/model-config` — Model aliases, effort levels, prompt caching env vars, 1M context availability. Confidence: HIGH.
-- `https://code.claude.com/docs/en/tools-reference` — Complete tool list including `CronCreate`, `Monitor`, `EnterWorktree`, `TaskOutput` deprecation. Confidence: HIGH.
-- `https://github.com/gsd-build/get-shit-done` — GSD plugin overview. Local installation at `~/.claude/get-shit-done/` (v1.38.3) inspected directly. Confidence: HIGH.
-- `https://github.com/obra/superpowers` — Superpowers patterns. Confidence: MEDIUM (README-level; no direct code inspection).
-- `https://github.com/affaan-m/everything-claude-code` — everything-claude-code patterns. Confidence: MEDIUM (README + directory listing).
-- `https://github.com/bats-core/bats-core/releases` — bats-core v1.13.0, released Nov 7 2024. Confidence: HIGH.
-- `https://github.com/koalaman/shellcheck/releases` — shellcheck v0.11.0, released Aug 4 2025. Confidence: HIGH.
-- `https://github.com/sourcemeta/jsonschema` — jsonschema CLI v14.16.2. Confidence: MEDIUM (version from search result; release page not directly loaded).
+- `https://code.claude.com/docs/en/plugins-reference` — plugin manifest schema, agent frontmatter restrictions for plugin-shipped agents, `${CLAUDE_PLUGIN_DATA}` semantics, `userConfig` schema, `bin/` directory behavior, monitor minimum version. **HIGH** confidence (full doc fetched).
+- `https://code.claude.com/docs/en/hooks` — full 24-event matrix, deprecated `decision: approve|block` shape, `command`/`prompt`/`agent` hook timeout defaults (600 / 30 / 60 seconds). **HIGH**.
+- `https://code.claude.com/docs/en/sub-agents` — agent frontmatter fields (`model`, `effort`, `isolation: worktree`, `maxTurns`, `memory`, `background`). **HIGH**.
+- `https://code.claude.com/docs/en/skills` — skill frontmatter (`name`, `description`, `allowed-tools`, `argument-hint`, `disable-model-invocation`). **HIGH**.
+- `https://github.com/koalaman/shellcheck/releases` — v0.11.0, released 2025-08-04. **HIGH**.
+- `https://github.com/bats-core/bats-core/releases` — v1.13.0, released 2024-11-07. **HIGH**.
+- `https://github.com/ludeeus/action-shellcheck` — current GitHub Action; works on macOS and Ubuntu runners. **HIGH**.
+- v1.x baseline: `.planning/codebase/STACK.md`, `STRUCTURE.md`, `CONCERNS.md` (this repo). **HIGH** (factual analysis of shipped code).
 
 ---
 
-*Stack research for: claude-godmode v2 — Claude Code plugin modernization*
-*Researched: 2026-04-25*
+*Stack research for: claude-godmode v2 — polish mature version.*
+*Researched: 2026-04-26.*

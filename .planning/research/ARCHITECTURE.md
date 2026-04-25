@@ -1,687 +1,596 @@
-# Architecture Research
+# Architecture — claude-godmode v2
 
-**Domain:** Claude Code plugin — configuration/extension distribution + opinionated engineering workflow
-**Researched:** 2026-04-25
-**Confidence:** HIGH (primary sources: live GSD plugin files, v1.x codebase analysis, GSD executor/planner agents, GSD workflow files)
+**Domain:** Claude Code plugin (configuration / extension distribution)
+**Researched:** 2026-04-26 (re-init under inspiration-only principle)
+**Milestone:** v2 — polish mature version (brownfield maturation of v1.x)
+**Confidence:** HIGH (architecture is constrained by locked Key Decisions in `.planning/PROJECT.md` and the v1.x baseline in `.planning/codebase/`)
 
----
+## TL;DR
 
-## 1. What is the canonical `.planning/` directory shape used by GSD?
+v2 keeps v1.x's two-sided shape (distribution repo + runtime files in `~/.claude/`) and its layered primitives (rules / hooks / agents / skills / commands / statusline / permissions). What changes:
 
-GSD's `.planning/` directory is the project's single source of truth across the full lifecycle. Every file has a defined owner (workflow or agent), a defined lifecycle stage, and a defined consumer.
+1. **A new workflow vocabulary** (Project → Mission → Brief → Plan → Commit) replaces the v1.x flat `/prd → /plan-stories → /execute → /ship` pipeline. The user-facing surface contracts to **11 commands** (one slot reserved under the ≤12 cap).
+2. **A clean internal/user split.** All orchestration agents (`@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`, plus the existing `@architect`, `@executor`, `@security-auditor`, `@test-writer`, `@doc-writer`, `@researcher`, `@writer`) are **invoked by skills, never by the user**. The user types only the 11 slash commands.
+3. **Two artifact files per active brief** (`BRIEF.md` + `PLAN.md`) instead of v1.x's split state across `.claude-pipeline/prds/*.md` + `.claude-pipeline/stories.json`. `git log` IS the execution log — no `EXECUTE.md`, no `TASK.md`.
+4. **A foundation-first build order.** Hooks, installer, and version single-source-of-truth must be hardened before agents/skills can be safely rebuilt on top.
+5. **Live filesystem indexing.** `/godmode`, `PostCompact`, and `SessionStart` enumerate `agents/`, `skills/`, `briefs/` from disk at runtime — no hardcoded lists ever again.
+6. **Plugin-mode == manual-mode UX**, generated from one source: `config/settings.template.json` is the canonical permissions / hook / statusline declaration; `hooks/hooks.json` is plugin-mode's mirror of the same hook bindings with `${CLAUDE_PLUGIN_ROOT}` paths.
 
-```
-.planning/
-├── PROJECT.md          ← Living project context. Updated at milestone boundaries and phase transitions.
-│                         Sections: What This Is, Core Value, Requirements (Validated/Active/Out of Scope),
-│                         Context, Constraints, Key Decisions.
-│                         Owner: /gsd-new-project (creation), /gsd-transition (evolution)
-│
-├── REQUIREMENTS.md     ← Scoped requirement IDs (AUTH-01, WORK-02...). Each req traces to a ROADMAP phase.
-│                         Owner: /gsd-new-project (creation), gsd-executor (marks complete per plan)
-│
-├── ROADMAP.md          ← Phase structure. Each phase has: Goal, Depends on, Requirements IDs, Success
-│                         Criteria, Plans list (checkbox). Updated by gsd-planner (plan count/list),
-│                         gsd-executor (marks plans complete), /gsd-transition (marks phases complete).
-│
-├── STATE.md            ← Living session memory. Sections: Current Position (phase/plan/status/progress bar),
-│                         Performance Metrics, Decisions, Pending Todos, Blockers, Session Continuity.
-│                         Updated after every plan completion by gsd-executor via gsd-sdk.
-│
-├── config.json         ← Per-project workflow config. Fields: model_profile, commit_docs, git.branching_strategy,
-│                         workflow.use_worktrees, workflow.inline_plan_threshold, response_language.
-│                         Read by every gsd-sdk init call before spawning agents.
-│
-├── phases/             ← One directory per phase, named {NN}-{slug}/.
-│   └── 01-foundation/
-│       ├── 01-01-PLAN.md       ← Executable plan. Frontmatter: phase, plan, type, wave, depends_on,
-│       │                         files_modified, autonomous, requirements, must_haves.
-│       │                         Body: <objective>, <context>, <tasks>, <threat_model>,
-│       │                         <verification>, <success_criteria>, <output>.
-│       │                         Owner: gsd-planner. Consumer: gsd-executor.
-│       │
-│       ├── 01-01-SUMMARY.md    ← Execution record. Frontmatter: phase, plan, subsystem, tags,
-│       │                         dependency graph (requires/provides/affects), tech-stack,
-│       │                         key-files, decisions, metrics (duration, completed).
-│       │                         Owner: gsd-executor. Consumer: gsd-verifier, gsd-planner (history).
-│       │
-│       ├── 01-CONTEXT.md       ← (Optional) User decisions from /gsd-discuss-phase. Sections:
-│       │                         Decisions (locked, with D-01..D-NN IDs), Deferred Ideas, Claude's Discretion.
-│       │                         Owner: /gsd-discuss-phase. Consumer: gsd-planner (locked constraints).
-│       │
-│       ├── 01-RESEARCH.md      ← (Optional) Phase-scoped research from /gsd-research-phase.
-│       │                         Consumer: gsd-planner (standard_stack, pitfalls, architecture_patterns).
-│       │
-│       └── 01-VERIFICATION.md  ← (Optional) Post-execution verification output from /gsd-verify-work.
-│                                 Consumer: gsd-planner (--gaps mode) for gap closure plans.
-│
-├── research/           ← Project-wide research (from /gsd-new-project or /gsd-new-milestone).
-│   ├── SUMMARY.md      ← Executive synthesis, phase structure recommendations.
-│   ├── STACK.md        ← Technology decisions.
-│   ├── FEATURES.md     ← Feature landscape.
-│   ├── ARCHITECTURE.md ← System structure (this file).
-│   └── PITFALLS.md     ← Domain pitfalls.
-│
-├── codebase/           ← Codebase mapping output (from /gsd-codebase-map or equivalent).
-│   ├── ARCHITECTURE.md ← Current system structure.
-│   ├── STACK.md        ← Current tech stack.
-│   ├── STRUCTURE.md    ← Directory layout.
-│   ├── CONVENTIONS.md  ← Coding conventions.
-│   ├── INTEGRATIONS.md ← External integration points.
-│   ├── TESTING.md      ← Test strategy.
-│   └── CONCERNS.md     ← Known issues with severity ratings.
-│
-└── graphs/             ← (Optional) Semantic knowledge graph.
-    └── graph.json      ← Used by gsd-planner for dependency-aware task ordering.
-```
-
-**Artifact lifecycle:**
-
-| Artifact | Created by | Updated by | Consumed by | Committed? |
-|----------|-----------|------------|-------------|-----------|
-| PROJECT.md | /gsd-new-project | /gsd-transition | all agents (via @reference) | Yes |
-| REQUIREMENTS.md | /gsd-new-project | gsd-executor (mark complete) | gsd-planner | Yes |
-| ROADMAP.md | /gsd-new-project | gsd-planner, gsd-executor | all agents | Yes |
-| STATE.md | /gsd-new-project | gsd-executor after each plan | gsd-executor (resume), /gsd-next | Yes |
-| config.json | /gsd-new-project | /gsd-settings | gsd-sdk (every init call) | Yes |
-| NN-NN-PLAN.md | gsd-planner | — (immutable after creation) | gsd-executor | Yes |
-| NN-NN-SUMMARY.md | gsd-executor | — (append: self-check) | gsd-verifier, gsd-planner | Yes |
-| NN-CONTEXT.md | /gsd-discuss-phase | — (immutable) | gsd-planner | Yes |
-| NN-RESEARCH.md | /gsd-research-phase | — (immutable) | gsd-planner | Yes |
-| NN-VERIFICATION.md | /gsd-verify-work | — | gsd-planner (--gaps) | Yes |
-
-**Key design principles observed:**
-- Every `.planning/` artifact is a prompt, not a document (PLAN.md IS the executor's prompt)
-- Artifacts flow strictly forward: discuss → research → plan → execute → verify → transition
-- Backward references (planner reading prior SUMMARYs) are selective, not reflexive
-- All commits to `.planning/` use `gsd-sdk query commit` which checks `commit_docs` config
-
----
-
-## 2. How does GSD wire its skills together?
-
-GSD uses a thin orchestrator + subagent delegation pattern. The skill (slash command) is a lean orchestrator — it initializes context, spawns typed subagents, handles their output, and routes forward. Subagents do the heavy work.
-
-**Full skill → artifact → next-skill chain:**
+## The Two-Sided Shape (Unchanged from v1.x)
 
 ```
-User types /gsd-new-project
+┌──────────────────────────────────────────────────────────────────┐
+│ DISTRIBUTION SIDE — this repo                                    │
+│                                                                  │
+│   rules/     hooks/     agents/    skills/    commands/  config/ │
+│   .claude-plugin/plugin.json   install.sh   uninstall.sh         │
+└─────────────────────────────────┬────────────────────────────────┘
+                                  │ install.sh
+                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ RUNTIME SIDE — user's machine                                    │
+│                                                                  │
+│   plugin mode:  served from ${CLAUDE_PLUGIN_ROOT} (this repo)    │
+│   manual mode:  copied into ~/.claude/{rules,agents,skills,...}  │
+│                                                                  │
+│   permissions + hook bindings + statusline merged into           │
+│   ~/.claude/settings.json (idempotent jq merge, with backup)     │
+└─────────────────────────────────┬────────────────────────────────┘
+                                  │ Claude Code reads at session start
+                                  ▼
+┌──────────────────────────────────────────────────────────────────┐
+│ SESSION SIDE — inside a Claude Code session in a consumer repo   │
+│                                                                  │
+│   rules → always-on context                                      │
+│   hooks → SessionStart, PostCompact, PreToolUse, PostToolUse     │
+│   agents → spawned by skills via Task tool                       │
+│   skills/commands → user-invocable workflow                      │
+│   statusline → per-render renderer                               │
+│                                                                  │
+│   workflow state lives in <consumer-repo>/.planning/             │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+This three-tier shape is settled. v2 changes _what's inside_ each tier and _how the pieces talk to each other_, not the tier structure itself.
+
+## Layer Model (v2)
+
+Each new v2 component slots into exactly one of these layers. The placement rules are non-negotiable.
+
+| # | Layer | What it is | Location | Loaded by | New in v2? |
+|---|-------|-----------|----------|-----------|------------|
+| 1 | **Plugin manifest** | Plugin metadata + canonical version | `.claude-plugin/plugin.json` | Claude Code plugin loader; `install.sh` reads via `jq` | Hardened (single version source) |
+| 2 | **Rules (always-on context)** | Identity, coding standards, quality gates, routing, workflow shape | `rules/godmode-*.md` (no frontmatter) | Claude Code rules system, every session | New file: `godmode-workflow.md` rewritten for Project→Mission→Brief→Plan→Commit |
+| 3 | **Hooks (event handlers)** | Shell scripts emitting `hookSpecificOutput` JSON | `hooks/*.sh` + `hooks/hooks.json` (plugin) + `config/settings.template.json` (manual) | Claude Code on lifecycle events | Two new hooks: `pre-tool-use.sh`, `post-tool-use.sh` |
+| 4 | **Statusline** | Per-render shell renderer | `config/statusline.sh` | Claude Code statusline event | Hardened (single `jq` invocation) |
+| 5 | **Permissions** | allow/deny lists merged into `settings.json` | `config/settings.template.json` | `install.sh` via `jq` merge | Reviewed, not restructured |
+| 6 | **Agents (internal — orchestration units)** | Subagents with model/tools/isolation/effort frontmatter | `agents/*.md` | Spawned by skills via Task tool | New: `@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer` (split from `@reviewer`) |
+| 7 | **Skills (user-facing — workflow units)** | Slash commands with frontmatter + instructions | `skills/<name>/SKILL.md` | User types `/<name>` | New shape: `/mission`, `/brief`, `/plan`, `/build`, `/verify`. v1's `/prd`, `/plan-stories`, `/execute` removed (one-time deprecation note) |
+| 8 | **Commands (user-facing — lighter slash)** | Quick-reference / utility slash commands | `commands/<name>.md` | User types `/<name>` | `commands/godmode.md` rewritten; live-indexes filesystem |
+| 9 | **Shared skill content** | Reusable doc fragments + bash helpers | `skills/_shared/*.md`, `skills/_shared/*.sh` | Skills reference / source | New: `skills/_shared/init-context.sh` (bash + jq, reads `.planning/config.json`) |
+| 10 | **Planning artifacts (consumer-side state)** | Templates + the live state files in user projects | `templates/.planning/*` (this repo) → `<consumer>/.planning/*` (user project) | `/mission` / `/brief` / `/plan` skills | New layer entirely — v1.x had `.claude-pipeline/` only |
+
+### Where each new v2 component goes
+
+| New thing | Layer | Path |
+|-----------|-------|------|
+| `@planner` agent | Agents (internal) | `agents/planner.md` |
+| `@verifier` agent | Agents (internal) | `agents/verifier.md` |
+| `@spec-reviewer` agent | Agents (internal) | `agents/spec-reviewer.md` |
+| `@code-reviewer` agent | Agents (internal) | `agents/code-reviewer.md` |
+| `/mission` skill | Skills (user-facing) | `skills/mission/SKILL.md` |
+| `/brief` skill | Skills (user-facing) | `skills/brief/SKILL.md` |
+| `/plan` skill | Skills (user-facing) | `skills/plan/SKILL.md` |
+| `/build` skill | Skills (user-facing) | `skills/build/SKILL.md` |
+| `/verify` skill | Skills (user-facing) | `skills/verify/SKILL.md` |
+| `/ship` skill | Skills (user-facing) | `skills/ship/SKILL.md` (rewritten) |
+| `/godmode` command | Commands (user-facing) | `commands/godmode.md` (rewritten — live filesystem index) |
+| `pre-tool-use.sh` | Hooks | `hooks/pre-tool-use.sh` |
+| `post-tool-use.sh` | Hooks | `hooks/post-tool-use.sh` |
+| `init-context.sh` | Shared | `skills/_shared/init-context.sh` |
+| `quality-gates.txt` | Config (single source) | `config/quality-gates.txt` |
+| Frontmatter linter | Dev tooling | `scripts/lint-frontmatter.sh` |
+| `.planning/` templates | New layer | `templates/.planning/{PROJECT,REQUIREMENTS,ROADMAP,STATE}.md.tmpl`, `templates/.planning/config.json.tmpl`, `templates/.planning/briefs/_template/{BRIEF,PLAN}.md.tmpl` |
+| Workflow rule rewrite | Rules | `rules/godmode-workflow.md` (rewritten) |
+| Routing rule update | Rules | `rules/godmode-routing.md` (effort policy: code-writers=`high`, design/audit=`xhigh`) |
+
+## User-Facing Surface (the 11 commands — all of them, in order)
+
+This is the entire user surface. **Anything not on this list is internal.**
+
+```
+Discovery / status:
+  /godmode              ← reads filesystem live; renders chain; "what now?" in 5 lines
+
+Workflow chain (linear arrow, with N = brief number):
+  /mission              ← define the milestone (mutates .planning/PROJECT.md, REQUIREMENTS.md, ROADMAP.md)
+  /brief N              ← Socratic context-gathering for brief N (mutates .planning/briefs/NN-name/BRIEF.md)
+  /plan N               ← tactical breakdown of brief N (mutates .planning/briefs/NN-name/PLAN.md)
+  /build N              ← parallel worktree-isolated execution (mutates code + git log + PLAN.md task status)
+  /verify N             ← read-only goal-backward verification (mutates PLAN.md verification block)
+  /ship                 ← final gates + push + gh pr create
+
+Helpers (forks off the main chain):
+  /debug                ← targeted bug-hunt with @architect + @executor
+  /tdd                  ← red→green→refactor with @test-writer + @executor
+  /refactor             ← scope-bounded restructure with @architect + @executor
+  /explore-repo         ← @researcher-driven codebase mapping (writes to .planning/codebase/)
+
+Reserved: 1 slot under the ≤12 cap (likely /resume or /audit in v2.x)
+```
+
+Internal agents (`@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`, `@architect`, `@executor`, `@writer`, `@security-auditor`, `@test-writer`, `@doc-writer`, `@researcher`) are **never typed by the user**. They are spawned by the skills above via Claude Code's Task tool.
+
+## Component Boundaries — What Talks to What
+
+The `Connects to:` line in every skill / agent frontmatter is the canonical, machine-readable boundary. Below is the human-readable map.
+
+### Skill → Agent invocation matrix
+
+| Skill | Spawns (in order) | Mutates | Reads |
+|-------|-------------------|---------|-------|
+| `/mission` | `@architect` (xhigh, read-only) → `@spec-reviewer` (sonnet, read-only) | `.planning/PROJECT.md`, `.planning/REQUIREMENTS.md`, `.planning/ROADMAP.md`, `.planning/STATE.md` | `.planning/codebase/*` if present |
+| `/brief N` | `@researcher` (sonnet, background) → `@architect` (xhigh, read-only) → `@spec-reviewer` (sonnet, read-only) | `.planning/briefs/NN-name/BRIEF.md`, `.planning/STATE.md` | `.planning/PROJECT.md`, `REQUIREMENTS.md`, `ROADMAP.md`, `codebase/*` |
+| `/plan N` | `@planner` (opus, xhigh, read-only) → `@spec-reviewer` (sonnet, read-only) | `.planning/briefs/NN-name/PLAN.md`, `.planning/STATE.md` | the brief's `BRIEF.md`, `PROJECT.md`, `codebase/*` |
+| `/build N` | `@executor` (× N parallel, opus, high, isolation: worktree) → `@code-reviewer` (sonnet, read-only) per task | code in worktrees → merged commits, `.planning/briefs/NN-name/PLAN.md` (task status), `.planning/STATE.md` | `PLAN.md`, `BRIEF.md`, `rules/godmode-*.md` |
+| `/verify N` | `@verifier` (opus, xhigh, read-only) | `.planning/briefs/NN-name/PLAN.md` (verification block), `.planning/STATE.md` | `BRIEF.md` (success criteria), `PLAN.md` tasks, `git log`, code |
+| `/ship` | `@security-auditor` (opus, xhigh, read-only) → final quality-gate run → `gh pr create` | git remote, GitHub PR, `.planning/STATE.md` | latest verified brief |
+| `/debug` | `@architect` (xhigh, read-only) → `@executor` (high, worktree) | code | bug repro, codebase |
+| `/tdd` | `@test-writer` (sonnet, high, worktree) → `@executor` (high, worktree) | tests, code | spec |
+| `/refactor` | `@architect` (xhigh, read-only) → `@executor` (high, worktree) | code | scope target |
+| `/explore-repo` | `@researcher` (sonnet, background, read-only) | `.planning/codebase/*` | the repo |
+| `/godmode` | (no agents — pure filesystem read) | nothing | `agents/*.md` frontmatter, `skills/*/SKILL.md` frontmatter, `.planning/STATE.md`, `.claude-plugin/plugin.json` |
+
+### Agent → Agent rules
+
+- **Agents do not spawn agents.** All fan-out is owned by skills. An agent's job is one step of one skill. This keeps the call graph a tree, not a DAG, and makes `/build`'s parallel orchestration debuggable.
+- **Read-only agents (`disallowedTools: Write, Edit`)** can be safely run in `background: true` and in parallel without isolation. `@architect`, `@security-auditor`, `@spec-reviewer`, `@code-reviewer`, `@verifier`, `@researcher` are all read-only.
+- **Code-writing agents (`@executor`, `@writer`, `@test-writer`)** declare `isolation: worktree` and run with `effort: high` (not `xhigh` — Routing rule lock; PITFALLS #4: xhigh on Opus 4.7 historically skips rules).
+- **Persistent learners** declare `memory: project` (currently only `@architect` and `@researcher` justify this; revisit per-agent in Phase 2).
+
+### `/build` parallel orchestration (the only fan-out skill)
+
+This is the load-bearing concurrency primitive in v2. It deserves its own subsection.
+
+```
+/build N
+  │
+  ├─ read .planning/briefs/NN-name/PLAN.md
+  ├─ parse tasks; partition into "waves" by dependsOn graph
+  │
+  ├─ for each wave:
+  │     ├─ spawn @executor in parallel for each task in wave:
+  │     │     each gets its own git worktree (isolation: worktree)
+  │     │     each gets effort: high, maxTurns: 100
+  │     │     each writes progress to .claude-pipeline/progress/<task-id>.log
+  │     │     run_in_background: true; file-polling fallback if stdout race
+  │     │
+  │     ├─ wait for wave to complete (poll progress files OR notification)
+  │     │
+  │     ├─ spawn @code-reviewer (sonnet, read-only, sequential) for each task
+  │     │
+  │     ├─ run quality gates (typecheck/lint/tests/secrets) per task
+  │     │
+  │     ├─ on green: merge worktree commit; mark task done in PLAN.md; commit PLAN.md
+  │     ├─ on red:   leave worktree; mark task failed; surface to user
+  │
+  └─ after all waves: emit "ready for /verify N"
+```
+
+This is the only place `run_in_background` + worktree isolation is used. All other skills are sequential. That's a deliberate complexity budget — concurrency is one component, not a pattern sprayed across the system.
+
+## Data Flow — How Context Survives Sessions and Compaction
+
+Five state vehicles carry context across time. They are listed in order of authority.
+
+| Vehicle | Authority | Lifetime | Survives compaction? | Survives session end? |
+|---------|-----------|----------|----------------------|------------------------|
+| `git log` | Highest — the execution log | Forever | Yes (read fresh each session) | Yes |
+| `.planning/PROJECT.md` | Project-scope source of truth (mission, requirements, key decisions) | Project lifetime | Yes (re-read on demand) | Yes |
+| `.planning/STATE.md` | Live pointer to current brief + phase | Until next brief transition | Yes (read by `SessionStart` hook) | Yes |
+| `.planning/briefs/NN-name/{BRIEF,PLAN}.md` | Per-brief artifact set | Until brief verified | Yes | Yes |
+| `~/.claude/.claude-godmode-version` | Installed version stamp | Until next install | Yes (read by uninstaller) | Yes |
+
+**Session-scoped state** (does not survive end-of-session):
+- The current Claude Code session's transcript
+- Subagent results (each subagent invocation is a fresh context — that's the point of isolation)
+- `additionalContext` injected by `SessionStart` / `PostCompact`
+
+### The canonical workflow data flow
+
+```
+/mission
+  │ writes
+  ▼
+.planning/PROJECT.md ──┐ (mission, requirements, decisions)
+.planning/REQUIREMENTS.md ──┐
+.planning/ROADMAP.md ──┐
+                       │
+                       │ read by
+                       ▼
+                  /brief N
+                       │ writes
+                       ▼
+       .planning/briefs/NN-name/BRIEF.md (why + what + spec + research summary)
+                       │
+                       │ read by
+                       ▼
+                  /plan N
+                       │ writes
+                       ▼
+       .planning/briefs/NN-name/PLAN.md (tasks + dependsOn + verification block)
+                       │
+                       │ read by
+                       ▼
+                  /build N
+                       │ writes (in parallel, per wave)
+                       ▼
+                  git commits  +  PLAN.md task status
+                       │
+                       │ read by
+                       ▼
+                  /verify N
+                       │ writes
+                       ▼
+       PLAN.md verification block (COVERED / PARTIAL / MISSING per criterion)
+                       │
+                       │ read by
+                       ▼
+                  /ship → push + gh pr create
+```
+
+### How context is re-hydrated after compaction or new session
+
+```
+new session OR PostCompact event
   │
   ▼
-[SKILL: gsd-new-project/SKILL.md]                ← user-facing, orchestrator
-  │   Loads: /gsd-new-project workflow
-  │   Calls: AskUserQuestion (collects idea/goals)
-  │   Spawns: Task(gsd-project-researcher) → writes .planning/research/*.md
-  │   Spawns: Task(gsd-roadmapper) → writes .planning/ROADMAP.md + STATE.md
-  │   Commits: gsd-sdk query commit "docs: init project"
-  │   Returns: "Run /gsd-plan-phase 1"
-  ▼
-User types /gsd-discuss-phase 1
+SessionStart hook (or PostCompact hook) runs
   │
-  ▼
-[SKILL: gsd-discuss-phase/SKILL.md]              ← user-facing, Socratic orchestrator
-  │   Loads: .planning/ROADMAP.md (phase goal)
-  │   Interviews user (AskUserQuestion loops)
-  │   Writes: .planning/phases/01-foundation/01-CONTEXT.md
-  │   Commits: gsd-sdk query commit "docs(phase-01): document phase decisions"
-  │   Returns: "Run /gsd-plan-phase 1"
-  ▼
-User types /gsd-plan-phase 1
+  ├─ reads stdin's `cwd` field (NOT pwd — locked in Foundation)
+  ├─ resolves project root via `git rev-parse --show-toplevel`
+  ├─ reads .planning/STATE.md if it exists (current brief pointer)
+  ├─ reads .planning/briefs/<current>/BRIEF.md + PLAN.md (active artifacts)
+  ├─ reads recent `git log` (last 10 commits with REQ-IDs)
+  ├─ enumerates agents/, skills/ from live filesystem (no hardcoded list)
+  ├─ reads config/quality-gates.txt (single source)
   │
-  ▼
-[SKILL: gsd-plan-phase/SKILL.md]                 ← user-facing, orchestrator
-  │   gsd-sdk query init.plan-phase "1" → JSON with model, paths, flags
-  │   Optional: Spawns Task(gsd-phase-researcher) → writes 01-RESEARCH.md
-  │   Spawns: Task(gsd-planner)
-  │     └─ reads ROADMAP.md + CONTEXT.md + RESEARCH.md + codebase/
-  │     └─ writes .planning/phases/01-foundation/01-01-PLAN.md (+ 01-02..N)
-  │     └─ updates ROADMAP.md plan list
-  │     └─ commits via gsd-sdk
-  │     └─ returns "## PLANNING COMPLETE"
-  │   Optional: Spawns Task(gsd-plan-checker) → validates PLAN.md
-  │   Returns: wave structure + "Run /gsd-execute-phase 1"
-  ▼
-User types /gsd-execute-phase 1
-  │
-  ▼
-[SKILL: gsd-execute-phase/SKILL.md]              ← user-facing, wave orchestrator
-  │   gsd-sdk query init.execute-phase "1" → JSON with plans, waves, models
-  │   For each wave (parallel):
-  │     Spawns: Task(gsd-executor, prompt=PLAN.md content + context)
-  │       └─ reads PLAN.md tasks
-  │       └─ implements each task
-  │       └─ git add <specific files> && git commit per task
-  │       └─ writes 01-01-SUMMARY.md
-  │       └─ gsd-sdk query state.advance-plan, state.update-progress
-  │       └─ gsd-sdk query roadmap.update-plan-progress
-  │       └─ gsd-sdk query requirements.mark-complete REQ-IDs
-  │       └─ final commit: docs(01-01): complete plan
-  │       └─ returns "## PLAN COMPLETE" or "## CHECKPOINT REACHED"
-  │   After all waves:
-  │     Spawns: Task(gsd-verifier) → verifies against ROADMAP.md success criteria
-  │     If gaps: gsd-sdk query suggests /gsd-plan-phase 1 --gaps
-  │   Returns: "Run /gsd-plan-phase 2" or "/gsd-transition"
-  ▼
-Repeat for each phase
+  └─ emits hookSpecificOutput.additionalContext with:
+       - project + branch + recent commits
+       - current brief / phase
+       - quality gates list
+       - available skills + agents (live)
+       - "next action" hint
 ```
 
-**Key wiring mechanisms:**
+The `jq -n --arg` discipline in Foundation guarantees this JSON is well-formed under adversarial branch names, commit messages, and paths — the v1.x string-interpolated version is a known fragility.
 
-1. **init context** — Every orchestrator calls `gsd-sdk query init.<workflow>` first. Returns JSON with model assignments, file paths, config flags. Single source of truth for session config.
+## Build Order — Dependencies Drive Sequencing
 
-2. **Typed subagent spawning** — `Task(subagent_type="gsd-executor", prompt="...")`. The subagent type name maps to a file in `~/.claude/agents/gsd-executor.md`. Agents auto-load their definition without the orchestrator reading it.
-
-3. **Completion markers** — Each agent returns a structured header (`## PLAN COMPLETE`, `## PLANNING COMPLETE`, `## CHECKPOINT REACHED`) that the orchestrator parses to route.
-
-4. **Forward arrow in SKILL.md** — Every skill's final output includes a "Next Steps" line pointing to the next skill. This is the user-facing version of the programmatic routing.
-
-5. **Atomic commits as workflow gates** — Each plan produces N per-task commits + 1 docs commit. The docs commit (SUMMARY.md + STATE.md + ROADMAP.md) is the gate signal that execution of that plan is done.
-
----
-
-## 3. GSD agent type registry shape
-
-GSD agents are single markdown files in `~/.claude/agents/` with a naming convention of `gsd-{role}.md`. There is no separate registry file — the agents directory IS the registry.
-
-**Naming convention:** `gsd-<role>.md` (all lowercase, hyphenated)
-
-**Frontmatter fields used by GSD agents:**
-
-```yaml
----
-name: gsd-executor
-description: "Executes GSD plans... Spawned by execute-phase orchestrator."
-tools: Read, Write, Edit, Bash, Grep, Glob, mcp__context7__*
-color: yellow
----
-```
-
-**Full registry (from live `~/.claude/agents/`):**
-
-| Agent file | Role | Spawned by |
-|------------|------|-----------|
-| `gsd-executor.md` | Executes PLAN.md tasks, commits, creates SUMMARY.md | execute-phase orchestrator |
-| `gsd-planner.md` | Creates PLAN.md files with goal-backward methodology | plan-phase orchestrator |
-| `gsd-phase-researcher.md` | Phase-scoped technical research | plan-phase orchestrator (optional) |
-| `gsd-project-researcher.md` | Project-wide domain research | new-project orchestrator |
-| `gsd-roadmapper.md` | Creates/revises ROADMAP.md | new-project, new-milestone orchestrators |
-| `gsd-verifier.md` | Post-execution verification vs ROADMAP success criteria | execute-phase orchestrator |
-| `gsd-plan-checker.md` | Plan quality validation (revision gate) | plan-phase orchestrator |
-| `gsd-codebase-mapper.md` | Maps project structure to .planning/codebase/ | /gsd-codebase-map skill |
-| `gsd-debugger.md` | Root cause analysis + fix | /gsd-debug skill |
-| `gsd-security-auditor.md` | STRIDE threat analysis | /gsd-secure-phase skill |
-| `gsd-ui-researcher.md` | UI/UX spec research | /gsd-ui skill |
-| `gsd-ui-checker.md` | UI quality validation | /gsd-verify-work (UI variant) |
-| `gsd-ui-auditor.md` | UI implementation audit | execute-phase (UI phases) |
-| `gsd-nyquist-auditor.md` | Verification coverage sampling | execute-phase orchestrator |
-| `gsd-integration-checker.md` | Cross-phase integration validation | execute-phase orchestrator |
-| `gsd-doc-writer.md` | Documentation generation | /gsd-docs-update skill |
-| `gsd-research-synthesizer.md` | Combines multiple research outputs | new-project orchestrator |
-| `gsd-assumptions-analyzer.md` | Surfaces hidden assumptions in plans | plan-phase orchestrator |
-| `gsd-user-profiler.md` | User profile inference | new-project orchestrator |
-| `gsd-intel-updater.md` | Codebase intelligence update | /gsd-analyze-dependencies |
-| `gsd-code-fixer.md` | Automated code fixes | /gsd-audit-fix |
-| `gsd-code-reviewer.md` | Code review | /gsd-code-review skill |
-| `gsd-eval-planner.md` / `gsd-eval-auditor.md` | AI eval scaffolding | /gsd-ai-integration-phase |
-
-**How orchestrators declare and consume agent types:**
-
-```bash
-# Orchestrator spawns by type name (maps to agents/gsd-executor.md):
-Task(subagent_type="gsd-executor", prompt="...")
-
-# Model resolved before spawn:
-INIT=$(gsd-sdk query init.execute-phase "${PHASE}")
-executor_model=$(echo "$INIT" | jq -r '.executor_model')
-# gsd-sdk reads .planning/config.json model_profile → looks up gsd-executor row in profiles table
-# Returns: "inherit" (for opus) or specific model ID
-```
-
-The `gsd-sdk` is the single model resolution layer — skills never hardcode model names, they get resolved at init time from the profile table.
-
----
-
-## 4. Bridging v1.x pipeline with GSD phase/plan model
-
-The v1.x pipeline (`/prd → /plan-stories → /execute → /ship`) and the GSD phase model (`discuss → research → plan → execute → verify → transition`) are structurally homologous. The mapping is straightforward.
-
-**V1.x → V2 skill surface map:**
-
-| V1.x skill | V2 surface | What changes |
-|------------|-----------|--------------|
-| `/prd` | Becomes `/gsd-discuss-phase N` (inline) OR a pre-phase `CONTEXT.md` | PRD content becomes Decisions (D-01..N) in phase CONTEXT.md. Structured Socratic interview replaces freeform PRD writing. The `.claude-pipeline/prds/` directory is superseded by `.planning/phases/NN-name/NN-CONTEXT.md`. |
-| `/plan-stories` | Becomes `/gsd-plan-phase N` | `stories.json` is replaced by `NN-NN-PLAN.md` files with wave/dependency frontmatter. Plans are executable prompts, not data structures. |
-| `/execute` | Becomes `/gsd-execute-phase N` | `@executor` + `@reviewer` per-story pattern is replaced by `gsd-executor` per-plan in waves. Quality gates move from skill instructions to PLAN.md `<verification>` + `<success_criteria>`. |
-| `/ship` | Becomes final `/gsd-verify-work N` → `/gsd-transition` → `gh pr create` | Final quality gates, push, PR creation are post-verify steps. `/ship` logic folds into the execute-phase completion + transition workflow. |
-| `/debug` | Becomes `/gsd-debug` | Wraps `gsd-debugger` agent. Shape is nearly identical — same isolation model. |
-| `/tdd` | Folds into PLAN.md `type: tdd` + `tdd="true"` task attribute | TDD is not a separate skill; it's a plan type. The `gsd-executor` handles RED/GREEN/REFACTOR cycles natively. |
-| `/refactor` | Folds into a refactor phase in the roadmap | `/refactor` becomes a named phase executed by `gsd-executor` with `type: refactor` tasks. |
-| `/explore-repo` | Becomes `/gsd-codebase-map` (or inline via `gsd-codebase-mapper` agent) | Writes to `.planning/codebase/` instead of being an ad-hoc skill. |
-| `/godmode` | Stays as `/godmode` (quick reference) | Updated to reflect v2 vocabulary: phases, plans, GSD-aligned commands. Lists public skills with next/prev arrows. |
-
-**State storage migration:**
-
-| V1.x location | V2 location | Migration path |
-|---------------|-------------|----------------|
-| `.claude-pipeline/stories.json` | `.planning/phases/NN-name/NN-NN-PLAN.md` | install.sh detects `.claude-pipeline/` and offers migration. Archived plans stay in `.claude-pipeline/archive/` (no deletion). |
-| `.claude-pipeline/prds/prd-*.md` | `.planning/phases/NN-name/NN-CONTEXT.md` | User-initiated migration; PRD content converts to D-01..N decisions. |
-| `.claude-pipeline/progress.txt` | `.planning/STATE.md` | STATE.md is richer (progress bar, metrics, session continuity). |
-
-**Interop period:** During the v1.x → v2 transition, `session-start.sh` and `post-compact.sh` should detect both `.claude-pipeline/` and `.planning/` and inject whichever is present. This allows projects mid-flight on v1.x to finish without disruption before adopting the v2 shape.
-
----
-
-## 5. New v2 components
-
-Based on the gap analysis between v1.x and GSD parity, these are the new components needed:
-
-**Required (no equivalent in v1.x):**
-
-| Component | Where it lives | What it does |
-|-----------|---------------|--------------|
-| `gsd-sdk` equivalent or bypass | `install.sh` installs nothing; hooks call shell + jq | GSD's `gsd-sdk` handles: init context assembly, model resolution, state updates, plan validation, git commit routing. V2 can bypass the Node binary using shell + jq + existing bash primitives — see "No SDK" approach below. |
-| `.planning/config.json` | `.planning/config.json` per consumer project | Per-project config: model profile, commit_docs, branching strategy. Read by `session-start.sh` hook. |
-| Model profile system | `rules/godmode-routing.md` + agent frontmatter | Agent frontmatter declares `model:` field. A profile table in a shared rule maps role → model for each profile tier (quality/balanced/budget). Skills read the profile from `.planning/config.json`. |
-| Phase CONTEXT.md writer | `skills/discuss/SKILL.md` (new skill) | `/discuss` — Socratic interview skill that produces phase CONTEXT.md. Replaces `/prd`. |
-| Phase PLAN.md writer | `skills/plan-phase/SKILL.md` (replaces `plan-stories`) | Spawns `@planner` agent (new agent). Writes PLAN.md files with wave/dependency frontmatter. |
-| `@planner` agent | `agents/planner.md` (new agent) | Specialization of current `/plan-stories` logic. Model: opus. Produces PLAN.md with goal-backward methodology and threat model. |
-| `@verifier` agent | `agents/verifier.md` (new agent) | Post-execution verification. Checks SUMMARY.md against ROADMAP.md success criteria. Model: sonnet. |
-| STATE.md lifecycle | `hooks/session-start.sh` + `hooks/post-compact.sh` + skills | session-start.sh reads `.planning/STATE.md` and injects Current Position into session context. post-compact.sh re-injects STATE.md summary on compaction. |
-| Atomic commit enforcement | Agent instructions in all code-writing agents | Every code agent commits after each task with `type(phase-plan): description` format. Rule lives in `rules/godmode-git.md` (upgrade from current v1.x git rule). |
-
-**"No SDK" approach (recommended per PROJECT.md constraints):**
-
-GSD's `gsd-sdk` is a Node.js binary that handles 6 concerns. Each can be replicated in shell+jq:
-
-| gsd-sdk concern | Shell+jq equivalent | File |
-|----------------|---------------------|------|
-| `init.execute-phase` | `jq` reads `.planning/config.json` + `ls .planning/phases/NN-name/` | `skills/_shared/init-context.md` (shared fragment) |
-| `state.advance-plan` | `jq` mutation of STATE.md fields via sed/awk | `skills/_shared/state-ops.md` |
-| `roadmap.update-plan-progress` | `sed` checkbox update in ROADMAP.md | Inline in agents |
-| `requirements.mark-complete` | `sed` checkbox update in REQUIREMENTS.md | Inline in agents |
-| Model resolution | Profile table in `rules/godmode-routing.md` | Agent reads profile from `.planning/config.json`, applies table |
-| `commit` with gitignore check | Shell: `git check-ignore -q .planning/ || git add ... && git commit ...` | Shared fragment |
-
-The tradeoff: more verbose agent instructions (they embed the shell logic), but zero runtime dependencies beyond bash + jq, which PROJECT.md mandates.
-
----
-
-## 6. Data flow across a multi-agent session
-
-**Numbered data flow for a complete session:**
+This is the core of the milestone planning recommendation. The order is not arbitrary; later layers literally cannot be safely built without earlier layers.
 
 ```
-1. SESSION START
-   Claude Code fires SessionStart hook
-   └─ hooks/session-start.sh reads:
-       ├─ .planning/STATE.md (Current Position, Last session)
-       ├─ .planning/config.json (model_profile, flags)
-       ├─ git branch, recent commits
-       └─ emits hookSpecificOutput.additionalContext JSON:
-           {"project": "...", "currentPhase": "...", "currentPlan": "...", "modelProfile": "..."}
-
-2. RULES LOADED (always-on)
-   Claude Code loads rules/godmode-*.md into every session.
-   These establish: identity, coding standards, quality gates, routing vocabulary,
-   phase lifecycle, git discipline, context injection format.
-   CACHE-FRIENDLINESS: Rules are static → they hit the 5-min prompt cache on every
-   subsequent turn after first load. Structure them as leading stable content.
-
-3. USER INVOKES SKILL
-   User types /plan-phase 2
-   └─ skills/plan-phase/SKILL.md loads (frontmatter: model, tools, isolation)
-   └─ Orchestrator reads .planning/config.json (model_profile → resolve planner model)
-   └─ Orchestrator reads .planning/ROADMAP.md phase 2 goal + req IDs
-   └─ Orchestrator reads .planning/phases/02-name/02-CONTEXT.md (if exists)
-   └─ Orchestrator reads .planning/phases/02-name/02-RESEARCH.md (if exists)
-   └─ Orchestrator reads .planning/codebase/ARCHITECTURE.md + CONVENTIONS.md
-
-4. SUBAGENT SPAWN
-   Orchestrator calls Task(subagent_type="planner", prompt=assembled-context)
-   └─ @planner receives: phase goal, req IDs, context decisions, codebase conventions
-   └─ @planner writes: .planning/phases/02-name/02-01-PLAN.md
-   └─ @planner writes: .planning/phases/02-name/02-02-PLAN.md (etc)
-   └─ @planner updates: .planning/ROADMAP.md plan list
-   └─ @planner commits: "docs(phase-02): create phase plans"
-   └─ @planner returns: "## PLANNING COMPLETE" + wave structure
-
-5. EXECUTION SPAWN (per wave, parallel)
-   Orchestrator calls Task(subagent_type="executor", prompt=plan-content)
-   └─ @executor reads: 02-01-PLAN.md tasks
-   └─ @executor implements task 1 → git add specific files → git commit "feat(02-01): ..."
-   └─ @executor implements task 2 → git commit "feat(02-01): ..."
-   └─ @executor writes: .planning/phases/02-name/02-01-SUMMARY.md
-   └─ @executor updates STATE.md (advance-plan, update-progress, record-metric)
-   └─ @executor updates ROADMAP.md (plan checkbox)
-   └─ @executor updates REQUIREMENTS.md (mark req IDs complete)
-   └─ @executor commits: "docs(02-01): complete plan"
-   └─ @executor returns: "## PLAN COMPLETE" + commit hashes
-
-6. VERIFICATION
-   Orchestrator calls Task(subagent_type="verifier")
-   └─ @verifier reads: ROADMAP.md phase 2 success criteria
-   └─ @verifier reads: 02-01-SUMMARY.md, 02-02-SUMMARY.md (frontmatter only)
-   └─ @verifier checks: must_haves.truths observable, artifacts exist, key_links wired
-   └─ @verifier writes: .planning/phases/02-name/02-VERIFICATION.md
-   └─ @verifier returns: "## Verification Complete" PASS or gaps found
-
-7. COMPACTION (long sessions)
-   Claude Code fires PostCompact hook
-   └─ hooks/post-compact.sh reads .planning/STATE.md
-   └─ Emits: quality gates, skill list, current phase/plan, recent decisions
-   Session continues with restored critical context.
-
-8. TRANSITION
-   Orchestrator updates PROJECT.md (Requirements: Active → Validated)
-   Commits: "docs: complete phase 2 — foundation done"
-   Suggests: /plan-phase 3
+              Phase 0: Setup (already complete — re-init, .planning/ scaffolded)
+                                  │
+                                  ▼
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Phase 1: FOUNDATION & SAFETY HARDENING (hooks, installer, version)│
+   │   FOUND-01..10, HOOK-06..09                                      │
+   │                                                                  │
+   │   Hardens the substrate everything else stands on:               │
+   │     - plugin.json as single version source; install.sh reads it  │
+   │     - hooks emit valid JSON via `jq -n --arg` (no interpolation) │
+   │     - hooks read cwd from stdin (not pwd)                        │
+   │     - statusline single jq invocation per render                 │
+   │     - installer prompts per-file before overwriting              │
+   │     - backup rotation (keep last 5)                              │
+   │     - shellcheck clean across every *.sh                         │
+   │     - PreToolUse hook blocks --no-verify and secret patterns     │
+   │     - PostToolUse hook surfaces failed quality-gate exits        │
+   │     - quality-gates.txt as single source                         │
+   │                                                                  │
+   │   Why first: every later phase touches hooks/installer/version.  │
+   │   Building agents on a fragile hook substrate doubles the bugs.  │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Phase 2: AGENT LAYER MODERNIZATION                               │
+   │   AGENT-01..08 (frontmatter modernization)                       │
+   │   AGENT-NEW-01..04 (@planner, @verifier, @spec-reviewer,         │
+   │                     @code-reviewer)                              │
+   │   AGENT-LINT-01 (frontmatter linter, CI-enforced)                │
+   │                                                                  │
+   │   Why second: skills in Phase 3 will spawn these agents.         │
+   │   Agents must exist with correct frontmatter (model aliases,     │
+   │   effort policy, isolation, maxTurns, Connects to:) before       │
+   │   skills can be wired to them.                                   │
+   │                                                                  │
+   │   Depends on Phase 1: PreToolUse + PostToolUse hooks must be     │
+   │   live so worktree-isolated agents can't bypass --no-verify.     │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Phase 3: SKILL LAYER REBUILD + STATE MANAGEMENT                  │
+   │   SKILL-01..05 (/mission, /brief, /plan, /build, /verify)        │
+   │   SKILL-06 (/ship rewrite)                                       │
+   │   SKILL-07 (helpers: /debug, /tdd, /refactor, /explore-repo —    │
+   │             updated to new agent names + Auto Mode awareness)    │
+   │   SKILL-08 (/godmode rewrite — live filesystem index)            │
+   │   STATE-01..04 (.planning/ templates, init-context.sh,           │
+   │                 config.json schema, briefs/ layout)              │
+   │   DEPRECATE-01 (v1 /prd, /plan-stories, /execute one-time notes) │
+   │                                                                  │
+   │   Why third: this is where the user-facing surface gets built.   │
+   │   Each skill maps to specific agents from Phase 2 and writes to  │
+   │   .planning/ artifacts whose templates land in this phase.       │
+   │                                                                  │
+   │   Depends on Phase 2: every skill has a `Connects to:` referencing│
+   │   real agent files.                                              │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Phase 4: WORKFLOW INTEGRATION & PARITY                           │
+   │   WORKFLOW-01 (rules/godmode-workflow.md rewrite for the chain)  │
+   │   WORKFLOW-02 (rules/godmode-routing.md effort policy lock)      │
+   │   WORKFLOW-03 (rules/godmode-quality.md cross-references         │
+   │                quality-gates.txt single source)                  │
+   │   PARITY-01 (plugin-mode + manual-mode UX parity check)          │
+   │   PARITY-02 (README, CHANGELOG, /godmode agree on surface)       │
+   │   MIGRATE-01 (v1.x → v2 one-time migration: detect              │
+   │               .claude-pipeline/, emit note, never destructive)   │
+   │   PROMPT-CACHE-01 (rule structure: static preamble first,        │
+   │                    no dynamic content in rule bodies)            │
+   │                                                                  │
+   │   Why fourth: rules tie together the agents (Phase 2) and skills │
+   │   (Phase 3) into a coherent workflow story. Migration reads the  │
+   │   live state from Phase 1's installer and the new artifacts from │
+   │   Phase 3.                                                       │
+   └──────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+   ┌──────────────────────────────────────────────────────────────────┐
+   │ Phase 5: QUALITY — CI, TESTS, DOCUMENTATION                      │
+   │   QUAL-01 (GitHub Actions matrix: macOS + Linux on every PR)     │
+   │   QUAL-02 (shellcheck on every *.sh)                             │
+   │   QUAL-03 (JSON schema validation on every *.json)               │
+   │   QUAL-04 (frontmatter linter run in CI)                         │
+   │   QUAL-05 (bats-core smoke test: install → /godmode → uninstall  │
+   │            in temporary $HOME)                                   │
+   │   QUAL-06 (CONTRIBUTING.md: backup rotation, worktree prune,     │
+   │            frontmatter conventions)                              │
+   │   QUAL-07 (resolve all High-severity items in CONCERNS.md with   │
+   │            traceability)                                         │
+   │                                                                  │
+   │   Why last: testing the substrate (Phase 1), agents (Phase 2),   │
+   │   skills (Phase 3), and integration (Phase 4) requires all four  │
+   │   to exist. Trying to write the bats smoke test before /godmode  │
+   │   is rewritten produces a test of the v1.x shape.                │
+   └──────────────────────────────────────────────────────────────────┘
 ```
 
-**Context propagation mechanisms:**
-
-| Mechanism | What it carries | Scope |
-|-----------|----------------|-------|
-| Rules (always-on) | Identity, coding standards, quality gates, workflow vocabulary | Every turn of every session |
-| SessionStart hook | Project name, current phase/plan, model profile, git state | Session open |
-| PostCompact hook | Quality gates, skill list, current STATE.md position | After compaction |
-| @-references in PLAN.md | Phase goal, codebase conventions, prior SUMMARY frontmatter | Subagent scope only |
-| STATE.md | Accumulated decisions, blockers, session continuity | Persistent across sessions |
-| ROADMAP.md | Phase structure, req IDs, success criteria | Cross-phase |
-
----
-
-## 7. Component boundaries
-
-**Decision rule:** "If the user would type it, it's a skill. If only agents call it, it's an agent. If it runs on an event, it's a hook. If it shapes every response, it's a rule. If it controls access, it's a permission."
-
-```
-┌─────────────────────────────────────────────────────────────────────────┐
-│  USER SURFACE (skills + commands)                                        │
-│                                                                          │
-│  /godmode  /discuss  /plan-phase  /execute-phase  /ship                 │
-│  /debug    /tdd      /explore-repo  /refactor  /secure-phase             │
-│                                                                          │
-│  Rule: ≤ 12 total. Each must declare goal + connects-to arrows.          │
-└─────────────────────────────────────────────────────────────────────────┘
-                          │ spawns via Task()
-                          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  INTERNAL AGENTS (not user-invocable)                                    │
-│                                                                          │
-│  @planner     @executor    @verifier    @architect   @security-auditor  │
-│  @researcher  @reviewer    @writer      @doc-writer  @test-writer        │
-│                                                                          │
-│  Rule: hidden from /godmode listing. Invoked only by orchestrator skills │
-└─────────────────────────────────────────────────────────────────────────┘
-                          │ read/write
-                          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  PLANNING ARTIFACTS (.planning/)                                          │
-│                                                                          │
-│  PROJECT.md  REQUIREMENTS.md  ROADMAP.md  STATE.md  config.json         │
-│  phases/NN-name/{PLAN,SUMMARY,CONTEXT,RESEARCH,VERIFICATION}.md          │
-│                                                                          │
-│  Rule: all updates committed atomically via git                          │
-└─────────────────────────────────────────────────────────────────────────┘
-                          │ event-driven
-                          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  HOOKS (event handlers)                                                  │
-│                                                                          │
-│  session-start.sh    → injects project context + current STATE position │
-│  post-compact.sh     → re-injects quality gates + STATE after compaction │
-│                                                                          │
-│  Rule: output valid JSON always. No side effects (read-only shell execs) │
-└─────────────────────────────────────────────────────────────────────────┘
-                          │ always-on
-                          ▼
-┌─────────────────────────────────────────────────────────────────────────┐
-│  RULES (always-on context)                                               │
-│                                                                          │
-│  godmode-identity.md     → who Claude is in this plugin               │
-│  godmode-workflow.md     → phase lifecycle, vocabulary alignment       │
-│  godmode-coding.md       → coding standards                           │
-│  godmode-git.md          → atomic commit discipline, PR discipline     │
-│  godmode-quality.md      → quality gates (typecheck/lint/tests/etc.)  │
-│  godmode-testing.md      → test strategy                              │
-│  godmode-routing.md      → model profile table, agent routing         │
-│  godmode-context.md      → .planning/ shape, STATE.md format          │
-│                                                                          │
-│  Rule: one concern per file. Static. Cache-friendly (lead with rules).   │
-└─────────────────────────────────────────────────────────────────────────┘
-```
-
-**Belongs as skill (user-facing):** Anything the user initiates that starts a workflow phase. Has a named goal. Has upstream and downstream arrows. Example: `/plan-phase` (upstream: `/discuss`, downstream: `/execute-phase`).
-
-**Belongs as internal agent:** Anything that does expensive specialized work as a subagent. Has a single job. Returns a completion marker. Never has a `/` command. Example: `@planner` (spawned by `/plan-phase`, writes PLAN.md).
-
-**Belongs as hook:** Anything event-driven. Fires without user action. Must be idempotent. Must emit valid JSON. Must be fast (<10s). Example: `session-start.sh`.
-
-**Belongs as rule:** Anything that should shape every Claude response in every session, not just workflow sessions. Static. Short. Declarative. Example: `godmode-git.md` ("always commit with --no-verify false").
-
-**Belongs as permission:** Anything that allows or denies tool access. Lives in `settings.json`. Example: allowing `Bash` with `git push`.
-
----
-
-## 8. Prompt caching strategy
-
-Claude Code's prompt cache has a 5-minute TTL on the first cache-eligible prefix. Rules and agent system prompts are the highest-value targets.
-
-**Cache hit opportunities:**
-
-| Component | Cache strategy | Rationale |
-|-----------|---------------|-----------|
-| `rules/godmode-*.md` | Lead every conversation (placed first in context). Static content. Never vary between turns. | Rules are always-on. They appear at position 0 of every session. Cache hit on turn 2+. |
-| Agent system prompts (`agents/*.md` body) | Structure as: stable preamble → stable process → variable context injection at end | First N tokens of every agent spawn are identical if the process description is static. Variable context (phase, plan paths) appended last. |
-| Session-start hook output | Keep `additionalContext` structure stable. Only vary field values, not field structure. | Claude Code's parser sees same JSON schema every session → cache-eligible prefix is the schema. |
-| Shared skill fragments (`skills/_shared/*.md`) | Maximize reuse. Same fragment referenced by multiple skills = repeated token sequence = cache hit when Claude reads it inline. | Fragment content is identical across skill invocations. |
-| PLAN.md `<execution_context>` block | Point to stable @-references (workflow files, templates). These are always the same. | Agent reads same execution context on every plan → cache hit. |
-
-**Cache-hostile patterns to avoid:**
-
-| Anti-pattern | Why it hurts | Fix |
-|-------------|-------------|-----|
-| Embedding session-specific data (date, branch name) in rules | Rules are cache-eligible only if static. Timestamps break every cache. | Move dynamic data to hook output (additionalContext), not rules. |
-| Varying agent system prompt preamble by plan | Cache requires identical prefix. Different preamble = zero hits. | Keep role + process description in agent file. Pass plan-specific data via prompt argument. |
-| Long conversation context before stable content | Cache prefix must start from position 0. Inserting dynamic content early pushes rules down past the cache checkpoint. | hooks → rules → dynamic context. Never reorder. |
-| Per-invocation agent instructions embedded inline in PLAN.md | PLAN.md is per-plan. Agents reading inline instructions = new token sequence = no cache hit. | Agent core instructions live in agents/*.md. PLAN.md passes only task data. |
-
-**Recommended agent system prompt structure (cache-maximizing):**
-
-```
-[STATIC: Role declaration — identical every spawn]
-[STATIC: Core responsibilities — identical every spawn]
-[STATIC: Process steps — identical every spawn]
-[STATIC: Output format — identical every spawn]
-[DYNAMIC: Plan-specific context — injected last by orchestrator]
-```
-
-The static prefix (lines 1–N) hits cache on every re-spawn of the same agent type.
-
----
-
-## 9. Suggested build order
-
-Dependencies flow through the layers: rules must exist before hooks reference them, agents must exist before skills spawn them, the `.planning/` shape must be stable before any workflow writes to it.
-
-**Build order (dependency-safe, independently shippable):**
-
-```
-Phase 1: Foundation layer (enables everything else)
-  ├─ rules/godmode-workflow.md ── update with v2 vocabulary (phases, plans, GSD lifecycle)
-  ├─ rules/godmode-git.md      ── add atomic commit discipline
-  ├─ rules/godmode-routing.md  ── add model profile table (quality/balanced/budget)
-  ├─ rules/godmode-context.md  ── add .planning/ shape description
-  └─ hooks/session-start.sh    ── add STATE.md reader, inject currentPhase/currentPlan
-
-Phase 2: Agent layer (new specialized agents)
-  ├─ agents/planner.md     ── new: goal-backward PLAN.md writer (replaces plan-stories logic)
-  ├─ agents/verifier.md    ── new: post-execution verification vs success criteria
-  ├─ agents/executor.md    ── upgrade: atomic commit discipline, SUMMARY.md writer, STATE.md updater
-  ├─ agents/architect.md   ── upgrade: CONTEXT.md writer for discuss phase
-  └─ agents/*.md (others)  ── upgrade: add "Connects to:" forward/back arrows, model assignments
-
-Phase 3: Skill layer (user-facing workflow)
-  ├─ skills/discuss/SKILL.md          ── new: Socratic interview → CONTEXT.md (replaces /prd)
-  ├─ skills/plan-phase/SKILL.md       ── new: spawns @planner, wave structure (replaces /plan-stories)
-  ├─ skills/execute-phase/SKILL.md    ── new: wave orchestrator, spawns @executor in parallel (replaces /execute)
-  ├─ skills/ship/SKILL.md             ── upgrade: post-verify + PR creation (simplified)
-  ├─ skills/debug/SKILL.md            ── upgrade: wraps @debugger with GSD-style completion markers
-  ├─ skills/tdd/SKILL.md              ── deprecate: fold into PLAN.md type:tdd (or keep as thin wrapper)
-  ├─ skills/refactor/SKILL.md         ── upgrade: becomes a phase-scoped refactor orchestrator
-  └─ commands/godmode.md              ── upgrade: v2 vocabulary, public agent list, next/back arrows
-
-Phase 4: State management layer
-  ├─ hooks/post-compact.sh            ── upgrade: read STATE.md, inject phase/plan position
-  ├─ skills/_shared/state-ops.md      ── new: shell+jq STATE.md update fragments
-  ├─ skills/_shared/init-context.md   ── new: config.json reader + model resolution fragment
-  └─ skills/_shared/commit-ops.md     ── new: gitignore-aware planning commit fragment
-
-Phase 5: .planning/ initialization
-  ├─ skills/init-project/SKILL.md     ── new (or `/godmode` flow): writes .planning/ scaffold
-  │                                      PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json
-  └─ install.sh                        ── upgrade: detect v1.x .claude-pipeline/, offer migration
-
-Phase 6: Quality + CI
-  ├─ Upgrade: hooks emit valid JSON under adversarial inputs (escaping fixes)
-  ├─ Add: CI shellcheck, JSON schema validation, frontmatter lint
-  ├─ Add: smoke test: install → /godmode → /discuss → /plan-phase → /execute-phase → uninstall
-  └─ Fix: version drift (plugin.json canonical, install.sh + godmode.md read from it)
-```
-
-**Dependency arrows:**
-
-```
-Phase 1 (rules + hooks) → must ship first (everything reads rules)
-Phase 2 (agents) → depends on Phase 1 rules (agents follow rule conventions)
-Phase 3 (skills) → depends on Phase 2 (skills spawn agents)
-Phase 4 (state mgmt) → depends on Phase 3 (state updated by skills/agents)
-Phase 5 (.planning/ init) → depends on Phase 4 (init creates STATE.md)
-Phase 6 (CI) → depends on Phase 5 (tests need full stack)
-```
-
-Each phase boundary is independently shippable: after Phase 1, rules are v2-grade and hooks are improved. After Phase 2, agents are production-ready. After Phase 3, the full user workflow is functional. Phases 4–6 are hardening passes.
-
----
-
-## V1.x → V2 Full Migration Map
-
-**What changes shape:**
-
-| V1.x component | V2 shape | Migration |
-|---------------|----------|-----------|
-| `.claude-pipeline/stories.json` | `.planning/phases/NN-name/NN-NN-PLAN.md` | Detect on session-start, offer migration |
-| `.claude-pipeline/prds/` | `.planning/phases/NN-name/NN-CONTEXT.md` | Manual conversion; old PRDs archived not deleted |
-| `skills/prd/SKILL.md` | `skills/discuss/SKILL.md` | New skill, old skill retired |
-| `skills/plan-stories/SKILL.md` | `skills/plan-phase/SKILL.md` | New skill, old skill retired |
-| `skills/execute/SKILL.md` | `skills/execute-phase/SKILL.md` | New orchestrator pattern (wave-based) |
-| `skills/tdd/SKILL.md` | Absorbed into PLAN.md `type:tdd` | Skill deprecated or kept as thin alias |
-| Agent invocation: inline in skill | Agent invocation: `Task(subagent_type="agent-name")` | All skills updated to typed spawning |
-| Per-story quality gates (in skill) | Per-task verification (in PLAN.md `<verification>`) | Quality gate logic moves to planner output |
-| Agent model: hardcoded `model: opus` | Agent model: `model:` resolved from profile table | `rules/godmode-routing.md` + `config.json` |
-
-**What survives unchanged:**
-
-- `rules/godmode-coding.md`, `rules/godmode-testing.md` — coding and testing rules are stable
-- `agents/architect.md`, `agents/security-auditor.md`, `agents/writer.md` — roles stay, only model assignments + forward arrows added
-- `hooks/` basic structure — SessionStart + PostCompact event bindings unchanged
-- `config/statusline.sh` — no changes needed
-- `install.sh` plugin/manual mode detection — preserved; migration logic added
-- `.claude-plugin/plugin.json` — version becomes single source of truth
-
-**New files (don't exist in v1.x):**
-
-```
-agents/planner.md              ← new role
-agents/verifier.md             ← new role
-skills/discuss/SKILL.md        ← new skill
-skills/plan-phase/SKILL.md     ← replaces plan-stories
-skills/execute-phase/SKILL.md  ← replaces execute (wave orchestrator)
-skills/init-project/SKILL.md   ← new skill (optional, or absorbed into /godmode)
-skills/_shared/state-ops.md    ← new fragment
-skills/_shared/init-context.md ← new fragment
-skills/_shared/commit-ops.md   ← new fragment
-```
-
----
-
-## Anti-Patterns
-
-### Anti-Pattern 1: Orchestrator that executes
-
-**What people do:** Skills directly implement work (write files, run git) instead of delegating to typed agents.
-
-**Why it's wrong:** Skill context fills up fast. Parallel execution is impossible. Model choice is inflexible (skill model = task model). Resumability after compaction is lost.
-
-**Do this instead:** Skills are lean coordinators (< 30% context budget for orchestration). Execution goes to typed agents via `Task(subagent_type=...)`.
-
-### Anti-Pattern 2: Monolithic PLAN.md
-
-**What people do:** One big plan with 10+ tasks covering the entire phase.
-
-**Why it's wrong:** Context degrades past 50% — later tasks get rushed, incomplete. Parallelism is zero (all sequential). Recovery after failure means re-running the whole plan.
-
-**Do this instead:** 2-3 tasks per plan. Decompose into waves. Each plan is independently committable.
-
-### Anti-Pattern 3: Dynamic content in rules
-
-**What people do:** Embedding current branch, date, or project name in `rules/godmode-*.md`.
-
-**Why it's wrong:** Rules must be static to be cache-eligible. Dynamic content burns cache on every turn.
-
-**Do this instead:** Rules contain only stable behavior definitions. Dynamic project state lives in hook output (`additionalContext`), not rules.
-
-### Anti-Pattern 4: Implicit skill ordering
-
-**What people do:** Skills exist with no stated connections. Users guess the order.
-
-**Why it's wrong:** Users assembling parts ≠ one clear workflow. This is the core failure mode PROJECT.md is trying to fix.
-
-**Do this instead:** Every skill declares `Connects to: upstream ← this → downstream`. `/godmode` lists every public skill with its forward arrow.
-
-### Anti-Pattern 5: Version drift
-
-**What people do:** `plugin.json`, `install.sh`, and `commands/godmode.md` each maintain a separate version string.
-
-**Why it's wrong:** They drift. Any release process that touches fewer than all three creates a mismatch.
-
-**Do this instead:** `plugin.json` is the canonical version. `install.sh` reads it with `jq`. `commands/godmode.md` reads it via hook or install-time template substitution.
-
----
+### Why this order is non-negotiable
+
+| Dependency | Earlier phase | Later phase |
+|------------|---------------|-------------|
+| Hooks must emit valid JSON before agents can rely on `additionalContext` | Phase 1 (hooks hardened) | Phase 2 (agents reference context) |
+| Agents must exist with correct frontmatter before skills can spawn them | Phase 2 (`@planner` exists) | Phase 3 (`/plan` spawns `@planner`) |
+| `.planning/` templates must exist before skills can write to them | Phase 3 (`STATE-01`) | Phase 3 (`/mission` writes templates) — same phase, sequenced within |
+| Workflow rule must reference real skill names | Phase 3 (skills exist) | Phase 4 (`godmode-workflow.md` references them) |
+| CI bats smoke test must run against real surface | Phase 4 (parity exists) | Phase 5 (smoke test) |
+
+### Within-phase parallelism
+
+- **Phase 1:** FOUND-01 (version) is independent of HOOK-06..09 (hook hardening). Parallelizable.
+- **Phase 2:** All four new agents (`@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`) are independent. Parallelizable. Frontmatter linter (AGENT-LINT-01) blocks until all agents land.
+- **Phase 3:** `/mission`, `/brief`, `/plan`, `/build`, `/verify` are mostly independent _file_-wise but _semantically_ chained — recommend sequential build (`/mission` → `/brief` → `/plan` → `/build` → `/verify`) so each can be smoke-tested in a temp consumer repo before the next is written.
+- **Phase 4:** Three rule rewrites are independent. Parallelizable.
+- **Phase 5:** Five CI gates (shellcheck, JSON schema, frontmatter linter, bats smoke, matrix) are mostly independent. Parallelizable, but bats-smoke depends on all install/skills working.
 
 ## Integration Points
 
-### Internal component boundaries
+### v1.x → v2 migration (one-time, never destructive)
 
-| Boundary | Communication | Notes |
-|----------|---------------|-------|
-| Skill → Agent | `Task(subagent_type, prompt)` | Prompt contains assembled context + plan content; agent loads own instructions from agents/*.md |
-| Agent → .planning/ | `Write` / `Edit` tools | Agents write PLAN.md, SUMMARY.md, STATE.md, ROADMAP.md. Never use Bash heredoc writes. |
-| Hook → Session | `hookSpecificOutput.additionalContext` JSON | Strict protocol. Malformed JSON causes silent failure. Must escape all shell-special chars in values. |
-| Rules → Session | Always-on context injection (Claude Code loads) | No explicit handshake. Rules are passive. |
-| Skill → Config | Shell reads `.planning/config.json` via jq | Skill reads model_profile, branching_strategy before spawning. |
+Two state-shapes need to coexist briefly:
+- **v1.x consumer state:** `<consumer-repo>/.claude-pipeline/{prds/, stories.json, ...}`
+- **v2 consumer state:** `<consumer-repo>/.planning/{PROJECT.md, briefs/, STATE.md, ...}`
 
-### External integration points
+The migration is **detection-only by default**:
 
-| External system | Integration pattern | Notes |
-|----------------|---------------------|-------|
-| Claude Code plugin registry | `.claude-plugin/plugin.json` | Version, description, keywords. Plugin mode vs manual mode. |
-| git | Atomic commits per task + docs commit per plan | Hooks must not call git in a way that bypasses pre-commit hooks. |
-| gh CLI | `/ship` skill calls `gh pr create` | Permission in settings.json. User must be authenticated. |
-| MCP servers (Context7, etc.) | Declared in agent `tools:` frontmatter as `mcp__context7__*` | Not bundled. User configures. |
+```
+on /godmode or SessionStart in a consumer repo:
+  if .claude-pipeline/ exists and .planning/ does NOT:
+    emit one-line note in additionalContext:
+      "v1.x pipeline detected at .claude-pipeline/. Run /mission to start v2 workflow.
+       Existing pipeline state will not be touched. Run `mv .claude-pipeline .claude-pipeline-archive`
+       when ready to retire v1."
+  if both exist:
+    v2 wins; .claude-pipeline/ ignored silently (still on disk for the user)
+```
+
+Installer-side migration (in `install.sh`):
+- Detects `~/.claude/CLAUDE.md` from pre-v1.4 era → offers to remove (existing v1.x behavior, retained)
+- Detects v1.x `~/.claude/.claude-godmode-version` < 2.0.0 → upgrades rules in place, prompts per-file before overwriting customized agents/skills/hooks (FOUND-07)
+- Never deletes user data. Backup rotation keeps last 5 in `~/.claude/backups/`.
+
+### `/godmode` reads the live filesystem
+
+```bash
+# Pseudo-pseudocode for /godmode skill (real version is markdown instructions)
+
+agents=$(ls "$HOME/.claude/agents/" 2>/dev/null | grep '\.md$' | sed 's/\.md$//')
+skills=$(ls -d "$HOME/.claude/skills/"*/ 2>/dev/null | xargs -n1 basename)
+version=$(jq -r .version "$CLAUDE_PLUGIN_ROOT/.claude-plugin/plugin.json" 2>/dev/null \
+          || jq -r .version "$HOME/.claude/.claude-plugin/plugin.json" 2>/dev/null \
+          || echo "unknown")
+state=$(cat "$(git rev-parse --show-toplevel)/.planning/STATE.md" 2>/dev/null || echo "")
+
+# Render with current state:
+#  - workflow chain (/mission → /brief → /plan → /build → /verify → /ship)
+#  - what now? (one of: "run /mission", "continue brief NN", "run /verify N", "run /ship")
+#  - skills/agents enumerated from filesystem
+```
+
+This eliminates the v1.x bug where `commands/godmode.md` listed agents that had been renamed and skills that had been removed. **Source of truth = filesystem.**
+
+### Plugin-mode + manual-mode UX parity (one source)
+
+The single source for hook bindings, permissions, and statusline is `config/settings.template.json`. `hooks/hooks.json` is its plugin-mode mirror.
+
+```
+config/settings.template.json   ←  canonical for manual mode
+  permissions  → merged into ~/.claude/settings.json (both modes)
+  hooks        → merged into ~/.claude/settings.json (manual only)
+  statusLine   → merged into ~/.claude/settings.json (manual only)
+
+hooks/hooks.json                ←  plugin-mode mirror of hooks block
+  paths use ${CLAUDE_PLUGIN_ROOT}/hooks/...
+
+install.sh
+  if MODE=plugin:  merge only `permissions`
+  if MODE=manual:  merge `permissions` + `hooks` + `statusLine`
+```
+
+A CI parity check (Phase 5) asserts that `hooks/hooks.json` and `config/settings.template.json[hooks]` reference the same hook events with consistent timeouts. If they drift, CI fails.
+
+The user's experience:
+- **Plugin mode:** Claude Code plugin loader reads `hooks/hooks.json`, `agents/`, `skills/`, `commands/`, `config/statusline.sh` directly from this repo via `${CLAUDE_PLUGIN_ROOT}`. Updates flow on plugin upgrade.
+- **Manual mode:** `install.sh` copies the same files into `~/.claude/`. Updates flow on `./install.sh` re-run.
+
+Same files. Same `Connects to:` chain. Same `/godmode` output. Different load mechanism — invisible to the user.
+
+## Patterns to Follow (v2-Specific)
+
+### Pattern 1: Skills own orchestration; agents are atomic
+
+**What:** A skill is the only thing that knows about ordering, fan-out, and which agents to call. Agents do not call agents.
+
+**Why:** Keeps the call graph a tree. Makes `/build`'s parallel orchestration debuggable. Lets `/godmode` render an accurate `Connects to:` chain.
+
+**Example:**
+```yaml
+# skills/plan/SKILL.md frontmatter
+name: plan
+description: "Tactical breakdown of a brief into a parallelizable task list"
+Connects to: /brief → /plan → /build
+spawns: [@planner, @spec-reviewer]
+```
+
+```yaml
+# agents/planner.md frontmatter
+name: planner
+model: opus
+effort: xhigh
+maxTurns: 60
+disallowedTools: Write, Edit
+Connects to: /plan invokes @planner; outputs to PLAN.md
+```
+
+### Pattern 2: Read-only by default; isolation when writing
+
+**What:** Every agent declares either `disallowedTools: Write, Edit` (read-only) or `isolation: worktree` (write-bounded). Never both unset.
+
+**Why:** Read-only agents can run in parallel safely. Write-bounded agents can't corrupt the user's working tree. The user's `git status` stays clean during `/build`.
+
+### Pattern 3: Live filesystem indexing, never hardcoded lists
+
+**What:** Anywhere the system needs to enumerate agents or skills (`/godmode`, `PostCompact` injection, `/build` task validation), it reads the directory at runtime.
+
+**Why:** v1.x had a hardcoded skill list in `commands/godmode.md` that drifted from `skills/` — users saw `/explore` documented when only `/explore-repo` existed. Live indexing is one `ls | grep .md | sed` away.
+
+### Pattern 4: jq for everything JSON; never string-interpolate JSON
+
+**What:** Hooks emit JSON via `jq -n --arg name "$value" '{...}'`, never via `echo "{\"name\": \"$value\"}"`.
+
+**Why:** Adversarial branch names (`feat/'-O'-RemoveItem`), commit messages with quotes, and paths with spaces all break string interpolation. `jq -n --arg` is bulletproof.
+
+### Pattern 5: One artifact per workflow gate, atomic commit
+
+**What:** Every workflow transition mutates exactly one file (or one tightly-coupled set) and commits atomically with a REQ-ID-bearing message.
+
+**Why:** `git log` IS the execution log. Atomicity means `/verify N` can `git log --grep "BRIEF-NN"` and reconstruct exactly what happened.
+
+## Anti-Patterns to Avoid (v2-Specific)
+
+### Anti-Pattern 1: A `/everything` mega-command
+
+**What:** A single command that runs the whole pipeline.
+
+**Why bad:** Hides the workflow shape. Users learn the chain by typing each command. A mega-command makes them never learn it. (Listed in PROJECT.md Out of Scope.)
+
+**Instead:** Each command in the 11-command surface does one thing well; `/godmode` shows the chain.
+
+### Anti-Pattern 2: Per-task artifact files (TASK.md)
+
+**What:** Writing a `.planning/briefs/NN/tasks/T01.md` per task.
+
+**Why bad:** `git log` already records what each task did. TASK.md duplicates state with no upside, and forces every task commit to also commit a markdown file.
+
+**Instead:** PLAN.md tracks per-task status (pending / in-flight / done / failed). git log carries the diff and the rationale.
+
+### Anti-Pattern 3: Agents spawning agents
+
+**What:** `@planner` invokes `@architect` mid-execution.
+
+**Why bad:** Turns the call graph from a tree into a DAG. Makes parallel orchestration in `/build` impossible to reason about. Hides cost from the skill (which is the only place a budget can be set).
+
+**Instead:** Skills do all fan-out. If `/plan` needs both `@planner` and `@architect`, the skill calls both sequentially.
+
+### Anti-Pattern 4: Auto-prompt-engineering of user intent
+
+**What:** A skill silently rewrites the user's request before invoking an agent.
+
+**Why bad:** Breaks trust. The user types `/brief 3` expecting their words to be the spec; if the skill mutates them, the resulting brief surprises them. (Listed in PROJECT.md Out of Scope.)
+
+**Instead:** `/brief` runs an explicit Socratic discussion that the user sees. The user's answers are the spec, verbatim.
+
+### Anti-Pattern 5: Touching `~/.claude/settings.json` outside `install.sh`
+
+**What:** A skill or hook directly mutates the user's settings.json.
+
+**Why bad:** That file is the user's, not the plugin's. Direct mutation breaks idempotency, races with the user's other plugins, and prevents `uninstall.sh` from cleanly restoring.
+
+**Instead:** Only `install.sh` and `uninstall.sh` touch `~/.claude/settings.json`. Both via `jq` merges with backup rotation.
+
+## Scalability Considerations
+
+The system is single-user and single-repo, but parallelism inside `/build` introduces a real scalability axis: how many `@executor` instances can run concurrently?
+
+| Scale | Tasks per wave | Strategy |
+|-------|----------------|----------|
+| Small brief (≤ 5 tasks total) | 1–3 | All in one wave; trivially parallel |
+| Medium brief (6–20 tasks) | 3–5 per wave | Wave-based; partition by `dependsOn` |
+| Large brief (> 20 tasks) | 5 max per wave | Cap concurrency at 5; queue overflow |
+
+The cap exists because each `@executor` worktree is a checkout, and disk + Claude Code Task tool concurrency limits are real. v1.x already accumulates ~27 worktrees in `.claude/worktrees/` — Phase 5 adds a worktree-prune recipe in CONTRIBUTING.md.
+
+## Confidence by Component
+
+| Component | Confidence | Source |
+|-----------|------------|--------|
+| Layer model (rules / hooks / agents / skills / commands / statusline / permissions) | HIGH | v1.x baseline in `.planning/codebase/ARCHITECTURE.md`; preserved in v2 |
+| 11-command user surface | HIGH | Locked in PROJECT.md Key Decisions |
+| Skill → Agent invocation matrix | HIGH | Derived from REQUIREMENTS.md Active section + PROJECT.md decisions |
+| Build order (Phase 1 → 5) | HIGH | Dependency-driven; matches existing ROADMAP.md (5f6c389) |
+| `/build` parallel orchestration | MEDIUM | `run_in_background` + worktree pattern is in PROJECT.md but the file-polling fallback details need Phase 3 design |
+| v1.x → v2 migration policy | HIGH | "Never destructive" is locked; one-line detection note is in REQUIREMENTS.md |
+| Plugin/manual parity mechanism | HIGH | Identical to v1.x; v2 just adds a CI parity check |
+| `.planning/` template layout | MEDIUM | PROJECT.md fixes the artifact files (BRIEF.md, PLAN.md); template content lands in Phase 3 |
+
+## Open Questions for Brief Discussion
+
+These are intentionally _not_ resolved here — they belong in `/brief N` Socratic discussions for the relevant phase.
+
+1. **Phase 1 (Foundation):** Should the `PreToolUse` hook block all `--no-verify` patterns, or also block `git commit -n`? (REQ HOOK-06 left this implicit.)
+2. **Phase 2 (Agents):** Does `@verifier` run in `background: true`, or does its read-only-but-thorough pass want foreground priority?
+3. **Phase 3 (Skills):** What's `/build`'s wave-concurrency cap — a hardcoded 5, or a config knob in `.planning/config.json`?
+4. **Phase 3 (State):** Should `STATE.md` be hand-edited by the user, or always machine-mutated? (Recommendation: machine-mutated; user reads, never writes.)
+5. **Phase 4 (Migration):** Does the v1.x → v2 migration print the detection note in `/godmode`, or also in `SessionStart`? (Recommendation: both, but suppressed in `SessionStart` after first session.)
+
+These are flags for the per-phase research and `/brief` discussions, not blockers for roadmap construction.
 
 ---
 
-## Sources
-
-- Live GSD plugin files: `~/.claude/agents/gsd-executor.md`, `gsd-planner.md` (confidence: HIGH — primary source)
-- Live GSD workflow: `~/.claude/get-shit-done/workflows/execute-phase.md` (confidence: HIGH)
-- GSD templates: `~/.claude/get-shit-done/templates/state.md`, `roadmap.md`, `project.md` (confidence: HIGH)
-- GSD references: `model-profiles.md`, `agent-contracts.md`, `context-budget.md`, `gates.md`, `git-planning-commit.md`, `planning-config.md` (confidence: HIGH)
-- V1.x codebase analysis: `.planning/codebase/ARCHITECTURE.md`, `STRUCTURE.md`, `CONVENTIONS.md` (confidence: HIGH)
-- V2 goals and constraints: `.planning/PROJECT.md` (confidence: HIGH)
-
----
-
-*Architecture research for: claude-godmode v2 — GSD-aligned plugin architecture*
-*Researched: 2026-04-25*
+*Architecture research: 2026-04-26 (claude-godmode v2 — polish mature version, re-init under inspiration-only principle)*

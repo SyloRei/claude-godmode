@@ -1,278 +1,237 @@
-# Project Research Summary
+# Research Summary — claude-godmode v2
 
-**Project:** claude-godmode v2 — "polish mature version"
-**Domain:** Claude Code plugin (Bash + Markdown + JSON multi-agent engineering workflow)
-**Researched:** 2026-04-25
-**Confidence:** HIGH (all four dimensions verified against live files and official docs)
+**Project:** claude-godmode v2 — polish mature version
+**Domain:** Claude Code plugin (brownfield maturation of a shipped v1.x baseline)
+**Researched:** 2026-04-26
+**Synthesized:** 2026-04-26
+**Overall confidence:** HIGH
 
 ---
 
 ## Executive Summary
 
-Claude-godmode v2 is a Claude Code plugin maturation — not a greenfield build. The v1.x baseline is functionally sound but fraying at the seams: three divergent version strings, unescaped JSON in hooks, hardcoded skill/agent lists that drift from the filesystem, no CI, and a user-facing surface that feels like a kit rather than a workflow. The research confirms that the path to "best-in-class" is not adding features — it is removing brittleness, adopting Claude Code's expanded primitives (21 hook events, new agent frontmatter fields, model aliases), and aligning the workflow vocabulary with GSD's phase model (discuss → plan → execute → verify) while keeping the command surface at or below 12.
+claude-godmode v2 is a brownfield maturation of a working plugin, not a greenfield build. The v1.x baseline already ships 8 agents, 8 skills, a rules system, session hooks, a statusline, and two install paths. v2's mandate is to replace the ad-hoc `/prd → /plan-stories → /execute → /ship` pipeline with an opinionated, end-to-end workflow — Project → Mission → Brief → Plan → Commit — and to harden every known fragility identified in the codebase audit. The stack is entirely settled: Bash 3.2+, jq, Markdown, JSON, YAML. Nothing at runtime changes. What changes is the authoring surface (modern agent frontmatter, four new hook events, plugin manifest fields), the dev-time guardrails (shellcheck, bats-core, inline jq schema validation, a pure-Bash frontmatter linter), and the end-to-end coherence of the user-facing surface.
 
-The recommended approach is layer-by-layer: stabilize the foundation (hooks, installer, version), upgrade the agent layer (new frontmatter fields, model assignments, internal vs. user-facing split), rebuild the skill layer on top of that (new GSD-aligned workflow skills), then harden with state management, `.planning/` scaffold, and CI. Each layer is independently shippable and the dependency chain is explicit: rules and hooks must be sound before agents depend on them; agents must exist before skills spawn them; `.planning/` shape must be stable before any workflow writes to it.
+The dominant differentiator is radical simplicity: 11 user-facing slash commands (one slot reserved under a hard ≤12 cap), a single observable workflow chain (`/godmode → /mission → /brief → /plan → /build → /verify → /ship`), exactly two artifact files per active brief (BRIEF.md + PLAN.md), and a git log that IS the execution record. Reference plugins offer broader surfaces; this one offers a single path the user can hold in their head. The 11-command cap is not a limitation — it is the product.
 
-The dominant risk is that Phase 1 work (hook hardening, installer safety, version unification) is less visible than new features but more load-bearing. Shipping Phase 2 workflow upgrades on a still-fragile hook layer compounds every existing bug. The roadmapper must protect Phase 1 scope against feature pressure. A secondary risk is effort-level misconfiguration: Opus 4.7 at `xhigh` effort has been confirmed to reason past rule files; setting `effort: high` on compliance-critical agents (executor, security-auditor) is a non-negotiable v2 requirement, not a nice-to-have.
+The dominant risk is the substrate. The v1.x codebase has 21 documented concerns, 8 at High or Critical severity: silent overwrite of user-customized files during install, JSON injection in hooks via string interpolation, version drift across three files, hardcoded skill/agent lists that drift from the filesystem, hooks using `pwd` instead of stdin's `cwd` field, no version-mismatch guard in the uninstaller, settings merge that drops new top-level keys, and zero automated tests. Every one of these must be resolved before the agent and skill layers can be safely rebuilt on top. The build order is therefore non-negotiable: Foundation first, then agents, then skills, then workflow integration, then quality and CI.
 
 ---
 
 ## Key Findings
 
-### 1. Stack: No new runtime deps; significant authoring-surface expansion
+### Finding 1 — Foundation must come first; substrate fragility makes every later brief more expensive
 
-v2 adds nothing at runtime — `jq` remains the only mandatory dep. The expansion is entirely at the Claude Code plugin authoring layer: new agent frontmatter fields (`effort`, `memory`, `background`, `isolation`, `maxTurns`, `skills`, `color`), 19 new hook events beyond the 2 v1.x uses, model aliases (`opus`, `sonnet`, `haiku`) that must replace any pinned IDs, and dev-time CI tools (shellcheck v0.11.0, bats-core v1.13.0, sourcemeta/jsonschema CLI, pure-Bash frontmatter linter). `gsd-sdk` is the GSD development tool used to orchestrate godmode's own development — it is not a runtime dep of godmode and must not become one.
+**Title:** Foundation-first is a hard dependency, not a preference
 
-**Core technologies (unchanged):**
-- Bash 3.2+: hooks, installer, statusline — ships on every macOS/Linux
-- jq 1.6+: JSON parsing in all shell scripts — use `--arg`/`--argjson`, never string concat
-- Markdown + YAML frontmatter: agent, skill, command, rule definitions — Claude Code native format
+**Finding:** All eight High/Critical concerns in `.planning/codebase/CONCERNS.md` are substrate issues — installer, hooks, version handling, settings merge. If agents and skills are rebuilt while hooks still use string-interpolated JSON, the new agents will fail under adversarial branch names exactly as the old ones did. If the installer still silently overwrites customizations, trust earned by the new surface is immediately lost on the next `./install.sh`.
 
-**New authoring surface (v2 additions):**
-- Agent frontmatter: `effort`, `memory`, `background`, `isolation`, `maxTurns`, `skills`, `color` — all unused in v1.x
-- Hook events to adopt: `PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `PreCompact`, `SubagentStart`, `SubagentStop`
-- Model aliases: `opus` = Opus 4.7 (default effort `xhigh`), `sonnet` = Sonnet 4.6, `haiku` = Haiku 4.5
-- Deprecated: `TaskOutput` (use file Read), `ScheduleWakeup` (use `CronCreate`), `TodoWrite` (interactive only)
-- Plugin manifest: `userConfig` block for model profile at install time; `${CLAUDE_PLUGIN_DATA}` for persistent state
+**Evidence:** ARCHITECTURE.md "Build Order" section; PITFALLS.md A1 (Critical — silent overwrite), A2 (Critical — JSON injection), A3 (High — version drift), A4 (High — hardcoded lists), A5 (High — `pwd` reliance), A7 (High — uninstaller mismatch), A8 (High — settings merge), F5 (High — no tests).
 
-See STACK.md for full field tables, CI tool versions, and "what not to add."
+**Implication:** Brief 1 (Foundation & Safety Hardening) must fully resolve all eight before Brief 2 begins. No parallelism across these two briefs.
 
-### 2. Features: Integration is the differentiator, not invention
+---
 
-The competitive position of v2 is the combination of GSD-grade phase lifecycle + ≤ 12 user-facing skills via hidden internals + jq-only runtime + PreToolUse mechanical gate enforcement + first-run UX that answers "what now?" in 5 lines. None of the reference plugins delivers all five in one package.
+### Finding 2 — The ≤12 command cap is the core product decision, not a constraint to work around
 
-**Must have for v2.0 (P1):**
-- Modernization pass: model aliases, `effort`, `memory: project` on persistent agents, `isolation: worktree` enforced
-- Hook hardening: JSON-safe interpolation, `async: true` on SessionStart, filesystem-scanned skill/agent lists, `PreToolUse` gate enforcement
-- Version unification: `plugin.json` canonical; installer and `/godmode` read from it via `jq`
-- `.planning/` artifact set: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md for consumer projects
-- Phase lifecycle skills: `/discuss`, `/plan-phase`, `/execute-phase` — replaces v1.x `/prd → /plan-stories → /execute`
-- Goal-backward verification: `@verifier` agent checks phase goal against codebase, not just test passage
-- Two-stage review: spec-compliance check + code-quality check (Superpowers pattern)
-- `/godmode` menu refresh: live filesystem scan, ≤ 12 public skills listed, first-run "what now?" in 5 lines
-- CI: shellcheck + bats-core + JSON schema + frontmatter lint on macOS + Linux
-- All High-severity CONCERNS.md items resolved (21 items, all mapped to phases in PITFALLS.md)
+**Title:** 11 commands is the product; every addition past that breaks the Core Value
 
-**Defer to v2.1+:**
-- `/explore` advisory ideation skill
-- `/secure-phase` retroactive threat-model
-- `memory: user` for cross-project learnings
-- Stop hook for session learnings extraction
+**Finding:** Reference plugins consistently fail at surface area: 30+ commands, 5+ artifact files per "phase", six-level vocabulary. The Core Value is "best-in-class capability behind the simplest possible surface." The 11-command surface is how that value becomes operational. The anti-features list (20 items) is the enforcement mechanism — each anti-feature directly removes a class of scope creep.
 
-**Anti-features to keep out:**
-- Mirroring GSD's 80-command surface (cognitive load kills adoption)
-- Bundled MCP server (pollutes plugin shape, adds Node.js runtime dep)
-- Hardcoded skill/agent lists in any file (drift is guaranteed)
-- `effort: xhigh` on compliance-critical agents (rules bypassed — confirmed GitHub issue #23936)
+**Evidence:** FEATURES.md F-01 (table stakes, "why table stakes: the cap is the differentiator"); FEATURES.md D-01 (five-line "what now?"); PROJECT.md Key Decisions ("11 commands total, 1 reserved slot"); PITFALLS.md E3 (Critical — `/everything` mega-command).
 
-See FEATURES.md for full prioritization matrix and competitor comparison table.
+**Implication:** Every brief must include a command-count assertion in its success criteria. The vocabulary CI gate (PITFALLS.md B1) and the command-count CI gate (PITFALLS.md E3) are non-negotiable quality deliverables in Brief 5.
 
-### 3. Architecture: Six-layer, dependency-safe build order
+---
 
-The architecture has five clean layers with a strict dependency chain. ARCHITECTURE.md section 9 defines the build order. The most important design decision is the skill/agent split: if the user types it, it's a skill; if only other agents call it, it's an agent. Internal orchestration agents (planner, verifier, plan-checker) must never appear as user-facing slash commands.
+### Finding 3 — Two artifact files per brief is an architectural constraint that needs mechanical enforcement
 
-**Major components:**
-1. Rules (always-on context) — one concern per file, static, cache-eligible leading position
-2. Hooks (event-driven) — `session-start.sh`, `post-compact.sh`, plus new `pre-tool-use.sh` and `post-tool-use.sh`; output valid JSON always via `jq -n --arg`
-3. Internal agents — `@planner`, `@verifier`, `@executor`, `@architect`, `@security-auditor`, `@researcher`, `@reviewer`, `@writer`, `@doc-writer`, `@test-writer`; hidden from user surface
-4. User-facing skills (≤ 12) — `/godmode`, `/discuss`, `/plan-phase`, `/execute-phase`, `/ship`, `/debug`, `/tdd`, `/refactor`, `/explore-repo` + 1-3 remaining slots
-5. Planning artifacts (`.planning/`) — PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, phases/NN-name/{PLAN,SUMMARY,CONTEXT,VERIFICATION}.md
-6. Plugin manifest + installer — `plugin.json` canonical version; plugin mode and manual mode generated from one source
+**Title:** BRIEF.md + PLAN.md only; git log is the execution record
 
-**Key patterns:**
-- Skill → Agent boundary: skills are lean orchestrators (<30% context budget); execution goes to typed agents via `Task(subagent_type=...)`
-- Prompt caching: rules and agent system prompts must have static preambles; dynamic context (branch, phase, plan) injected last or via hook `additionalContext`, never into rule files themselves
-- No SDK: GSD's `gsd-sdk` Node.js binary is replaced by shell+jq fragments in `skills/_shared/` (init-context.md, state-ops.md, commit-ops.md)
-- Completion markers: every agent returns `## PLAN COMPLETE` / `## PLANNING COMPLETE` style headers; orchestrators parse these to route
+**Finding:** Reference plugins proliferate per-task artifact files (TASK.md, EXECUTE.md, VERIFICATION.md). The project explicitly rejects this. BRIEF.md carries why + what + spec + research summary; PLAN.md carries tasks, wave structure, verification status. The constraint needs mechanical enforcement, not just documentation: a CI gate that fails on any file in `.planning/briefs/NN/` other than BRIEF.md and PLAN.md.
 
-See ARCHITECTURE.md sections 7-9 for full component boundaries, data flow diagram, and v1.x → v2 migration map.
+**Evidence:** PITFALLS.md B2 (High — directory-shape mimicry), E2 (High — per-task files); ARCHITECTURE.md "Anti-Pattern 2"; PROJECT.md Out of Scope ("Per-task artifact files (TASK.md)").
 
-### 4. Critical Pitfalls
+**Implication:** The `rules/godmode-planning.md` rule file and the CI artifact-count gate are Brief 3/5 deliverables. `@planner`'s prompt must include an explicit "write to PLAN.md only" constraint.
 
-1. **Hook JSON fragility blocks everything downstream** — Branch names with `"`, `\`, or newlines break the hook contract; Claude Code silently discards malformed output. Fix: `jq -n --arg` throughout, never string interpolation. Must land in Phase 1 before any new hooks are added.
+---
 
-2. **Dynamic content in `additionalContext` invalidates prompt cache** — Timestamps, git log output, context% in hook-injected system content burns the cache on every PostCompact, multiplying token cost ~5x on long Opus 4.7 sessions. Cache TTL in practice is ~3 min. Fix: stable context in rules, volatile context in statusline only.
+### Finding 4 — Hook layer has four independent hardening requirements, each with a distinct failure mode
 
-3. **Opus 4.7 `xhigh` effort ignores rules and skill instructions** — Confirmed GitHub issue #23936. Fix: `effort: high` for executor and security-auditor; `xhigh` only for architect and writer. Embed critical constraints in task description (user-turn layer), not only in rules.
+**Title:** Hooks fail in four distinct, independent ways; each needs its own fix
 
-4. **Auto Mode / YOLO Mode bypasses instructional quality gates** — Only mechanical gates (PreToolUse hooks exiting code 2) are enforced in Auto Mode. Fix: `hooks/pre-tool-use.sh` must mechanically block `git commit --no-verify`, dangerous `rm` patterns, and `gh pr create` when gates are red. Exit code 2 (not exit 1) is the blocking signal.
+**Finding:** The four hook failure modes don't share a root cause: (A2) JSON injection from string interpolation needs `jq -n --arg` discipline throughout; (A5) wrong project root from `pwd` instead of stdin's `cwd` field needs a standard hook preamble; (A6) stdin drain failure under `pipefail` needs `|| true`; (D4) timeout inconsistency between plugin and manual mode needs a canonical source. All four must be fixed before new hooks (`PreToolUse`, `PostToolUse`, `UserPromptSubmit`, `SessionEnd`) are added, or the new hooks inherit all four problems.
 
-5. **`run_in_background` + TaskOutput race conditions cause silent session freezes** — Crashed background agents stay listed as "running"; `TaskOutput(block: true)` waits forever. Fix: always specify timeout; implement file-polling fallback. Affects v2's wave-based `/execute-phase` directly.
+**Evidence:** STACK.md "Hook events" section; PITFALLS.md A2, A5, A6, D4; ARCHITECTURE.md "Pattern 4: jq for everything JSON".
 
-See PITFALLS.md for 14 full pitfalls, 10 integration gotchas, the "Looks Done But Isn't" checklist, and CONCERNS.md cross-reference resolution map (21 items).
+**Implication:** Brief 1 must deliver a `hooks/_lib/preamble.sh` that provides the cwd-resolution, stdin-drain, and JSON-output-via-jq standard, sourced by every hook. New hooks in Brief 3 must be built on top of that standard.
+
+---
+
+### Finding 5 — Agent effort policy must be a rule, not just frontmatter, because `effort: xhigh` on Opus 4.7 skips rules
+
+**Title:** Lock the effort policy in `rules/godmode-routing.md`; frontmatter alone is insufficient
+
+**Finding:** Empirically documented in the project's own Key Decisions: `xhigh` on Opus 4.7 skips rule application during code generation. Design and audit agents (`@architect`, `@security-auditor`, `@planner`, `@verifier`) tolerate this trade because they're read-only. Code-writing agents (`@executor`, `@writer`, `@test-writer`) cannot. The mitigation must be mechanical: a frontmatter linter that fails CI if any agent has both `effort: xhigh` and `Write`/`Edit`/`MultiEdit` in its tools, plus a locked statement in `rules/godmode-routing.md`.
+
+**Evidence:** STACK.md "Effort assignments — locked into `rules/godmode-routing.md`"; PITFALLS.md D2 (High); PROJECT.md Key Decisions ("Code-writing agents use `effort: high`, not `xhigh`").
+
+**Implication:** The frontmatter linter (Brief 2, AGENT-LINT-01) must enforce this. The routing rule is a Brief 4 deliverable. Both must land before `/build` (Brief 3) ships `@executor`.
+
+---
+
+### Finding 6 — Live filesystem indexing eliminates an entire class of drift bugs
+
+**Title:** Enumerate agents and skills from disk at runtime; never hardcode lists
+
+**Finding:** v1.x hardcodes eight skill names and eight agent names in `hooks/post-compact.sh`. v2 changes the entire surface. Every place that enumerates agents or skills must use `find` at runtime. This pattern applies to `/godmode`, `PostCompact`, `SessionStart`, and any CI gate that cross-checks docs against code.
+
+**Evidence:** PITFALLS.md A4 (High — hardcoded drift); ARCHITECTURE.md "Pattern 3: Live filesystem indexing, never hardcoded lists"; FEATURES.md D-04 (differentiator).
+
+**Implication:** Brief 3 (`/godmode` rewrite) and Brief 3 (`PostCompact` update) must both adopt the live-indexing pattern. One `find` call permanently eliminates CONCERNS #8.
+
+---
+
+### Finding 7 — Workflow hand-off gates need pre-flight checks to prevent silent garbage propagation
+
+**Title:** Each workflow stage must refuse to run if its upstream artifact is absent or incomplete
+
+**Finding:** The failure mode is concrete: `/plan` invoked without a complete BRIEF.md runs `@planner` against nothing; `@planner` hallucinates requirements; `/build` delivers the hallucination. Prevention requires pre-flight guards at each hand-off: `/plan` checks that BRIEF.md exists, has required sections, and bears a completion sentinel; `/build` checks that PLAN.md exists with a `## Tactical Plan` section and a `## Verification Status` table.
+
+**Evidence:** PITFALLS.md C1 (Critical — `/plan` without brief), C2 (Critical — `/build` without plan), C5 (Critical — silent intent mutation); FEATURES.md F-04, F-05, F-06.
+
+**Implication:** The BRIEF.md template must include a `<!-- BRIEF-COMPLETE -->` sentinel; the PLAN.md template must include the `## Verification Status` table. Both are Brief 3 (State) deliverables. `/brief`, `/plan`, and `/build` skill bodies must include the respective pre-flight logic.
+
+---
+
+### Finding 8 — Auto Mode is a live primitive that changes the safety contract for destructive operations
+
+**Title:** Skills must detect Auto Mode and refuse destructive operations; hooks must block bypass attempts regardless
+
+**Finding:** Auto Mode instructs the assistant to "minimize interruptions" and "prefer action over planning." This is correct for routine operations. It is dangerous for destructive operations: force pushes, settings.json writes, schema migrations. The hook layer (`PreToolUse`) must refuse bypass attempts (`--no-verify`, `-c core.hooksPath=/dev/null`) regardless of mode. Individual skills must detect the "Auto Mode Active" system reminder and refuse destructive operations with an explicit "explicit user confirmation required, exit Auto Mode" message. A new rule file (`rules/godmode-auto-mode.md`) codifies the canonical list.
+
+**Evidence:** PITFALLS.md D1 (Critical — Auto Mode bypasses quality gates); STACK.md "Hook events" (PreToolUse purpose); FEATURES.md D-09 (Auto Mode awareness as differentiator).
+
+**Implication:** This spans three briefs: PreToolUse hook body (Brief 1), skill-level Auto Mode detection pattern (Brief 3), and the auto-mode rule file (Brief 4). The hook portion (refuse `--no-verify` regardless) must land in Brief 1 before any other brief ships executable agents.
 
 ---
 
 ## Implications for Roadmap
 
-The ARCHITECTURE.md build order (section 9) provides the dependency-safe phase structure. The PITFALLS.md pitfall-to-phase mapping validates it. The FEATURES.md MVP list maps cleanly to this ordering. Each phase is independently shippable.
+Research confirms the existing 5-brief structure in ROADMAP.md is correctly ordered and correctly scoped. The findings above map directly onto it. The order is non-negotiable due to hard dependencies between layers.
 
-### Phase 1: Foundation and Safety Hardening
+### Brief 1 — Foundation & Safety Hardening
 
-**Rationale:** Every subsequent phase depends on hooks emitting valid JSON, the installer being safe, and version being a single source of truth. No user-facing feature additions — this phase makes v2 trustworthy.
+**Rationale:** The substrate everything else stands on. Eight High/Critical CONCERNS items must be resolved before agents and skills can be safely rebuilt on top. A fragile hook substrate means agent context injection fails silently; a silent-overwrite installer means trust earned by the new workflow is destroyed on the next reinstall.
 
-**Delivers:**
-- Hook JSON safety: `jq -n --arg` throughout; `async: true` on SessionStart; cwd from stdin JSON
-- Filesystem-scanned skill/agent lists in post-compact.sh (no more hardcoded lists)
-- Version unification: `plugin.json` canonical; `install.sh` and `/godmode` read from it via `jq`
-- Installer per-file diff/skip/replace prompt for customized rules/agents/skills
-- v1.x migration: detect `.claude-pipeline/stories.json`, emit visible warning, offer archive
-- Plugin mode / manual mode parity: generate manual settings section from `hooks/hooks.json`
-- `timeout: 10` and `async: true` on all hook bindings in both config surfaces
-- Backup rotation (keep last 5), `.DS_Store` cleanup, CONCERNS #1-18 resolved
-- shellcheck CI: GitHub Actions on macOS + Linux matrix
-- Agent naming convention decision (e.g., `gm-` prefix) to prevent multi-plugin collision
+**Delivers:** `jq -n --arg` discipline across all hooks; per-file diff/skip/replace installer prompt; backup rotation (keep 5); version single-source-of-truth in `plugin.json`; `hooks/_lib/preamble.sh` standard; `config/quality-gates.txt` single source; PreToolUse blocking `--no-verify`; PostToolUse surfacing failed quality-gate exits; shellcheck clean on every `*.sh`; uninstaller version-mismatch guard; v1.x migration detection (non-destructive).
 
-**Avoids:** PITFALLS #1, #6, #7, #8, #9; CONCERNS #1-18
+**Features addressed (from FEATURES.md):** F-09 through F-15, F-26, F-27, F-28, F-29.
 
-**Research flag:** Standard patterns — no research needed. All items defined in CONCERNS.md with explicit fix directions.
+**Pitfalls to avoid:** A1 (silent overwrite), A2 (JSON injection), A3 (version drift), A5 (pwd reliance), A6 (stdin drain), A7 (uninstall mismatch), A8 (settings merge), D1 (Auto Mode bypass), D4 (timeout parity), D5 (plugin/manual parity), F1 (backup accumulation).
+
+**Within-brief parallelism:** Version SOT (F-09) and installer prompt (F-11) are independent of hook hardening (A2, A5, A6). Both work streams can run in parallel.
+
+**Open questions for `/brief 1` discussion:**
+- Should PreToolUse also block `git commit -n` (short form of `--no-verify`)?
+- Should `hooks-canonical.json` be a generated artifact or a hand-authored source-of-truth with a CI parity check?
 
 ---
 
-### Phase 2: Agent Layer Modernization + Rules Hardening
+### Brief 2 — Agent Layer Modernization
 
-**Rationale:** Agents are the execution layer. They must be correct (model/effort assignments), safe (prompt-cache-friendly, `xhigh` restricted to appropriate roles), and architecturally sound (internal vs user-facing split decided) before skills are rebuilt on top.
+**Rationale:** Skills in Brief 3 spawn agents. Agents must exist with correct frontmatter (model aliases, effort policy, isolation, maxTurns, `Connects to:`) before skills can wire to them. The frontmatter linter must be running in CI before agents ship, so it enforces the effort policy mechanically.
 
-**Delivers:**
-- All 8 existing agents updated: model aliases, `effort`, `memory: project`, `isolation: worktree`, `maxTurns`
-- `@executor`: effort `high`; `@security-auditor`: effort `xhigh`; `@architect`: effort `xhigh`
-- Two new internal agents: `@planner` (goal-backward PLAN.md writer) and `@verifier` (post-execution verification)
-- Agent naming convention applied: internal helpers marked in description as "Internal — invoke via /skill, not directly"
-- Rules refactored: static preamble only (no timestamps, no dynamic data); `godmode-routing.md` adds model profile table
-- PostCompact hook: reads quality gates from `rules/godmode-quality.md` at runtime (eliminates CONCERNS #9 duplication)
-- New hooks: `hooks/pre-tool-use.sh` (blocks `--no-verify`, dangerous Bash patterns, secret patterns), `hooks/post-tool-use.sh` (gate failure detection), `hooks/user-prompt-submit.sh` (session title)
-- JSON schema validation CI step added
+**Delivers:** All 8 existing agents updated to current aliases (`opus`/`sonnet`/`haiku`), explicit `effort:`, `maxTurns`, `isolation: worktree` (code-writing) or `memory: project` (persistent learners), `Connects to:` field. Four new agents: `@planner` (opus, xhigh, read-only), `@verifier` (opus, xhigh, read-only), `@spec-reviewer` (sonnet, high, read-only), `@code-reviewer` (sonnet, high, read-only). `@reviewer` split into `@spec-reviewer` + `@code-reviewer`. Pure-Bash frontmatter linter (`scripts/lint-frontmatter.sh`) enforcing model alias, effort tier, and write-tool exclusion rule.
 
-**Avoids:** PITFALLS #2, #4, #12
+**Features addressed (from FEATURES.md):** F-21 through F-25.
 
-**Research flag:** No research needed — effort level assignments and hook event schema are fully specified in STACK.md and PITFALLS.md.
+**Pitfalls to avoid:** D2 (effort xhigh on code-writing agents), B1 (vocabulary leakage into agent prompts), C3 (context drift), E1 (borrowed prompts from reference plugins).
+
+**Within-brief parallelism:** All four new agents are independent. Parallelizable. Frontmatter linter (AGENT-LINT-01) blocks until all agents land.
+
+**Open questions for `/brief 2` discussion:**
+- Does `@verifier` run in `background: true`, or does its thorough audit warrant foreground priority?
+- Which agents justify `memory: project` — just `@architect` and `@researcher`, or also `@planner`?
 
 ---
 
-### Phase 3: Skill Layer Rebuild (GSD-Aligned Workflow)
+### Brief 3 — Skill Layer Rebuild + State Management
 
-**Rationale:** With a sound agent layer, the user-facing skill surface can be rebuilt. This is the highest-value user-visible work: v1.x `/prd → /plan-stories → /execute → /ship` becomes `/discuss → /plan-phase → /execute-phase → /ship` with wave-based execution, goal-backward verification, and two-stage review.
+**Rationale:** This is the user-facing surface. Each skill maps to specific agents from Brief 2 and writes to `.planning/` artifacts whose templates land in this same brief (sequenced within: templates before skill bodies). Brief 3 also delivers the `init-context.sh` shared helper, which every skill orchestrator sources instead of re-implementing `.planning/` traversal.
 
-**Delivers:**
-- `/discuss` (new): Socratic interview → writes phase CONTEXT.md; replaces `/prd`
-- `/plan-phase` (new): spawns `@planner`, produces wave-structured PLAN.md files; replaces `/plan-stories`
-- `/execute-phase` (new): wave orchestrator with `run_in_background` + file-polling fallback; spawns `@executor` per plan; writes SUMMARY.md; replaces `/execute`
-- `/ship` (upgraded): blocked by PreToolUse hook until all gates green
-- `/debug`, `/tdd`, `/refactor`, `/explore-repo` (upgraded): GSD-style completion markers, forward/back arrows
-- `/godmode` (upgraded): live filesystem scan, ≤ 12 public skills, first-run "what now?" in 5 lines
-- Two-stage review: `@spec-reviewer` + `@code-reviewer` split from single `@reviewer`
-- Command count audit: must be ≤ 12 before phase closes
-- bats-core smoke test CI: install → `/godmode` → `/discuss` → `/plan-phase` → `/execute-phase` → uninstall
+**Delivers:** Five new workflow skills (`/mission`, `/brief`, `/plan`, `/build`, `/verify`); `/ship` rewritten; four helpers updated (`/debug`, `/tdd`, `/refactor`, `/explore-repo`) for new agent names + Auto Mode awareness; `/godmode` rewritten with live filesystem indexing; `.planning/` artifact templates (PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json, BRIEF.md template, PLAN.md template); `skills/_shared/init-context.sh`; v1.x deprecation banners on `/prd`, `/plan-stories`, `/execute`.
 
-**Avoids:** PITFALLS #3, #5, #11, #13
+**Features addressed (from FEATURES.md):** F-01 through F-08, F-15, F-18, F-19, F-20.
 
-**Research flag:** The PLAN.md frontmatter schema (wave structure, `depends_on`, `must_haves`, `verification` blocks) is the most complex new artifact. If GSD template inspection is insufficient, a targeted research pass on the planner → executor data contract is warranted. Likely 1-2 hours of `~/.claude/get-shit-done/templates/` inspection rather than a full research phase.
+**Pitfalls to avoid:** C1 (plan without brief), C2 (build without plan), C5 (silent intent mutation), D1 (Auto Mode in skills), E3 (`/everything` mega-command), B1 (vocabulary leakage in skill bodies), B2 (artifact proliferation beyond two files per brief).
+
+**Within-brief sequencing:** Recommended sequential — `/mission → /brief → /plan → /build → /verify` — so each can be smoke-tested in a temp consumer repo before the next is written. Templates (State layer) land before skill bodies.
+
+**Open questions for `/brief 3` discussion:**
+- What is `/build`'s wave-concurrency cap — hardcoded 5, or a config knob in `.planning/config.json`?
+- Should `STATE.md` be machine-mutated only, or is user hand-editing explicitly supported?
+- Does the `<!-- BRIEF-COMPLETE -->` sentinel live in a YAML frontmatter field or a markdown comment?
 
 ---
 
-### Phase 4: State Management + `.planning/` Scaffold
+### Brief 4 — Workflow Integration & Parity
 
-**Rationale:** The workflow skills depend on `.planning/` artifacts existing per-project; state management fragments must exist before they can be called by skills. This is a late phase because the exact shape of STATE.md and config.json emerges from Phase 3 execution.
+**Rationale:** Rules tie together agents (Brief 2) and skills (Brief 3) into a coherent workflow narrative. Parity checks validate the guarantee that plugin-mode and manual-mode users see identical behavior. Migration handling reads the live state produced by Brief 1's hardened installer. This brief cannot land before Brief 3 because rule files must reference real skill names.
 
-**Delivers:**
-- `skills/_shared/init-context.md`: pure shell+jq config.json reader + model resolution (no `gsd-sdk`)
-- `skills/_shared/state-ops.md`: STATE.md mutation fragments (advance-plan, update-progress)
-- `skills/_shared/commit-ops.md`: gitignore-aware planning commit fragment
-- `.planning/` scaffold for consumer projects: PROJECT.md, REQUIREMENTS.md, ROADMAP.md, STATE.md, config.json
-- `session-start.sh` upgraded: reads STATE.md, injects currentPhase/currentPlan into additionalContext
-- `post-compact.sh` upgraded: re-injects only volatile STATE.md delta (not full boilerplate)
-- Per-project `config.json`: model_profile, commit_docs, branching_strategy
+**Delivers:** `rules/godmode-workflow.md` rewritten for the Project → Mission → Brief → Plan → Commit chain; `rules/godmode-routing.md` with locked effort policy (code-writers=`high`, design/audit=`xhigh`); `rules/godmode-quality.md` cross-referencing `config/quality-gates.txt`; plugin-mode + manual-mode UX parity verification; README, CHANGELOG, `/godmode` surface agreement; v1.x → v2 migration note in both `/godmode` and SessionStart; prompt-cache-aware rule structure (static preamble, no dynamic content in rule bodies).
 
-**Avoids:** PITFALLS #2 (static vs dynamic context), #14 (PROJECT.md drift)
+**Features addressed (from FEATURES.md):** F-30, D-06, D-09, D-10.
 
-**Research flag:** No research needed. GSD state management shape is inspectable from live install at `~/.claude/get-shit-done/templates/state.md` and `references/planning-config.md`.
+**Pitfalls to avoid:** D3 (prompt cache invalidation from dynamic rule content), D5 (plugin/manual parity), B1 (vocabulary leakage in rules), B3 (compatibility marketing), F3 (doc drift).
 
----
+**Within-brief parallelism:** Three rule rewrites (workflow, routing, quality) are independent. Migration note is independent. Parity check is a gate after both rule files and skills land.
 
-### Phase 5: CI Completion + Performance Polish + Documentation
-
-**Rationale:** Final hardening pass. CI was partially established in Phases 1-3; this closes remaining gaps. Performance items (statusline jq collapse, git log bounding) are low severity but affect every user every session.
-
-**Delivers:**
-- Frontmatter lint CI: pure-Bash `scripts/lint-frontmatter.sh` validates required fields on all agents/skills/commands
-- Full smoke test round-trip on macOS + Linux in CI
-- Statusline: collapse 4 `jq` calls to 1 `jq -r '[...] | @tsv'` invocation
-- `git log --max-count=5` + `timeout 3` bounds on all hook git calls
-- README, CHANGELOG, `/godmode`, rule files: full documentation parity pass against v2 surface
-- `plugin.json` `userConfig` block: model profile prompt at install time
-- CONTRIBUTING.md: worktree prune recipe, backup rotation policy, per-file diff guidance
-- Worktree cleanup: documented `git worktree prune` recipe or automated cleanup script
-
-**Avoids:** PITFALL #10 (statusline overhead); documentation drift
-
-**Research flag:** Standard patterns throughout. No research needed.
+**Open questions for `/brief 4` discussion:**
+- Should the v1.x detection note in SessionStart suppress itself after the first session, or print every time until `/mission` is run?
+- Does `rules/godmode-auto-mode.md` ship as a separate file or as a section in `godmode-quality.md`?
 
 ---
 
-### Phase Ordering Rationale
+### Brief 5 — Quality, CI, Tests, Documentation
 
-- **Safety before features:** Phases 1-2 address hook fragility, installer safety, and agent model correctness before any user-visible workflow changes. Building on a fragile base means rework in every subsequent phase.
-- **Agents before skills:** Skills spawn agents — agents must exist first. Phase 3 skills cannot be built without Phase 2's `@planner` and `@verifier`.
-- **Skills before state management:** The exact shape of STATE.md and init-context fragments depends on what Phase 3 skills actually need. Designing state management before the skill shape is known produces premature abstraction.
-- **CI woven in:** shellcheck lands in Phase 1, JSON schema in Phase 2, smoke tests in Phase 3, frontmatter lint in Phase 5. Each CI step covers the layer built in that phase.
-- **CONCERNS.md items:** All 21 CONCERNS items have explicit phase assignments per the cross-reference map in PITFALLS.md. Phase 1 resolves 15 of them; the remaining 6 are distributed across Phases 2-5.
+**Rationale:** CI tests the substrate (Brief 1), agents (Brief 2), skills (Brief 3), and integration (Brief 4). Testing `/godmode` before it has been rewritten in Brief 3 would produce a test of the v1.x shape. All four layers must exist before the bats smoke test is meaningful.
 
-### Research Flags
+**Delivers:** GitHub Actions matrix (`ubuntu-latest` + `macos-latest`) on every PR; shellcheck on every `*.sh`; inline `jq -e` JSON schema validation on `plugin.json`, `hooks.json`, `settings.template.json`, `config.json`; frontmatter linter in CI; bats-core smoke test (install → `/godmode` → uninstall round trip in `mktemp -d`); vocabulary CI gate (blocks reference-plugin terms from shipped artifacts); version-drift CI gate; artifact-count gate (briefs contain exactly BRIEF.md + PLAN.md); CONTRIBUTING.md with backup rotation, worktree prune, and frontmatter conventions; all High-severity CONCERNS.md items resolved with traceability.
 
-Phases likely needing `/gsd-research-phase` during planning:
-- **Phase 3 (Skill Rebuild):** PLAN.md frontmatter schema and the planner → executor data contract. Inspect `~/.claude/get-shit-done/templates/` first; escalate to full research only if ambiguity remains.
+**Features addressed (from FEATURES.md):** F-16, F-17, F-30.
 
-Phases with well-documented patterns (skip research):
-- **Phase 1:** All items are CONCERNS.md entries with explicit fix directions. Pure execution.
-- **Phase 2:** Agent frontmatter fields, hook event schemas, and effort level assignments are fully specified in STACK.md and PITFALLS.md.
-- **Phase 4:** GSD state management shape is locally inspectable.
-- **Phase 5:** CI tooling versions and shell idioms all specified in STACK.md.
+**Pitfalls to avoid:** F5 (no tests = all other pitfalls escape), A2 (hook fuzz tests), A3 (version drift CI), B1 (vocabulary CI), F3 (doc drift CI gate), D2 (frontmatter linter in CI invocation).
+
+**Within-brief parallelism:** shellcheck, JSON schema validation, frontmatter linter, and vocabulary gate are all independent. bats smoke test depends on install/skills working (Brief 1 + 3 complete).
+
+**Open questions for `/brief 5` discussion:**
+- Should the bats smoke test run against both install modes (plugin + manual) or manual-only first?
+- Is the vocabulary CI gate a pre-commit hook or a CI-only check?
 
 ---
 
-## Cross-Dimension Dependencies
+### Build Order Summary
 
-Load-bearing dependencies the roadmapper must track:
+```
+Brief 1: FOUNDATION — hardens substrate (hooks, installer, version)
+  |     No parallelism with Brief 2; substrate must be solid first.
+  v
+Brief 2: AGENTS — modernizes and adds the agent layer
+  |     Depends on Brief 1: PreToolUse must be live so worktree-isolated agents
+  |     can't bypass --no-verify.
+  v
+Brief 3: SKILLS + STATE — builds the user-facing surface + artifact templates
+  |     Depends on Brief 2: every skill has a Connects to: referencing real agent files.
+  v
+Brief 4: INTEGRATION — rules, parity, migration, prompt-cache structure
+  |     Depends on Brief 3: workflow rule references real skill names.
+  v
+Brief 5: QUALITY — CI, bats smoke, doc parity, all CONCERNS resolved
+          Depends on Brief 4: tests are meaningful only when the full surface exists.
+```
 
-| Dependency | Blocks |
-|---|---|
-| Hook JSON safety (PITFALLS #1, CONCERNS #6) | PreToolUse enforcement layer; any new hook event |
-| Plugin mode / manual mode parity (PITFALLS #1, CONCERNS #11-12) | Every new hook — adding without fixing parity repeats the pattern |
-| Agent effort level assignments (PITFALLS #4, STACK model table) | All compliance-critical agent behavior; executor must be `effort: high` |
-| Version unification (CONCERNS #10) | installer, `/godmode`, README, CHANGELOG all reading from canonical source |
-| `@planner` and `@verifier` agent existence (ARCHITECTURE phase 2) | `/plan-phase` and `/execute-phase` skills (ARCHITECTURE phase 3) |
-| `.planning/` artifact schema stability (ARCHITECTURE phase 5) | `skills/_shared/` state fragments (ARCHITECTURE phase 4) |
-| `async: true` on SessionStart hook (PITFALLS #9) | Every user's session startup performance |
-| `run_in_background` + file-polling fallback (PITFALLS #3) | Wave-based `/execute-phase` — without fallback, parallel execution will freeze |
-| `isolation: worktree` per parallel writer (STACK agent table) | Conflict-free parallel story execution |
-
----
-
-## Top 5 Risks for Roadmapper
-
-1. **Phase 1 scope erosion under feature pressure.** Phase 1 contains no user-visible additions. Pressure will arise to slip "just one workflow feature" in. The hook layer must be sound before anything builds on it — this is the gating constraint.
-
-2. **`effort: xhigh` misconfiguration on executor or security-auditor.** These agents must be `effort: high`. Getting this wrong is invisible until rules are silently bypassed in production. Lock it in `rules/godmode-routing.md` as an explicit constraint, not only in agent frontmatter.
-
-3. **`run_in_background` parallel execution without file-polling fallback.** If Phase 3 implements wave-based `/execute-phase` using blocking `TaskOutput`, sessions will silently freeze on any agent crash. The fallback must be in Phase 3 scope, not a follow-up.
-
-4. **`.planning/` schema designed before Phase 3 reveals what it needs.** If Phase 4 state fragments are designed in Phase 2, they will be redesigned after Phase 3 shows what skills actually require. The phase ordering protects against this; scope creep is the risk.
-
-5. **Command count drift past 12.** Each new user-facing skill added in Phase 3 (discuss, plan-phase, execute-phase) is a risk to the ≤ 12 limit. Every phase close must include a command count check. This is a hard constraint per PROJECT.md, not a guideline.
-
----
-
-## Open Questions for /discuss-phase or /plan-phase
-
-- **Agent naming prefix decision.** PITFALLS #8 recommends `gm-` prefix (e.g., `gm-executor`) to prevent multi-plugin collision. This is a breaking change for existing users who reference agents by name. Decide before Phase 2 — cannot be changed post-v2 launch without a major version bump.
-
-- **`/godmode-migrate` skill scope.** PITFALLS #6 recommends a migration skill for `stories.json` → `.planning/`. Does this count toward the ≤ 12 limit? If yes, which existing skill does it replace? Decide before Phase 1 installer work.
-
-- **`isolation: worktree` on `@planner`.** The planner only writes `.planning/` files and reads codebase — no code writing. Should it run in an isolated worktree (prevents conflicts) or main tree (simpler)? Decide before Phase 2.
-
-- **PLAN.md schema for godmode.** GSD's PLAN.md frontmatter (`wave`, `depends_on`, `must_haves`, `verification`, `threat_model`) is designed for GSD's executor. Does godmode adopt the same schema or a simplified subset? This determines both `@planner` and `@executor` agent design in Phase 2/3.
-
-- **`/tdd` fate.** ARCHITECTURE.md recommends deprecating `/tdd` and folding TDD into PLAN.md `type: tdd`. This removes one user-facing command (helps ≤ 12 limit) but breaks existing `/tdd` users. Decide during Phase 3 planning.
+Within-brief parallelism is available in Briefs 1, 2, 4, and 5. Brief 3 is recommended sequential (each skill smoke-tested before the next is written).
 
 ---
 
@@ -280,44 +239,50 @@ Load-bearing dependencies the roadmapper must track:
 
 | Area | Confidence | Notes |
 |------|------------|-------|
-| Stack | HIGH | All Claude Code primitives verified against official docs 2026-04-25; GSD plugin inspected from live install; tool versions from GitHub releases |
-| Features | HIGH | v1.x baseline read directly from repo; GSD surface from live install; Superpowers and everything-claude-code cross-referenced from STACK.md at MEDIUM confidence |
-| Architecture | HIGH | Primary sources: live GSD agent/workflow files; v1.x codebase analysis from `.planning/codebase/` |
-| Pitfalls | HIGH | Hook schema from official docs; GitHub issues cited with numbers; effort-level behavior confirmed against closed issue #23936 |
+| Stack | HIGH | Runtime (Bash + jq) verified against v1.x baseline; dev-time tools (shellcheck v0.11.0, bats-core v1.13.0, GitHub Actions shape) verified against GitHub releases and CI docs. Model aliases verified against Anthropic docs. The jq-vs-full-JSON-Schema tradeoff is the only MEDIUM item — deliberate and documented in STACK.md. |
+| Features | HIGH | All 30 table-stakes features (F-01..F-30) directly traceable to PROJECT.md Active requirements or CONCERNS.md High items. 12 differentiators are direct restatements of PROJECT.md principles. 20 anti-features map to PROJECT.md Out of Scope. F-27 (secret scanning) and D-09 (Auto Mode awareness) are MEDIUM due to implementation-time tuning required. |
+| Architecture | HIGH | Layer model preserved from v1.x (HIGH baseline). 11-command surface locked in PROJECT.md Key Decisions. Skill→Agent invocation matrix derived from requirements. Build order is dependency-driven and matches existing ROADMAP.md. MEDIUM items: `/build` file-polling fallback details (Brief 3 design work) and `.planning/` template content. |
+| Pitfalls | HIGH | 21 of 27 pitfalls sourced directly from CONCERNS.md (project's own codebase audit) or PROJECT.md Out of Scope items. Vocabulary-leakage and vendoring pitfalls are MEDIUM (inference from the re-init rationale rather than direct detection). |
 
-**Overall confidence:** HIGH
+**Overall confidence: HIGH**
 
-### Gaps to Address
+The research is unusually high-confidence because it is primarily analysis of an existing shipped codebase (v1.x), not inference about an unknown domain. The CONCERNS.md audit was done against running code. The PROJECT.md Key Decisions are explicit. The stack is unchanged at runtime.
 
-- **Superpowers direct inspection deferred.** Patterns adopted (worktree isolation, two-stage review) are consistent with v1.x practice and GSD patterns — this gap does not materially affect roadmap decisions.
-- **GSD workflow internals at depth.** 50+ GSD workflow files not individually inspected. If Phase 3 skill design surfaces unexpected complexity in the planner → executor contract, inspect `~/.claude/get-shit-done/` `gsd-planner.md` and `gsd-executor.md` directly.
-- **Opus 4.7 xhigh → rules bypass in production.** Based on closed GitHub issue on Opus 4.6. Phase 2 should include a fixture test validating compliance before locking effort level assignments.
+### Gaps to Address in `/brief N` Discussions
+
+| Gap | Relevant Brief | Recommendation |
+|-----|---------------|----------------|
+| PreToolUse pattern scope: does `--no-verify` or `-n` (short form) need separate handling? | Brief 1 | Resolve in `/brief 1` — short-form patterns may need a different grep expression |
+| `/build` concurrency cap: hardcoded 5 or config knob in `config.json`? | Brief 3 | Lean toward hardcoded for v2; config knob is v2.1 territory after demand is observed |
+| `STATE.md` mutability: machine-only vs. user-editable | Brief 3 | Recommendation: machine-mutates, user reads — but brief discussion should validate |
+| `@verifier` foreground vs. background | Brief 2 | Its read-only pass benefits from completeness over speed — foreground is the safer default |
+| v1.x detection note suppression strategy | Brief 4 | Once per session until `/mission` is run; suppress via STATE.md presence flag |
+| Secret-scanning false-positive tolerance level (F-27) | Brief 1 | MEDIUM confidence — needs brief-time decisions on pattern set and warn-vs-block behavior |
 
 ---
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- `https://code.claude.com/docs/en/hooks` — 21 hook events, input/output schema, async flag, exit code semantics
-- `https://code.claude.com/docs/en/plugins-reference` — Plugin manifest schema, agent frontmatter fields, `${CLAUDE_PLUGIN_DATA}`
-- `https://code.claude.com/docs/en/sub-agents` — Full agent frontmatter including `memory`, `background`, `isolation`
-- `https://code.claude.com/docs/en/model-config` — Model aliases, effort levels, prompt caching
-- `~/.claude/get-shit-done/` (v1.38.3, live install) — GSD workflow files, agent definitions, templates, references
-- `.planning/codebase/` (this repo) — v1.x architecture, concerns, stack, conventions
+
+- `.planning/codebase/CONCERNS.md` — 21 documented v1.x fragilities with line-number citations; primary source for Brief 1 scope
+- `.planning/PROJECT.md` — Active requirements, Out of Scope, Key Decisions, Constraints; primary source for surface area and vocabulary constraints
+- `.planning/research/STACK.md` — Full agent frontmatter schema, hook event matrix (24 events), model aliases; verified against `code.claude.com/docs/en/{plugins-reference,hooks,sub-agents,skills}` (2026-04-26)
+- `.planning/research/FEATURES.md` — 30 table-stakes (F-01..F-30), 12 differentiators (D-01..D-12), 20 anti-features (A-01..A-20)
+- `.planning/research/ARCHITECTURE.md` — Layer model, skill→agent invocation matrix, 5-brief build order, data flow, component boundaries
+- `.planning/research/PITFALLS.md` — 27 pitfalls across 6 categories; 8 Critical, 10 High, 6 Medium, 3 Low; brief-specific warning matrix
+- `https://code.claude.com/docs/en/plugins-reference` — plugin manifest schema, agent frontmatter restrictions, `${CLAUDE_PLUGIN_DATA}`, `userConfig`, `bin/` directory
+- `https://code.claude.com/docs/en/hooks` — full 24-event hook matrix, deprecated output shape, timeout defaults
+- `https://github.com/koalaman/shellcheck/releases` — shellcheck v0.11.0 (2025-08-04)
+- `https://github.com/bats-core/bats-core/releases` — bats-core v1.13.0 (2024-11-07)
 
 ### Secondary (MEDIUM confidence)
-- GitHub issue #23936 — Opus 4.6 high effort ignores skills/CLAUDE.md (closed not-planned)
-- GitHub issues #21352, #20236, #17540, #17147 — TaskOutput / run_in_background hang issues
-- GitHub issue #15882 — Plugin namespacing always required
-- `https://github.com/obra/superpowers` — Superpowers patterns (README-level)
-- `https://github.com/affaan-m/everything-claude-code` — everything-claude-code patterns (README + directory listing)
-- `https://www.claudecodecamp.com/p/how-prompt-caching-actually-works-in-claude-code` — Dynamic content cache invalidation patterns
-- YOLO/Auto Mode security analysis gist (March 2026) — Auto Mode gate bypass confirmation
 
-### Tertiary (LOW confidence)
-- Community report: prompt cache TTL silently dropped from 1hr to 5min (dev.to)
+- Reference-plugin observation (GSD, Superpowers, everything-claude-code) — used only to identify vocabulary-leakage and dependency-creep pitfall categories; no structural content adopted
+- Claude Code Auto Mode contract (system reminder present in this session) — primary source for D1 pitfall prevention; live primitive
 
 ---
 
-*Research completed: 2026-04-25*
-*Ready for roadmap: yes*
+*Research synthesized: 2026-04-26*
+*Source files: STACK.md, FEATURES.md, ARCHITECTURE.md, PITFALLS.md*
+*Ready for roadmap: yes — existing ROADMAP.md confirmed correct; this summary provides brief-level detail for `/brief N` discussions*
