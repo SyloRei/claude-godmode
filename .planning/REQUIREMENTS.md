@@ -3,6 +3,8 @@
 **Defined:** 2026-04-25
 **Core Value:** A single, clear workflow where every agent, skill, and tool is connected to the others and has a clearly described goal — best-in-class capability with simplest-possible usability.
 
+> **Recount note (2026-04-25):** The header below originally said "61 total"; the roadmapper recounted and confirmed 62 (FOUND 10 + AGENT 11 + HOOK 10 + SKILL 12 + STATE 8 + QUAL 11). Use 62 as authoritative.
+
 ## v1 Requirements
 
 Requirements for the v2.0 release of claude-godmode. Each maps to exactly one roadmap phase.
@@ -133,73 +135,80 @@ Filled by `/gsd-roadmapper` during ROADMAP.md creation. Initially all `Pending`.
 
 | Requirement | Phase | Status |
 |---|---|---|
-| FOUND-01 | Phase TBD | Pending |
-| FOUND-02 | Phase TBD | Pending |
-| FOUND-03 | Phase TBD | Pending |
-| FOUND-04 | Phase TBD | Pending |
-| FOUND-05 | Phase TBD | Pending |
-| FOUND-06 | Phase TBD | Pending |
-| FOUND-07 | Phase TBD | Pending |
-| FOUND-08 | Phase TBD | Pending |
-| FOUND-09 | Phase TBD | Pending |
-| FOUND-10 | Phase TBD | Pending |
-| AGENT-01 | Phase TBD | Pending |
-| AGENT-02 | Phase TBD | Pending |
-| AGENT-03 | Phase TBD | Pending |
-| AGENT-04 | Phase TBD | Pending |
-| AGENT-05 | Phase TBD | Pending |
-| AGENT-06 | Phase TBD | Pending |
-| AGENT-07 | Phase TBD | Pending |
-| AGENT-08 | Phase TBD | Pending |
-| AGENT-09 | Phase TBD | Pending |
-| AGENT-10 | Phase TBD | Pending |
-| AGENT-11 | Phase TBD | Pending |
-| HOOK-01 | Phase TBD | Pending |
-| HOOK-02 | Phase TBD | Pending |
-| HOOK-03 | Phase TBD | Pending |
-| HOOK-04 | Phase TBD | Pending |
-| HOOK-05 | Phase TBD | Pending |
-| HOOK-06 | Phase TBD | Pending |
-| HOOK-07 | Phase TBD | Pending |
-| HOOK-08 | Phase TBD | Pending |
-| HOOK-09 | Phase TBD | Pending |
-| HOOK-10 | Phase TBD | Pending |
-| SKILL-01 | Phase TBD | Pending |
-| SKILL-02 | Phase TBD | Pending |
-| SKILL-03 | Phase TBD | Pending |
-| SKILL-04 | Phase TBD | Pending |
-| SKILL-05 | Phase TBD | Pending |
-| SKILL-06 | Phase TBD | Pending |
-| SKILL-07 | Phase TBD | Pending |
-| SKILL-08 | Phase TBD | Pending |
-| SKILL-09 | Phase TBD | Pending |
-| SKILL-10 | Phase TBD | Pending |
-| SKILL-11 | Phase TBD | Pending |
-| SKILL-12 | Phase TBD | Pending |
-| STATE-01 | Phase TBD | Pending |
-| STATE-02 | Phase TBD | Pending |
-| STATE-03 | Phase TBD | Pending |
-| STATE-04 | Phase TBD | Pending |
-| STATE-05 | Phase TBD | Pending |
-| STATE-06 | Phase TBD | Pending |
-| STATE-07 | Phase TBD | Pending |
-| STATE-08 | Phase TBD | Pending |
-| QUAL-01 | Phase TBD | Pending |
-| QUAL-02 | Phase TBD | Pending |
-| QUAL-03 | Phase TBD | Pending |
-| QUAL-04 | Phase TBD | Pending |
-| QUAL-05 | Phase TBD | Pending |
-| QUAL-06 | Phase TBD | Pending |
-| QUAL-07 | Phase TBD | Pending |
-| QUAL-08 | Phase TBD | Pending |
-| QUAL-09 | Phase TBD | Pending |
-| QUAL-10 | Phase TBD | Pending |
-| QUAL-11 | Phase TBD | Pending |
+| FOUND-01 | Phase 1 | Pending |
+| FOUND-02 | Phase 1 | Pending |
+| FOUND-03 | Phase 1 | Pending |
+| FOUND-04 | Phase 1 | Pending |
+| FOUND-05 | Phase 1 | Pending |
+| FOUND-06 | Phase 1 | Pending |
+| FOUND-07 | Phase 1 | Pending |
+| FOUND-08 | Phase 1 | Pending |
+| FOUND-09 | Phase 1 | Pending |
+| FOUND-10 | Phase 1 | Pending |
+| AGENT-01 | Phase 2 | Pending |
+| AGENT-02 | Phase 2 | Pending |
+| AGENT-03 | Phase 2 | Pending |
+| AGENT-04 | Phase 2 | Pending |
+| AGENT-05 | Phase 2 | Pending |
+| AGENT-06 | Phase 2 | Pending |
+| AGENT-07 | Phase 2 | Pending |
+| AGENT-08 | Phase 2 | Pending |
+| AGENT-09 | Phase 2 | Pending |
+| AGENT-10 | Phase 2 | Pending |
+| AGENT-11 | Phase 2 | Pending |
+| HOOK-01 | Phase 2 | Pending |
+| HOOK-02 | Phase 2 | Pending |
+| HOOK-03 | Phase 2 | Pending |
+| HOOK-04 | Phase 2 | Pending |
+| HOOK-05 | Phase 2 | Pending |
+| HOOK-06 | Phase 1 | Pending |
+| HOOK-07 | Phase 1 | Pending |
+| HOOK-08 | Phase 1 | Pending |
+| HOOK-09 | Phase 1 | Pending |
+| HOOK-10 | Phase 2 | Pending |
+| SKILL-01 | Phase 3 | Pending |
+| SKILL-02 | Phase 3 | Pending |
+| SKILL-03 | Phase 3 | Pending |
+| SKILL-04 | Phase 3 | Pending |
+| SKILL-05 | Phase 3 | Pending |
+| SKILL-06 | Phase 3 | Pending |
+| SKILL-07 | Phase 3 | Pending |
+| SKILL-08 | Phase 3 | Pending |
+| SKILL-09 | Phase 3 | Pending |
+| SKILL-10 | Phase 3 | Pending |
+| SKILL-11 | Phase 3 | Pending |
+| SKILL-12 | Phase 3 | Pending |
+| STATE-01 | Phase 4 | Pending |
+| STATE-02 | Phase 4 | Pending |
+| STATE-03 | Phase 4 | Pending |
+| STATE-04 | Phase 4 | Pending |
+| STATE-05 | Phase 4 | Pending |
+| STATE-06 | Phase 4 | Pending |
+| STATE-07 | Phase 4 | Pending |
+| STATE-08 | Phase 4 | Pending |
+| QUAL-01 | Phase 5 | Pending |
+| QUAL-02 | Phase 5 | Pending |
+| QUAL-03 | Phase 5 | Pending |
+| QUAL-04 | Phase 5 | Pending |
+| QUAL-05 | Phase 5 | Pending |
+| QUAL-06 | Phase 5 | Pending |
+| QUAL-07 | Phase 5 | Pending |
+| QUAL-08 | Phase 5 | Pending |
+| QUAL-09 | Phase 5 | Pending |
+| QUAL-10 | Phase 5 | Pending |
+| QUAL-11 | Phase 2 | Pending |
 
 **Coverage:**
-- v1 requirements: 61 total
-- Mapped to phases: 0 (TBD by roadmapper)
-- Unmapped: 61 ⚠ (will be 0 after `/gsd-roadmapper` runs)
+- v1 requirements: 62 total (recount after roadmapper audit)
+- Mapped to phases: 62
+- Unmapped: 0 ✓
+
+**Per-phase distribution:**
+- Phase 1 (Foundation and Safety Hardening): 14 requirements (FOUND-01..10, HOOK-06..09)
+- Phase 2 (Agent Layer Modernization + Rules Hardening): 18 requirements (AGENT-01..11, HOOK-01..05, HOOK-10, QUAL-11)
+- Phase 3 (Skill Layer Rebuild): 12 requirements (SKILL-01..12)
+- Phase 4 (State Management and `.planning/` Scaffold): 8 requirements (STATE-01..08)
+- Phase 5 (CI Completion, Performance Polish, Documentation Parity): 10 requirements (QUAL-01..10)
 
 ---
 *Requirements defined: 2026-04-25*
