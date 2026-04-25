@@ -134,70 +134,77 @@ Explicitly excluded. Documented to prevent scope creep.
 
 ## Traceability
 
-Filled by roadmapper during ROADMAP.md creation.
+Filled by roadmapper. Every v1 requirement maps to exactly one brief.
 
 | Requirement | Brief | Status |
 |---|---|---|
-| WORKFLOW-01 | TBD | Pending |
-| WORKFLOW-02 | TBD | Pending |
-| WORKFLOW-03 | TBD | Pending |
-| WORKFLOW-04 | TBD | Pending |
-| WORKFLOW-05 | TBD | Pending |
-| FOUND-01 | TBD | Pending |
-| FOUND-02 | TBD | Pending |
-| FOUND-03 | TBD | Pending |
-| FOUND-04 | TBD | Pending |
-| FOUND-05 | TBD | Pending |
-| FOUND-06 | TBD | Pending |
-| FOUND-07 | TBD | Pending |
-| FOUND-08 | TBD | Pending |
-| FOUND-09 | TBD | Pending |
-| FOUND-10 | TBD | Pending |
-| FOUND-11 | TBD | Pending |
-| AGENT-01 | TBD | Pending |
-| AGENT-02 | TBD | Pending |
-| AGENT-03 | TBD | Pending |
-| AGENT-04 | TBD | Pending |
-| AGENT-05 | TBD | Pending |
-| AGENT-06 | TBD | Pending |
-| AGENT-07 | TBD | Pending |
-| AGENT-08 | TBD | Pending |
-| HOOK-01 | TBD | Pending |
-| HOOK-02 | TBD | Pending |
-| HOOK-03 | TBD | Pending |
-| HOOK-04 | TBD | Pending |
-| HOOK-05 | TBD | Pending |
-| HOOK-06 | TBD | Pending |
-| SKILL-01 | TBD | Pending |
-| SKILL-02 | TBD | Pending |
-| SKILL-03 | TBD | Pending |
-| SKILL-04 | TBD | Pending |
-| SKILL-05 | TBD | Pending |
-| SKILL-06 | TBD | Pending |
-| SKILL-07 | TBD | Pending |
-| SKILL-08 | TBD | Pending |
-| SKILL-09 | TBD | Pending |
-| SKILL-10 | TBD | Pending |
-| STATE-01 | TBD | Pending |
-| STATE-02 | TBD | Pending |
-| STATE-03 | TBD | Pending |
-| STATE-04 | TBD | Pending |
-| QUAL-01 | TBD | Pending |
-| QUAL-02 | TBD | Pending |
-| QUAL-03 | TBD | Pending |
-| QUAL-04 | TBD | Pending |
-| QUAL-05 | TBD | Pending |
-| QUAL-06 | TBD | Pending |
-| QUAL-07 | TBD | Pending |
-| QUAL-08 | TBD | Pending |
-| QUAL-09 | TBD | Pending |
-| QUAL-10 | TBD | Pending |
-| QUAL-11 | TBD | Pending |
+| WORKFLOW-01 | Brief 4 | Pending |
+| WORKFLOW-02 | Brief 4 | Pending |
+| WORKFLOW-03 | Brief 4 | Pending |
+| WORKFLOW-04 | Brief 4 | Pending |
+| WORKFLOW-05 | Brief 4 | Pending |
+| FOUND-01 | Brief 1 | Pending |
+| FOUND-02 | Brief 1 | Pending |
+| FOUND-03 | Brief 1 | Pending |
+| FOUND-04 | Brief 1 | Pending |
+| FOUND-05 | Brief 1 | Pending |
+| FOUND-06 | Brief 1 | Pending |
+| FOUND-07 | Brief 1 | Pending |
+| FOUND-08 | Brief 1 | Pending |
+| FOUND-09 | Brief 1 | Pending |
+| FOUND-10 | Brief 1 | Pending |
+| FOUND-11 | Brief 1 | Pending |
+| AGENT-01 | Brief 2 | Pending |
+| AGENT-02 | Brief 2 | Pending |
+| AGENT-03 | Brief 2 | Pending |
+| AGENT-04 | Brief 2 | Pending |
+| AGENT-05 | Brief 2 | Pending |
+| AGENT-06 | Brief 2 | Pending |
+| AGENT-07 | Brief 2 | Pending |
+| AGENT-08 | Brief 2 | Pending |
+| HOOK-01 | Brief 3 | Pending |
+| HOOK-02 | Brief 3 | Pending |
+| HOOK-03 | Brief 3 | Pending |
+| HOOK-04 | Brief 3 | Pending |
+| HOOK-05 | Brief 3 | Pending |
+| HOOK-06 | Brief 3 | Pending |
+| SKILL-01 | Brief 4 | Pending |
+| SKILL-02 | Brief 4 | Pending |
+| SKILL-03 | Brief 4 | Pending |
+| SKILL-04 | Brief 4 | Pending |
+| SKILL-05 | Brief 4 | Pending |
+| SKILL-06 | Brief 4 | Pending |
+| SKILL-07 | Brief 4 | Pending |
+| SKILL-08 | Brief 4 | Pending |
+| SKILL-09 | Brief 4 | Pending |
+| SKILL-10 | Brief 4 | Pending |
+| STATE-01 | Brief 4 | Pending |
+| STATE-02 | Brief 4 | Pending |
+| STATE-03 | Brief 4 | Pending |
+| STATE-04 | Brief 4 | Pending |
+| QUAL-01 | Brief 5 | Pending |
+| QUAL-02 | Brief 5 | Pending |
+| QUAL-03 | Brief 5 | Pending |
+| QUAL-04 | Brief 5 | Pending |
+| QUAL-05 | Brief 5 | Pending |
+| QUAL-06 | Brief 5 | Pending |
+| QUAL-07 | Brief 5 | Pending |
+| QUAL-08 | Brief 5 | Pending |
+| QUAL-09 | Brief 5 | Pending |
+| QUAL-10 | Brief 5 | Pending |
+| QUAL-11 | Brief 3 | Pending |
 
 **Coverage:**
-- v1 requirements: 54 total (5 WORKFLOW + 11 FOUND + 8 AGENT + 6 HOOK + 10 SKILL + 4 STATE + 11 QUAL)
-- Mapped to briefs: 0 (pending roadmapper)
-- Unmapped: 0 (target after roadmapper run)
+- v1 requirements: 55 total (5 WORKFLOW + 11 FOUND + 8 AGENT + 6 HOOK + 10 SKILL + 4 STATE + 11 QUAL)
+- Mapped to briefs: 55
+- Unmapped: 0
+
+**Per-brief totals:**
+- Brief 1 (Foundation & Safety Hardening): 11 (FOUND-01..11)
+- Brief 2 (Agent Layer Modernization): 8 (AGENT-01..08)
+- Brief 3 (Hook Layer Expansion): 7 (HOOK-01..06, QUAL-11)
+- Brief 4 (Skill Layer & State Management): 19 (WORKFLOW-01..05, SKILL-01..10, STATE-01..04)
+- Brief 5 (Quality, CI, Tests, Docs Parity): 10 (QUAL-01..10)
 
 ## CONCERNS.md Traceability
 
@@ -230,5 +237,6 @@ Maps every High-severity item from `.planning/codebase/CONCERNS.md` to the requi
 All High-severity items mapped. Medium and Low items partially covered (the ones tied to maturity, not the cosmetic ones).
 
 ---
+
 *Requirements re-defined: 2026-04-26 after re-init under "inspiration only" principle*
-*54 requirements total — to be mapped to briefs by roadmapper*
+*55 requirements total — all mapped to briefs by roadmapper 2026-04-26*
