@@ -5,12 +5,7 @@ set -euo pipefail
 # Installs rules/ files to ~/.claude/rules/ (never touches CLAUDE.md)
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode (backward compat)
 
-VERSION="1.4.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_DIR="$HOME/.claude"
-TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
-BACKUP_DIR="$CLAUDE_DIR/backups/godmode-$TIMESTAMP"
-VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
 
 # Colors
 GREEN='\033[0;32m'
@@ -24,6 +19,18 @@ error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
 # --- Preflight ---
 command -v jq >/dev/null 2>&1 || error "jq is required but not installed. See: https://jqlang.github.io/jq/download/"
+
+# --- Version single source of truth (FOUND-02) ---
+PLUGIN_JSON="$SCRIPT_DIR/.claude-plugin/plugin.json"
+[ -f "$PLUGIN_JSON" ] || error "plugin.json not found at $PLUGIN_JSON — install aborted"
+VERSION="$(jq -r .version "$PLUGIN_JSON")"
+[ -n "$VERSION" ] && [ "$VERSION" != "null" ] || error "plugin.json:.version is empty or null"
+
+CLAUDE_DIR="$HOME/.claude"
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+BACKUP_DIR="$CLAUDE_DIR/backups/godmode-$TIMESTAMP"
+VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
+
 [ -d "$CLAUDE_DIR" ] || error "~/.claude/ directory not found. Is Claude Code installed?"
 
 # --- Mode detection ---
