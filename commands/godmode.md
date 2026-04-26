@@ -10,7 +10,7 @@ allowed-tools:
 user-invocable: true
 ---
 
-# Claude God-Mode v1.4.1
+# Claude God-Mode
 
 Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, **run the Rules Check first**, then show the **Quick Reference**.
 
