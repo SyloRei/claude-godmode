@@ -142,39 +142,15 @@ fi
 
 info "Backup complete"
 
-# --- v1.x migration check ---
-if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
-  if grep -q "Quality Gates (Canonical" "$CLAUDE_DIR/CLAUDE.md" 2>/dev/null; then
-    echo ""
-    warn "Found godmode v1.x CLAUDE.md"
-    warn "Your rules are now in ~/.claude/rules/godmode-*.md"
-    echo ""
-    read -rp "  Remove the old CLAUDE.md? (backed up first) [y/N] " migrate_confirm || migrate_confirm=""
-    echo ""
-    if [[ "$migrate_confirm" == [yY] ]]; then
-      # Back up the old CLAUDE.md before removing
-      cp "$CLAUDE_DIR/CLAUDE.md" "$BACKUP_DIR/CLAUDE.md.v1-backup"
-      rm "$CLAUDE_DIR/CLAUDE.md"
-      info "Old CLAUDE.md backed up and removed"
-    else
-      info "Keeping old CLAUDE.md (you can remove it manually later)"
-    fi
-  fi
+# --- v1.x detection (FOUND-09: detection-only, never destructive) ---
+if [ -f "$CLAUDE_DIR/CLAUDE.md" ] && grep -q "Quality Gates (Canonical" "$CLAUDE_DIR/CLAUDE.md" 2>/dev/null; then
+  warn "Detected v1.x CLAUDE.md — run /mission to migrate to the v2 workflow. (No files were changed.)"
 fi
-
-# Also check for stale INSTRUCTIONS.md from v1.x
-if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
-  if grep -q "Claude Code God-Mode System" "$CLAUDE_DIR/INSTRUCTIONS.md" 2>/dev/null; then
-    warn "Found stale v1.x INSTRUCTIONS.md (content now lives in rules/)"
-    read -rp "  Remove it? (backed up first) [y/N] " instructions_confirm || instructions_confirm=""
-    if [[ "$instructions_confirm" == [yY] ]]; then
-      cp "$CLAUDE_DIR/INSTRUCTIONS.md" "$BACKUP_DIR/INSTRUCTIONS.md.v1-backup"
-      rm "$CLAUDE_DIR/INSTRUCTIONS.md"
-      info "Old INSTRUCTIONS.md backed up and removed"
-    else
-      info "Keeping old INSTRUCTIONS.md (you can remove it manually later)"
-    fi
-  fi
+if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ] && grep -q "Claude Code God-Mode System" "$CLAUDE_DIR/INSTRUCTIONS.md" 2>/dev/null; then
+  warn "Detected v1.x INSTRUCTIONS.md — content lives in rules/. Remove manually if no longer needed."
+fi
+if [ -d "$CLAUDE_DIR/.claude-pipeline" ] || [ -d "./.claude-pipeline" ]; then
+  warn "Detected .claude-pipeline/ — run /mission to migrate to the v2 brief workflow. (No files were changed.)"
 fi
 
 # --- Rules (FOUND-01: per-file prompt_overwrite) ---
