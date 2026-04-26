@@ -1,0 +1,8 @@
+# shellcheck configuration for claude-godmode
+# https://www.shellcheck.net/wiki/
+#
+# Conventions:
+# - shell=bash so shellcheck checks bash 3.2+ features (target portability floor)
+# - external-sources=true is intentionally NOT set; we don't source untrusted files
+# - Each disable below MUST have a one-line rationale comment immediately above it
+shell=bash
