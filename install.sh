@@ -250,36 +250,53 @@ else
   fi
 fi
 
-# --- Manual-mode extras (agents, skills, hooks) ---
+# --- Manual-mode extras (agents, skills, hooks) — per-file prompt_overwrite (FOUND-01) ---
 if [ "$MODE" = "manual" ]; then
-  if [ -d "$CLAUDE_DIR/agents" ] || [ -d "$CLAUDE_DIR/skills" ]; then
-    warn "Manual-mode will overwrite existing agents and skills in ~/.claude/"
-    warn "Customizations to agent/skill files will be lost (backed up above)"
-  fi
-
   # Agents
   AGENT_COUNT=$(find "$SCRIPT_DIR/agents" -maxdepth 1 -name "*.md" | wc -l | tr -d ' ')
   info "Installing agents (${AGENT_COUNT})"
   mkdir -p "$CLAUDE_DIR/agents"
-  cp "$SCRIPT_DIR/agents/"*.md "$CLAUDE_DIR/agents/"
+  for agent in "$SCRIPT_DIR/agents/"*.md; do
+    [ -f "$agent" ] || continue
+    agent_name="$(basename "$agent")"
+    dest="$CLAUDE_DIR/agents/$agent_name"
+    if prompt_overwrite "$agent" "$dest" "agents"; then
+      cp "$agent" "$dest"
+    fi
+  done
 
-  # Skills
+  # Skills (directories — walk each file inside)
   SKILL_COUNT=$(find "$SCRIPT_DIR/skills" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
   info "Installing skills (${SKILL_COUNT})"
   mkdir -p "$CLAUDE_DIR/skills"
   for skill_dir in "$SCRIPT_DIR/skills/"*/; do
     skill_name="$(basename "$skill_dir")"
     mkdir -p "$CLAUDE_DIR/skills/$skill_name"
-    cp -r "$skill_dir"* "$CLAUDE_DIR/skills/$skill_name/"
+    for f in "$skill_dir"*; do
+      [ -f "$f" ] || continue
+      f_name="$(basename "$f")"
+      dest="$CLAUDE_DIR/skills/$skill_name/$f_name"
+      if prompt_overwrite "$f" "$dest" "skills/$skill_name"; then
+        cp "$f" "$dest"
+      fi
+    done
   done
 
-  # Hooks
+  # Hooks (3 files: session-start.sh, post-compact.sh, statusline.sh)
   info "Installing hooks (3)"
   mkdir -p "$CLAUDE_DIR/hooks"
-  cp "$SCRIPT_DIR/hooks/session-start.sh" "$CLAUDE_DIR/hooks/"
-  cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
-  cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/hooks/"
-  chmod +x "$CLAUDE_DIR/hooks/"*.sh
+  for hook_pair in \
+    "$SCRIPT_DIR/hooks/session-start.sh:$CLAUDE_DIR/hooks/session-start.sh" \
+    "$SCRIPT_DIR/hooks/post-compact.sh:$CLAUDE_DIR/hooks/post-compact.sh" \
+    "$SCRIPT_DIR/config/statusline.sh:$CLAUDE_DIR/hooks/statusline.sh"; do
+    src="${hook_pair%%:*}"
+    dest="${hook_pair##*:}"
+    [ -f "$src" ] || continue
+    if prompt_overwrite "$src" "$dest" "hooks"; then
+      cp "$src" "$dest"
+      chmod +x "$dest"
+    fi
+  done
 fi
 
 # --- Version file ---
