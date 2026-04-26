@@ -1,0 +1,6 @@
+Typecheck (zero errors)
+Lint (zero errors; shellcheck clean for any .sh change)
+All tests pass
+No hardcoded secrets
+No regressions
+Changes match requirements (REQ-IDs in commit message where applicable)
