@@ -177,26 +177,20 @@ if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
   fi
 fi
 
-# --- Rules ---
+# --- Rules (FOUND-01: per-file prompt_overwrite) ---
 RULES_SRC="$SCRIPT_DIR/rules"
 if [ -d "$RULES_SRC" ]; then
   RULES_COUNT=$(find "$RULES_SRC" -maxdepth 1 -name "godmode-*.md" | wc -l | tr -d ' ')
-  # Check if any existing rule files have been customized (differ from source)
-  CUSTOMIZED=0
-  for rule in "$RULES_SRC"/godmode-*.md; do
-    rule_name="$(basename "$rule")"
-    dest="$CLAUDE_DIR/rules/$rule_name"
-    if [ -f "$dest" ] && ! diff -q "$rule" "$dest" >/dev/null 2>&1; then
-      CUSTOMIZED=$((CUSTOMIZED + 1))
-    fi
-  done
-  if [ "$CUSTOMIZED" -gt 0 ]; then
-    warn "${CUSTOMIZED} rule file(s) have local customizations that will be overwritten"
-    warn "Originals are backed up at $BACKUP_DIR/rules/"
-  fi
   info "Installing rules (${RULES_COUNT} files)"
   mkdir -p "$CLAUDE_DIR/rules"
-  cp "$RULES_SRC"/godmode-*.md "$CLAUDE_DIR/rules/"
+  for rule in "$RULES_SRC"/godmode-*.md; do
+    [ -f "$rule" ] || continue
+    rule_name="$(basename "$rule")"
+    dest="$CLAUDE_DIR/rules/$rule_name"
+    if prompt_overwrite "$rule" "$dest" "rules"; then
+      cp "$rule" "$dest"
+    fi
+  done
 else
   warn "No rules/ directory found in source — skipping rules install"
 fi
