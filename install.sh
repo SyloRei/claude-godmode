@@ -133,6 +133,9 @@ echo ""
 info "Creating backup at $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
 
+# Rotate older backups — keep last 5 (FOUND-10)
+prune_backups "$CLAUDE_DIR/backups" 5
+
 if [ -d "$CLAUDE_DIR/rules" ]; then
   cp -r "$CLAUDE_DIR/rules" "$BACKUP_DIR/rules"
 fi
