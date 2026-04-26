@@ -4,8 +4,12 @@
 
 set -euo pipefail
 
-# Read stdin (hook input JSON) — consume it
-cat > /dev/null
+# Read stdin (hook input JSON) once — tolerate closure under set -e (FOUND-05)
+INPUT=$(cat || true)
+
+# Resolve project root from stdin's cwd field (FOUND-05; closes CONCERNS #7)
+HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null || true
 
 # Detect project type
 PROJECT_INFO=""
@@ -102,15 +106,13 @@ CONTEXT=""
 [ -n "$PIPELINE_HINT" ] && CONTEXT="${CONTEXT}\\n${PIPELINE_HINT}"
 
 # Only inject if we detected something
+# JSON via jq -n --arg — never heredoc + variable interpolation (FOUND-04; closes CONCERNS #6)
 if [ -n "$CONTEXT" ]; then
-  cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "${CONTEXT}\\n\\nPipeline: /prd → /plan-stories → /execute → /ship\\nUse CLAUDE.md 'When to Use What' section for skill/agent selection."
-  }
-}
-EOF
+  PIPELINE_HINT_TEXT="${CONTEXT}
+Pipeline: /prd → /plan-stories → /execute → /ship
+Use CLAUDE.md 'When to Use What' section for skill/agent selection."
+  jq -n --arg ctx "$PIPELINE_HINT_TEXT" \
+    '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
 else
   echo '{}'
 fi
