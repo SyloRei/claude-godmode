@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## v2.0.0-phase1 — Foundation & Safety Hardening (2026-04-26)
+
+First milestone phase of the v2 polish-mature-version effort. Hardens the v1.x substrate so every later phase can build on it without re-doing plumbing. **Closes 11 of 11 phase requirements (FOUND-01..FOUND-11) and 9 of 9 v1.x audit High items.**
+
+### Added
+
+- `scripts/check-version-drift.sh` — CI guard asserting every version mention matches `.claude-plugin/plugin.json:.version` (FOUND-02)
+- `config/quality-gates.txt` — single source of truth for the 6 quality gates (FOUND-07)
+- `.shellcheckrc` — repo-root config; every shipped shell file is `shellcheck`-clean at v0.11.0 default severity (FOUND-08)
+- `tests/fixtures/hooks/setup-fixtures.sh` + 5 placeholder fixtures (`cwd-{normal,quote-branch,backslash-branch,newline-branch,apostrophe-branch}.json`) — adversarial branch-name test inputs for both shipped hooks. macOS-aware: branches git refuses on macOS fall back to `main` with a marker note; Linux CI exercises the full set in Phase 5 bats smoke (FOUND-04 substrate)
+- `tests/fixtures/hooks/cwd-*.json` added to `.gitignore` — fixtures are generated, not source
+
+### Changed
+
+- `install.sh` — version sourced from `plugin.json` at runtime via `jq` (FOUND-02). Per-file `[d/s/r/a/k]` prompt before overwriting customized rules / agents / skills / hooks; non-TTY default keeps customizations (FOUND-01). v1.x migration is detection-only, never destroys (FOUND-09). Backup rotation caps at last 5 (FOUND-10).
+- `uninstall.sh` — version sourced from `plugin.json`. Refuses on `~/.claude/.claude-godmode-version` mismatch unless `--force` (FOUND-03). jq preflight added.
+- `hooks/session-start.sh` — JSON output via `jq -n --arg`, never heredoc (FOUND-04). Reads `cwd` from stdin (FOUND-05). Tolerates stdin closure under `set -e` (FOUND-05).
+- `hooks/post-compact.sh` — same hook safety hardening as `session-start.sh` (two atomic commits — substrate fixes separately from gates-file read, per CONTEXT D-19 so Phase 3's vocabulary rewrite layers cleanly). Agents / skills enumerated from live filesystem instead of hardcoded list (FOUND-11). Quality gates read from `config/quality-gates.txt`, not duplicated inline (FOUND-07).
+- `config/statusline.sh` — collapses 4 `jq` invocations into 1 `@tsv` filter (FOUND-06). Removed unused `GRAY` color (SC2034).
+- `commands/godmode.md` — drops literal version from heading; statusline carries it (FOUND-02).
+
+### Closes (CONCERNS.md High items, all 9)
+
+- #1 Rule customizations silently overwritten (FOUND-01)
+- #2 Manual-mode agent/skill overwrite without check (FOUND-01)
+- #4 No version-mismatch detection on uninstall (FOUND-03)
+- #5 v1.x migration `rm`s after one keypress (FOUND-09)
+- #6 Branch names interpolated into hook JSON (FOUND-04)
+- #7 Hooks rely on `cwd` being project root (FOUND-05)
+- #8 Hardcoded skill/agent lists in PostCompact (FOUND-11; consumer-side `/godmode` indexer lands in Phase 4)
+- #9 Quality gates duplicated rules ↔ post-compact (FOUND-07)
+- #18 Stdin drain under `set -e` aborts hook (FOUND-05)
+
+### Phase 1 status
+
+- 11 / 11 requirements closed (FOUND-01..FOUND-11)
+- 9 / 9 High-severity CONCERNS items closed
+- `shellcheck install.sh uninstall.sh hooks/*.sh config/statusline.sh scripts/*.sh tests/fixtures/hooks/*.sh` exits 0
+- 5 adversarial fixtures × 2 hooks = 10/10 valid JSON outputs
+- `bash scripts/check-version-drift.sh` exits 0 against the post-edit working tree
+- 7 successive `bash install.sh < /dev/null` runs leave exactly 5 backup directories
+
 ## [1.6.0] - 2026-04-04
 
 ### Added
