@@ -1,0 +1,4 @@
+{
+  "cwd": "<set by setup-fixtures.sh>",
+  "_note": "Placeholder. Run setup-fixtures.sh to generate the live cwd path. Branch: feat/line<LF>break (with embedded literal newline). Note: macOS git accepts this; some refs may need extra care."
+}
