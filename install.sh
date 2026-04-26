@@ -113,7 +113,7 @@ TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$CLAUDE_DIR/backups/godmode-$TIMESTAMP"
 VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
 
-[ -d "$CLAUDE_DIR" ] || error "~/.claude/ directory not found. Is Claude Code installed?"
+[ -d "$CLAUDE_DIR" ] || error "$HOME/.claude/ directory not found. Is Claude Code installed?"
 
 # --- Mode detection ---
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then

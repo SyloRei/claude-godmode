@@ -13,7 +13,6 @@ YELLOW='\033[33m'
 RED='\033[31m'
 CYAN='\033[36m'
 WHITE='\033[37m'
-GRAY='\033[90m'
 
 # Read JSON from stdin
 INPUT=$(cat)

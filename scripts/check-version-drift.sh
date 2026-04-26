@@ -22,6 +22,7 @@ DRIFT=0
 # install.sh: any line containing VERSION= other than the jq read itself
 if [ -f "$REPO_ROOT/install.sh" ]; then
   while IFS= read -r line; do
+    # shellcheck disable=SC2016  # case patterns below are literal-string matches, not shell expansions
     case "$line" in
       *'VERSION="$(jq'*) ;;  # the jq read itself — OK
       *'VERSION="'*'"'*)
