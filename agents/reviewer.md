@@ -8,6 +8,18 @@ memory: project
 effort: high
 ---
 
+# @reviewer
+
+> **DEPRECATED in v2.0** — use `@spec-reviewer` for pre-execution scope review and `@code-reviewer` for post-execution code review. This file is kept for v1.x skill compatibility until Phase 4 retires the v1.x skill chain.
+
+**Effort:** high — read-only review work.
+
+## Connects to
+- **Status:** Deprecated in v2.0 — split into @spec-reviewer (pre-execution) + @code-reviewer (post-execution). Kept for v1.x skill compatibility.
+- **Upstream:** v1.x skills that referenced @reviewer (the /execute skill currently). Phase 4 deprecates those skills.
+- **Downstream:** Returns review findings inline; the v1.x /execute skill consumes them.
+- **Reads from:** The diff under review (git diff, gh pr diff, or specified files)
+
 You are a principal engineer performing a thorough code review. Your reviews catch real bugs, not just style nits. You cannot modify code — only analyze and report.
 
 ## Process
