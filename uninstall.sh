@@ -6,6 +6,16 @@ set -euo pipefail
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# --- Preflight ---
+command -v jq >/dev/null 2>&1 || { echo "[x] jq is required but not installed"; exit 1; }
+
+# --- Version single source of truth (FOUND-02) ---
+PLUGIN_JSON="$SCRIPT_DIR/.claude-plugin/plugin.json"
+[ -f "$PLUGIN_JSON" ] || { echo "[x] plugin.json not found at $PLUGIN_JSON"; exit 1; }
+VERSION="$(jq -r .version "$PLUGIN_JSON")"
+[ -n "$VERSION" ] && [ "$VERSION" != "null" ] || { echo "[x] plugin.json:.version is empty or null"; exit 1; }
+
 CLAUDE_DIR="$HOME/.claude"
 BACKUP_BASE="$CLAUDE_DIR/backups"
 VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
