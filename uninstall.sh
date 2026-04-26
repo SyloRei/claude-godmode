@@ -21,6 +21,19 @@ BACKUP_BASE="$CLAUDE_DIR/backups"
 VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
 REMOVED=0
 
+# --- Version mismatch check (FOUND-03) ---
+FORCE=0
+[ "${1:-}" = "--force" ] && FORCE=1
+
+if [ -f "$VERSION_FILE" ] && [ "$FORCE" -eq 0 ]; then
+  INSTALLED_VERSION=$(cat "$VERSION_FILE" 2>/dev/null || echo "")
+  if [ -n "$INSTALLED_VERSION" ] && [ "$INSTALLED_VERSION" != "$VERSION" ]; then
+    # error() is defined below — inline equivalent here so the check fires before mode detection.
+    echo "[x] Installed version ($INSTALLED_VERSION) differs from this script's version ($VERSION). Re-run with --force to proceed anyway." >&2
+    exit 1
+  fi
+fi
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
