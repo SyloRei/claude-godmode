@@ -5,7 +5,9 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## v2.0.0-phase1 — Foundation & Safety Hardening (2026-04-26)
+## [Unreleased] — milestone v2.0.0 in progress
+
+### Phase 1 — Foundation & Safety Hardening (2026-04-26)
 
 First milestone phase of the v2 polish-mature-version effort. Hardens the v1.x substrate so every later phase can build on it without re-doing plumbing. **Closes 11 of 11 phase requirements (FOUND-01..FOUND-11) and 9 of 9 v1.x audit High items.**
 
