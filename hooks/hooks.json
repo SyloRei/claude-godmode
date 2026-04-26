@@ -1,5 +1,5 @@
 {
-  "description": "claude-godmode hooks — session context injection and post-compaction recovery",
+  "description": "claude-godmode hooks — session context injection, post-compaction recovery, and quality-gate enforcement",
   "hooks": {
     "SessionStart": [
       {
@@ -19,6 +19,18 @@
             "type": "command",
             "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.sh",
             "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/pre-tool-use.sh",
+            "timeout": 5
           }
         ]
       }
