@@ -17,6 +17,88 @@ info()  { echo -e "${GREEN}[+]${NC} $1"; }
 warn()  { echo -e "${YELLOW}[!]${NC} $1"; }
 error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
+# --- Customization preservation (FOUND-01) ---
+ALL_REPLACE=0
+KEEP_ALL=0
+
+# Usage: prompt_overwrite SRC_FILE DEST_FILE TARGET_LABEL
+# Returns: 0 = replace, 1 = skip
+# Modifies session globals: ALL_REPLACE, KEEP_ALL
+prompt_overwrite() {
+  local src="$1" dest="$2" label="$3"
+
+  # New file (no dest yet) → always copy, no prompt (no customization to lose)
+  [ -f "$dest" ] || return 0
+
+  # No diff → no prompt needed
+  if diff -q "$src" "$dest" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  # Session-wide flags short-circuit
+  [ "$ALL_REPLACE" -eq 1 ] && return 0
+  [ "$KEEP_ALL" -eq 1 ] && return 1
+
+  # Non-TTY: default to keep (safety bias)
+  if [ ! -t 0 ]; then
+    warn "[non-TTY] keeping customizations in $label: $(basename "$dest")"
+    return 1
+  fi
+
+  # Interactive prompt loop
+  while true; do
+    echo ""
+    warn "$label customized: $(basename "$dest")"
+    read -rp "  [d]iff / [s]kip / [r]eplace / [a]ll-replace / [k]eep-all [k]: " choice || choice=""
+    case "${choice:-k}" in
+      d|D)
+        diff -u "$dest" "$src" || true
+        ;;
+      s|S)
+        info "  skipped"
+        return 1
+        ;;
+      r|R)
+        info "  replaced"
+        return 0
+        ;;
+      a|A)
+        ALL_REPLACE=1
+        info "  replacing all customized files for the rest of this run"
+        return 0
+        ;;
+      k|K|"")
+        KEEP_ALL=1
+        info "  keeping all customizations for the rest of this run"
+        return 1
+        ;;
+      *)
+        warn "  invalid choice; pick one of d/s/r/a/k"
+        ;;
+    esac
+  done
+}
+
+# --- Backup rotation (FOUND-10: keep last 5) ---
+# Bash 3.2 portable: alphabetical sort = chronological since timestamps are zero-padded.
+prune_backups() {
+  local dir="$1" keep="$2" count=0 excess=0
+  [ -d "$dir" ] || return 0
+  for d in "$dir"/godmode-*; do
+    [ -d "$d" ] || continue
+    count=$((count + 1))
+  done
+  [ "$count" -le "$keep" ] && return 0
+  excess=$((count - keep))
+  local i=0
+  for d in "$dir"/godmode-*; do
+    [ -d "$d" ] || continue
+    i=$((i + 1))
+    [ "$i" -gt "$excess" ] && break
+    rm -rf "$d"
+  done
+}
+
 # --- Preflight ---
 command -v jq >/dev/null 2>&1 || error "jq is required but not installed. See: https://jqlang.github.io/jq/download/"
 
