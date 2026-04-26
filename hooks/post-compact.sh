@@ -51,38 +51,30 @@ elif [ -f "Gemfile" ]; then
   CONTEXT="Project: Ruby (bundle)"
 fi
 
-# Detect pipeline state
-PIPELINE_STATE=""
-PIPELINE_DIR=".claude-pipeline"
-
-if [ -d "$PIPELINE_DIR" ]; then
-  if command -v jq > /dev/null 2>&1; then
-    STORIES_FILE="${PIPELINE_DIR}/stories.json"
-    if [ -f "$STORIES_FILE" ]; then
-      # Parse stories.json — fall back to generic message on malformed JSON
-      TOTAL=$(jq '.stories | length' "$STORIES_FILE" 2>/dev/null) || TOTAL=""
-      DONE=$(jq '[.stories[] | select(.passes == true)] | length' "$STORIES_FILE" 2>/dev/null) || DONE=""
-      BRANCH_NAME=$(jq -r '.branchName // empty' "$STORIES_FILE" 2>/dev/null) || BRANCH_NAME=""
-      NEXT_STORY=$(jq -r '[.stories[] | select(.passes == false)][0].id // empty' "$STORIES_FILE" 2>/dev/null) || NEXT_STORY=""
-
-      if [ -n "$TOTAL" ] && [ -n "$DONE" ] && [ "$TOTAL" -gt 0 ] 2>/dev/null; then
-        PIPELINE_STATE="Active pipeline: ${DONE}/${TOTAL} stories complete"
-        [ -n "$BRANCH_NAME" ] && PIPELINE_STATE="${PIPELINE_STATE} on branch '${BRANCH_NAME}'"
-        [ -n "$NEXT_STORY" ] && PIPELINE_STATE="${PIPELINE_STATE}. Next: ${NEXT_STORY}"
-      else
-        # jq succeeded but returned unexpected values — treat as malformed
-        PIPELINE_STATE="Pipeline: .claude-pipeline/ found."
-      fi
-    else
-      PIPELINE_STATE="Pipeline: .claude-pipeline/ found."
-    fi
-  else
-    # jq not available — generic fallback
-    PIPELINE_STATE="Pipeline: .claude-pipeline/ found (install jq for detailed status)."
+# .planning/STATE.md detection (HOOK-05) — same parser as session-start.sh
+STATE_HINT=""
+if [ -f ".planning/STATE.md" ]; then
+  STATE_PHASE=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^milestone:/ {sub(/^milestone:[[:space:]]*/,""); print; exit}' .planning/STATE.md 2>/dev/null || true)
+  STATE_STATUS=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^status:/ {sub(/^status:[[:space:]]*/,""); print; exit}' .planning/STATE.md 2>/dev/null || true)
+  STATE_STOPPED=$(awk '/^---$/{c++; if(c==2)exit} c==1 && /^stopped_at:/ {sub(/^stopped_at:[[:space:]]*/,""); print; exit}' .planning/STATE.md 2>/dev/null || true)
+  [ -z "$STATE_PHASE" ] && STATE_PHASE=$(grep -E '^Phase: ' .planning/STATE.md 2>/dev/null | head -1 | sed 's/^Phase: *//' || true)
+  [ -z "$STATE_STATUS" ] && STATE_STATUS=$(grep -E '^Status: ' .planning/STATE.md 2>/dev/null | head -1 | sed 's/^Status: *//' || true)
+  if [ -n "$STATE_PHASE" ] || [ -n "$STATE_STATUS" ]; then
+    STATE_HINT="Active: ${STATE_PHASE:-unknown} | Status: ${STATE_STATUS:-unknown}"
+    [ -n "$STATE_STOPPED" ] && STATE_HINT="${STATE_HINT} | Last: ${STATE_STOPPED}"
   fi
 fi
 
+# v1.x .claude-pipeline/ detection — deprecation note only (HOOK-05 downgrade)
+PIPELINE_STATE=""
+if [ -d ".claude-pipeline" ]; then
+  PIPELINE_STATE="[v1.x] .claude-pipeline/ detected. Run /mission to migrate."
+fi
+
 # Build the context injection (FOUND-04; closes CONCERNS #6)
+STATE_LINE_TEXT=""
+[ -n "$STATE_HINT" ] && STATE_LINE_TEXT="
+${STATE_HINT}"
 PIPELINE_LINE_TEXT=""
 [ -n "$PIPELINE_STATE" ] && PIPELINE_LINE_TEXT="
 ${PIPELINE_STATE}"
@@ -91,17 +83,16 @@ ${PIPELINE_STATE}"
 SKILLS_FORMATTED="/${SKILLS_LIST// /, /}"
 AGENTS_FORMATTED="@${AGENTS_LIST// /, @}"
 
-# Substrate-version context block — gates SoT integration is the next atomic commit (D-19)
 CONTEXT_BLOCK="CONTEXT RESTORED AFTER COMPACTION:
 
-${CONTEXT}${PIPELINE_LINE_TEXT}
+${CONTEXT}${STATE_LINE_TEXT}${PIPELINE_LINE_TEXT}
 
 Quality Gates (canonical, from config/quality-gates.txt — ALL must pass before completing any task):
 ${GATES_RENDERED}
 
 Available Skills (from filesystem): ${SKILLS_FORMATTED}
 Available Agents (from filesystem): ${AGENTS_FORMATTED}
-Feature Pipeline: /prd → /plan-stories → /execute → /ship
+Workflow: /godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
 
 Refer to CLAUDE.md for full workflow phases and coding standards."
 
