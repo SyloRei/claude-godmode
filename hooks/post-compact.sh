@@ -21,6 +21,14 @@ SKILLS_LIST=$(find "$PLUGIN_ROOT/skills" -mindepth 1 -maxdepth 1 -type d -not -n
 [ -z "$AGENTS_LIST" ] && AGENTS_LIST="(none — plugin root not found)"
 [ -z "$SKILLS_LIST" ] && SKILLS_LIST="(none — plugin root not found)"
 
+# Quality gates from canonical SoT (FOUND-07; closes CONCERNS #9)
+GATES_FILE="$PLUGIN_ROOT/config/quality-gates.txt"
+if [ -f "$GATES_FILE" ]; then
+  GATES_RENDERED=$(awk '{printf "%d. %s\n", NR, $0}' "$GATES_FILE")
+else
+  GATES_RENDERED="(quality-gates.txt missing — see CLAUDE.md)"
+fi
+
 # Detect project context
 CONTEXT=""
 
@@ -88,13 +96,8 @@ CONTEXT_BLOCK="CONTEXT RESTORED AFTER COMPACTION:
 
 ${CONTEXT}${PIPELINE_LINE_TEXT}
 
-Quality Gates (canonical, from CLAUDE.md — ALL must pass before completing any task):
-1. Typecheck passes
-2. Lint passes
-3. All tests pass
-4. No hardcoded secrets
-5. No regressions
-6. Changes match requirements
+Quality Gates (canonical, from config/quality-gates.txt — ALL must pass before completing any task):
+${GATES_RENDERED}
 
 Available Skills (from filesystem): ${SKILLS_FORMATTED}
 Available Agents (from filesystem): ${AGENTS_FORMATTED}
