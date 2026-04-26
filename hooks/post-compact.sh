@@ -4,8 +4,22 @@
 
 set -euo pipefail
 
-# Read stdin (hook input JSON) — we don't need it but must consume it
-cat > /dev/null
+# Read stdin (hook input JSON) once — tolerate closure under set -e (FOUND-05)
+INPUT=$(cat || true)
+
+# Resolve plugin root BEFORE any cd — script-relative paths are unstable after cd (FOUND-11)
+PLUGIN_ROOT="${CLAUDE_PLUGIN_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)}"
+
+# Resolve project root from stdin's cwd field (FOUND-05; closes CONCERNS #7)
+HOOK_CWD=$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)
+[ -n "$HOOK_CWD" ] && cd "$HOOK_CWD" 2>/dev/null || true
+
+# Live FS scan — agents/skills enumerated at runtime, never hardcoded (FOUND-11; closes CONCERNS #8)
+LC_ALL=C
+AGENTS_LIST=$(find "$PLUGIN_ROOT/agents" -maxdepth 1 -name '*.md' -not -name '_*' -not -name 'README.md' -exec basename {} .md \; 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//')
+SKILLS_LIST=$(find "$PLUGIN_ROOT/skills" -mindepth 1 -maxdepth 1 -type d -not -name '_*' -exec basename {} \; 2>/dev/null | sort | tr '\n' ' ' | sed 's/ $//')
+[ -z "$AGENTS_LIST" ] && AGENTS_LIST="(none — plugin root not found)"
+[ -z "$SKILLS_LIST" ] && SKILLS_LIST="(none — plugin root not found)"
 
 # Detect project context
 CONTEXT=""
@@ -60,14 +74,33 @@ if [ -d "$PIPELINE_DIR" ]; then
   fi
 fi
 
-# Build the context injection
-PIPELINE_LINE=""
-[ -n "$PIPELINE_STATE" ] && PIPELINE_LINE="\\n${PIPELINE_STATE}"
-cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "PostCompact",
-    "additionalContext": "CONTEXT RESTORED AFTER COMPACTION:\n\n${CONTEXT}${PIPELINE_LINE}\n\nQuality Gates (canonical, from CLAUDE.md — ALL must pass before completing any task):\n1. Typecheck passes\n2. Lint passes\n3. All tests pass\n4. No hardcoded secrets\n5. No regressions\n6. Changes match requirements\n\nAvailable Skills: /prd, /plan-stories, /execute, /ship, /debug, /tdd, /refactor, /explore-repo\nAvailable Agents: @researcher, @reviewer, @architect, @writer, @executor, @security-auditor, @test-writer, @doc-writer\nFeature Pipeline: /prd → /plan-stories → /execute → /ship\n\nRefer to CLAUDE.md for full workflow phases and coding standards."
-  }
-}
-EOF
+# Build the context injection (FOUND-04; closes CONCERNS #6)
+PIPELINE_LINE_TEXT=""
+[ -n "$PIPELINE_STATE" ] && PIPELINE_LINE_TEXT="
+${PIPELINE_STATE}"
+
+# Convert space-separated lists to comma-separated `/skill` / `@agent` forms (bash 3.2 portable)
+SKILLS_FORMATTED="/${SKILLS_LIST// /, /}"
+AGENTS_FORMATTED="@${AGENTS_LIST// /, @}"
+
+# Substrate-version context block — gates SoT integration is the next atomic commit (D-19)
+CONTEXT_BLOCK="CONTEXT RESTORED AFTER COMPACTION:
+
+${CONTEXT}${PIPELINE_LINE_TEXT}
+
+Quality Gates (canonical, from CLAUDE.md — ALL must pass before completing any task):
+1. Typecheck passes
+2. Lint passes
+3. All tests pass
+4. No hardcoded secrets
+5. No regressions
+6. Changes match requirements
+
+Available Skills (from filesystem): ${SKILLS_FORMATTED}
+Available Agents (from filesystem): ${AGENTS_FORMATTED}
+Feature Pipeline: /prd → /plan-stories → /execute → /ship
+
+Refer to CLAUDE.md for full workflow phases and coding standards."
+
+jq -n --arg ctx "$CONTEXT_BLOCK" \
+  '{hookSpecificOutput: {hookEventName: "PostCompact", additionalContext: $ctx}}'
