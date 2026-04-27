@@ -1,9 +1,11 @@
+> See `rules/godmode-skills.md` for skill frontmatter convention, Auto Mode detection, and Connects-to chain rendering.
+
 ## When to Use What
 
 ```
-Plan a feature           → /prd → /plan-stories → /execute → /ship
-Implement a task         → @writer agent (isolated worktree, general purpose)
-Execute pipeline stories → @executor agent (stories.json-aware, used by /execute)
+Ship a brief             → /godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
+Implement a unit of work → @writer agent (isolated worktree, general purpose)
+Execute a planned task   → @executor agent (PLAN.md-aware, used by /build)
 Code review              → @reviewer agent
 Find/fix a bug           → /debug skill
 Write tests              → @test-writer (existing code) or /tdd (new feature)
