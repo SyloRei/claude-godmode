@@ -1,165 +1,223 @@
 ---
 name: ship
-description: "Pre-push verification and PR creation. Use when: ship it, ready to ship, create pr, push this, prepare for merge."
+description: "Run 6 gates from config/quality-gates.txt, refuse on PARTIAL/MISSING (unless --force), push, gh pr create. Never auto-force under Auto Mode."
 user-invocable: true
+allowed-tools:
+  - Read
+  - Bash
+  - Grep
+  - Glob
+  - Task
+disable-model-invocation: true
 ---
 
-# Ship
+# /ship
 
-Verify all quality gates, clean up commits, push, and create PR.
+## Connects to
+
+- **Upstream:** /verify N (status must be `Ready to ship`)
+- **Downstream:** (terminal — produces a PR)
+- **Reads from:** `.planning/STATE.md`, `.planning/briefs/NN-slug/{BRIEF.md,PLAN.md}`, `config/quality-gates.txt`
+- **Writes to:** git (push), GitHub (PR), `.planning/STATE.md`
+
+## Auto Mode check
+
+Scan the most recent system reminder for the case-insensitive substring "Auto Mode Active".
+
+When detected (per D-10):
+- Run gates; refuse on PARTIAL/MISSING.
+- NEVER auto-`--force`. `--force` is an explicit user opt-in; Auto Mode does not satisfy that requirement.
+- If a gate fails: surface the failure, do not retry, do not bypass.
+- Treat user course corrections as normal input.
+
+See `rules/godmode-skills.md` § Auto Mode Detection for the full convention.
 
 ---
 
 ## The Job
 
-1. Run canonical quality gates
-2. Verify requirements match
-3. Security scan
-4. Git cleanup
-5. Push and create PR
+1. Verify STATE.md `status` is `Ready to ship`. Refuse otherwise.
+2. Read PLAN.md `## Verification status` + `## Brief success criteria` — refuse on any non-COVERED line (unless `--force`).
+3. Run the 6 quality gates from `config/quality-gates.txt`.
+4. Git cleanup.
+5. Push and `gh pr create`.
+
+`--force` bypasses Step 1 (the PARTIAL/MISSING refusal) ONLY — it never bypasses Step 2 (gate failures). D-50 carry-over.
 
 ---
 
-## Step 1: Quality Gates (from CLAUDE.md — canonical list)
+## Step 0: Resolve brief and verify state
 
-Run ALL gates. Auto-detect commands from project config:
+```bash
+set -euo pipefail
+ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+source "$ROOT/skills/_shared/_lib.sh"
+source "$ROOT/skills/_shared/init-context.sh"
+source "$ROOT/skills/_shared/state.sh"
 
-| Gate | Example Commands |
-|------|-----------------|
-| Typecheck | `tsc --noEmit`, `mypy`, `cargo check`, `go vet` |
-| Lint | `eslint`, `ruff`, `cargo clippy`, `golangci-lint` |
-| Tests | `vitest`, `pytest`, `cargo test`, `go test` |
-| Build | `tsup`, `cargo build`, `go build` |
+FORCE=0
+case "${ARGUMENTS:-}" in
+  *--force*) FORCE=1 ;;
+esac
 
+CTX=$(godmode_init_context "$PWD")
+STATUS=$(printf '%s' "$CTX" | jq -r '.state.status // empty')
+N=$(printf '%s' "$CTX" | jq -r '.state.active_brief // empty')
+SLUG=$(printf '%s' "$CTX" | jq -r '.state.active_brief_slug // empty')
+BRIEF_DIR=$(printf '%s' "$CTX" | jq -r '.state.active_brief_dir // empty')
+[ -n "$N" ] && [ -d "$BRIEF_DIR" ] || error "No active brief. Run /godmode."
+
+if [ "$STATUS" != "Ready to ship" ]; then
+  error "Status is '$STATUS'. Run /verify $N before /ship."
+fi
 ```
-Quality Gates:
-  [✓/✗] Typecheck
-  [✓/✗] Lint
-  [✓/✗] Tests
-  [✓/✗] Build
+
+---
+
+## Step 1: Verification gate
+
+```bash
+PLAN_FILE="$BRIEF_DIR/PLAN.md"
+[ -f "$PLAN_FILE" ] || error "PLAN.md not found at $PLAN_FILE."
+
+NON_COVERED=$(grep -E '^- \[.\].*\b(PARTIAL|MISSING)\b' "$PLAN_FILE" || true)
+if [ -n "$NON_COVERED" ]; then
+  warn "PLAN.md has non-COVERED criteria:"
+  printf '%s\n' "$NON_COVERED"
+  if [ "$FORCE" != "1" ]; then
+    error "Refusing to ship. Re-run /verify $N (or pass --force with explicit acknowledgment)."
+  fi
+  warn "[godmode] FORCE-ship requested. PR body will carry an explicit warning."
+fi
+```
+
+---
+
+## Step 2: Quality Gates (from `config/quality-gates.txt`)
+
+Read the 6 gates from canonical SoT and run each. Auto-detect commands per gate.
+
+| Gate | Auto-detect commands |
+|------|----------------------|
+| Typecheck | `tsc --noEmit`, `mypy`, `cargo check`, `go vet`, `shellcheck` (.sh files) |
+| Lint | `eslint`, `ruff`, `cargo clippy`, `golangci-lint`, `shellcheck` |
+| Tests | `vitest`, `pytest`, `cargo test`, `go test`, `bats` |
+| No hardcoded secrets | `git diff --staged | grep -E '<patterns>'` (PreToolUse already enforced — re-run as belt-and-suspenders) |
+| No regressions | full test suite |
+| Changes match requirements | `git log main..HEAD --grep '[brief NN.M]'` — verify every PLAN.md item has a matching commit |
+
+```bash
+GATES_FILE="$ROOT/config/quality-gates.txt"
+[ -f "$GATES_FILE" ] || error "Quality gates SoT missing at $GATES_FILE."
+
+GATE_NUM=0
+ALL_PASSED=1
+while IFS= read -r gate_desc || [ -n "$gate_desc" ]; do
+  GATE_NUM=$((GATE_NUM + 1))
+  info "Gate $GATE_NUM: $gate_desc"
+  # Per-gate logic: auto-detect command from project files; run; capture exit code.
+  # On any non-zero exit code: ALL_PASSED=0; warn the gate description; continue
+  # (so the user sees the full failure list, not just the first).
+done < "$GATES_FILE"
+
+if [ "$ALL_PASSED" != "1" ]; then
+  error "One or more gates failed. Refusing to ship. (--force does NOT bypass gate failures — D-50.)"
+fi
 ```
 
 **If ANY gate fails:**
-- Use `/debug` to diagnose test/typecheck failures
-- Use `@writer` agent for complex fixes
-- For lint: run auto-fix if available, otherwise fix manually
-- **Do NOT skip. Do NOT push with failures.**
+- Use `/debug` to diagnose test/typecheck failures.
+- Use `@writer` agent for complex fixes.
+- For lint: run auto-fix if available, otherwise fix manually.
+- Do NOT skip. Do NOT push with failures. The PreToolUse hook (Phase 3 D-01) already blocks `--no-verify`; this skill enforces gates regardless.
 
 ---
 
-## Step 2: Requirements Verification
+## Step 3: Git Cleanup
 
-- Review the original task/issue/PRD
-- Confirm all acceptance criteria are met
-- Check: does the diff match what was requested?
-
-```
-Requirements:
-  [✓/✗] Changes match original request
-  [✓/✗] No unrelated changes included
-```
-
----
-
-## Step 3: Security Scan
-
-Scan the diff for:
-- Hardcoded secrets, API keys, tokens, passwords
-- .env files or credentials in staged changes
-- Sensitive data in logs or error messages
-
-If found: STOP. Remove them. Never push secrets.
-
----
-
-## Step 4: Git Cleanup
-
-- Check for uncommitted changes — commit or stash
-- Ensure branch is up to date with base branch
+- Check for uncommitted changes — commit or stash.
+- Ensure branch is up to date with the base branch.
 - Review commit history — atomic and well-messaged?
-- If messy: suggest rebase (ask user first)
+- If messy: suggest rebase (ask the user first; in Auto Mode, do NOT auto-rebase).
+
+Security scan as a part of cleanup: scan the diff for hardcoded secrets, API keys, tokens, passwords, .env files, credentials, sensitive data in logs or error messages. If found: STOP. Remove them. Never push secrets. (Belt-and-suspenders — Gate 4 already covered this; the PreToolUse hook also blocks at commit time.)
 
 ---
 
-## Step 5: Push & PR
+## Step 4: Push & PR
 
 ```bash
-git push -u origin <branch>
+BRANCH=$(git branch --show-current)
+git push -u origin "$BRANCH"
 ```
 
-Create PR:
-```
-gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
+Create PR. Body templated from BRIEF.md (Why → "## Summary"; What → "## Changes"; Spec → "## Test plan"). Heredoc here is fine — single-quoted `'EOF'` prevents shell expansion of the body content (T-04-30 mitigation):
+
+```bash
+PR_TITLE="<concise, less than 70 chars>"   # derived from brief title
+
+if [ "$FORCE" = "1" ]; then
+  FORCE_LINE='[godmode] FORCE-shipped with PARTIAL/MISSING criteria — review before merge.'
+else
+  FORCE_LINE=""
+fi
+
+gh pr create --title "$PR_TITLE" --body "$(cat <<'EOF'
 ## Summary
-- What changed and why (2-3 bullets)
+<Why from BRIEF.md>
 
 ## Changes
-- Specific changes list
+<What from BRIEF.md>
 
-## Test Plan
-- How to verify
-- Tests added/modified
+## Test plan
+<Spec from BRIEF.md>
 EOF
 )"
 ```
 
-Return PR URL.
+If `$FORCE_LINE` is non-empty, prepend it to the PR body so reviewers see the explicit warning.
+
+---
+
+## Step 5: Update STATE.md
+
+```bash
+PR_URL=$(gh pr view --json url -q .url 2>/dev/null || echo "(unknown)")
+NEXT_N=$((N + 1))
+godmode_state_update "$N" "$SLUG" "Shipped $PR_URL" "/brief $NEXT_N" "Shipped $PR_URL"
+info "Shipped: $PR_URL"
+info "Run /brief $NEXT_N to start the next brief."
+```
 
 ---
 
 ## Agent Routing
 
-| Phase | Agent | Purpose |
-|-------|-------|---------|
-| Step 1 (Gate failure) | Spawn @writer for complex fixes | Fix typecheck, lint, or test failures that need multi-file changes |
-| Step 2 (Requirements) | MUST spawn @reviewer for deep code review | Validate all changes match acceptance criteria before pushing |
-| Step 3 (Security) | MUST spawn @security-auditor for comprehensive audit | Scan for vulnerabilities, secrets, injection risks before shipping |
+| Step | Agent | Purpose |
+|------|-------|---------|
+| Step 2 (Gate failure) | Spawn `@writer` for complex fixes | Fix typecheck, lint, or test failures that need multi-file changes |
+| Step 3 (Cleanup) | MAY spawn `@reviewer` for deep code review | Validate all changes match acceptance criteria before pushing |
+| Step 3 (Cleanup) | MAY spawn `@security-auditor` for comprehensive audit | Scan for vulnerabilities, secrets, injection risks before shipping |
 
-**Rule:** Never perform code review or security audit inline — always spawn the designated agent.
-
----
-
-## Pipeline Context
-
-<!-- canonical: skills/_shared/pipeline-context.md -->
-
-On activation, detect the current pipeline phase:
-
-| # | Condition | Phase |
-|---|-----------|-------|
-| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
-| 2 | PRD exists but no `stories.json` | **prd-only** |
-| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
-| 4 | All stories have `passes: false` | **planning** |
-| 5 | Some `passes: true`, some `passes: false` | **executing** |
-| 6 | All stories have `passes: true` | **complete** |
-
-### Branch Check
-
-```bash
-current_branch=$(git branch --show-current)
-pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
-```
-
-If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
-
-### Phase Behaviors
-
-| Phase | Behavior |
-|-------|----------|
-| **no-pipeline** | Operate in standalone mode. Ship changes without pipeline context. Zero regression from pre-pipeline behavior. |
-| **prd-only** | Standalone mode — no stories to verify against. Ship normally. |
-| **planning** | Warn user: stories are planned but none are implemented. Confirm they want to ship without executing the pipeline. |
-| **executing** | Read `progress.md` for context on completed stories. Use `stories.json` to verify all stories pass before shipping. If incomplete stories remain, warn user and confirm intent. Use quality gate commands from `stories.json.qualityGates` instead of re-detecting. |
-| **complete** | All stories pass. Read `progress.md` for PR description context. Use `stories.json` for quality gate commands and story summaries to populate the PR body. Reference the PRD via `prdSource` for requirements verification (Step 2). |
+**Rule:** Never perform code review or security audit inline — always spawn the designated agent if depth is needed.
 
 ---
 
-## Related
+## Constraints
 
-- **/debug** — when quality gates fail
-- **@reviewer** — for deep code review before shipping
-- **@security-auditor** — for comprehensive security audit before shipping
-- **/execute** — preceding step: implement all stories before shipping
+- `--force` bypasses Step 1 (PARTIAL/MISSING refusal) ONLY — never bypasses Step 2 (gate failures).
+- Auto Mode NEVER auto-forces (D-10). The user must explicitly pass `--force`.
+- Gates source is `config/quality-gates.txt` (Phase 1 D-26 / Phase 3 D-15) — never duplicated inline.
+- Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings to verify Step 2 Gate 6 (every item has a matching commit). Body prose still uses "item" or "criterion".
+- All STATE.md mutations go through `godmode_state_update` from `skills/_shared/state.sh`.
 
-**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.md` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.
+---
+
+## See Also
+
+- `rules/godmode-skills.md` — frontmatter convention, Connects-to layout, Auto Mode block.
+- `skills/_shared/init-context.sh` — `godmode_init_context` returns the JSON context blob.
+- `skills/_shared/state.sh` — `godmode_state_update` is the only sanctioned STATE.md writer.
+- `config/quality-gates.txt` — canonical 6-gate list (single source of truth).
+- `agents/writer.md` — code-touching agent for gate-failure fixes.
+- `agents/reviewer.md`, `agents/security-auditor.md` — deep review and audit (optional).
