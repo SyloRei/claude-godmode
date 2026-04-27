@@ -1,0 +1,35 @@
+<!-- TEMPLATE VARIABLES (substituted by /plan N or @planner)
+  {{brief_n}}           — zero-padded brief number
+  {{brief_title}}       — brief display title
+  {{brief_slug}}        — kebab-case slug
+  {{date}}              — ISO date YYYY-MM-DD
+  {{task_name}}         — illustrative first task name
+  {{verification}}      — illustrative first task verification (CLI-checkable)
+  {{files}}             — illustrative first task file list
+  Wave/task content is filled by @planner — placeholders below are illustrative.
+  Constraints: values must be single-line; no | or }} characters.
+-->
+
+# Plan: {{brief_title}}
+
+**Drafted:** {{date}}
+**Brief:** `.planning/briefs/{{brief_n}}-{{brief_slug}}/BRIEF.md`
+
+## Waves
+
+### Wave 1 (parallel-safe)
+
+#### Task 1.1 — {{task_name}}
+**Verification:** {{verification}}
+**Files touched:** {{files}}
+**Steps:**
+ 1. ...
+ 2. ...
+
+## Verification status
+
+- [ ] **Task 1.1** — STATUS (set by /verify)
+
+## Brief success criteria
+
+- [ ] **SC-1** — STATUS (set by /verify)

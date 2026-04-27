@@ -1,0 +1,23 @@
+<!-- TEMPLATE VARIABLES (substituted by /mission, then mutated by skills via state.sh)
+  {{active_brief}}        — integer brief number (e.g., 1)
+  {{active_brief_slug}}   — kebab-case slug
+  {{status}}              — free-form status string
+  {{next_command}}        — command starting with /
+  {{last_activity}}       — string (may contain spaces, em dashes)
+  {{date}}                — ISO date YYYY-MM-DD
+  Constraints: values must be single-line; no | or }} characters.
+  Note: This template's HTML comment is stripped by /mission before write —
+  only the YAML+md hybrid below ships to .planning/STATE.md.
+-->
+---
+godmode_state_version: 1
+active_brief: {{active_brief}}
+active_brief_slug: {{active_brief_slug}}
+status: {{status}}
+next_command: {{next_command}}
+last_activity: "{{last_activity}}"
+---
+
+# Audit Log
+
+- {{date}} — Project missioned via `/mission`.
