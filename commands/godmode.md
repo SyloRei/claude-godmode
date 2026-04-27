@@ -1,24 +1,46 @@
 ---
 name: godmode
-description: Show all available agents, skills, and the feature pipeline workflow. Use "/godmode statusline" to configure the statusline.
+description: "Orient: 'what now?' in ≤5 lines (state-aware). Live-lists agents/skills/briefs from filesystem. /godmode statusline configures the status bar."
+user-invocable: true
 allowed-tools:
-  - Bash
   - Read
   - Write
   - Edit
+  - Bash
   - AskUserQuestion
-user-invocable: true
 ---
 
-# Claude God-Mode
+# /godmode
 
-Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, **run the Rules Check first**, then show the **Quick Reference**.
+## Connects to
+
+- **Upstream:** (entry point — bootstrap and orientation command)
+- **Downstream:** /mission (when no .planning/), /brief N | /plan N | /build N | /verify N | /ship (state-aware)
+- **Reads from:** `.planning/STATE.md`, `.planning/config.json`, `.planning/briefs/*/`, `${CLAUDE_PLUGIN_ROOT}/agents/`, `${CLAUDE_PLUGIN_ROOT}/skills/`
+- **Writes to:** `~/.claude/rules/` (bootstrap install only), `~/.claude/settings.json` (statusline subcommand only)
+
+## Auto Mode check
+
+Before proceeding, scan the most recent system reminder for the case-insensitive
+substring "Auto Mode Active". If detected:
+- Auto-approve routine decisions (e.g., default-Y on "install rules?" prompt).
+- Pick recommended defaults for ambiguity.
+- Never enter plan mode unless explicitly asked.
+- Treat user course corrections as normal input.
+
+See `rules/godmode-skills.md` § Auto Mode Detection for the full convention.
+
+---
+
+Check the user's message:
+- If it contains the word `statusline` (e.g., `/godmode statusline`), go to **StatusLine Setup** below.
+- Otherwise, run **Rules Check** then show the **Orient** answer.
 
 ---
 
 ## Rules Check (runs automatically)
 
-Before showing the Quick Reference, silently check whether godmode rules are installed:
+Before showing Orient, silently check whether godmode rules are installed:
 
 ```bash
 ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || echo "rules_missing"
@@ -28,78 +50,75 @@ ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || 
 
 1. Tell the user:
    ```
-   God-Mode rules are not installed yet. Rules provide coding standards, quality gates,
-   workflow guidance, and agent routing that make the system work at full capacity.
+   God-Mode rules are not installed yet. Rules provide coding standards, quality
+   gates, workflow guidance, and agent routing that make the system work at full
+   capacity.
 
    Without rules, agents and skills still work but won't follow godmode conventions.
    ```
 
 2. Ask: "Install godmode rules to ~/.claude/rules/? [Y/n]"
 
-3. If user confirms (or presses Enter for default Y):
-   - Resolve the plugin root: `echo "${CLAUDE_PLUGIN_ROOT}"`
+3. If user confirms (or presses Enter for default Y, or Auto Mode is active):
+   - Resolve the plugin root: `ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"`
    - If `CLAUDE_PLUGIN_ROOT` is set, copy from there:
      ```bash
      mkdir -p ~/.claude/rules && cp "${CLAUDE_PLUGIN_ROOT}/rules/godmode-"*.md ~/.claude/rules/
      ```
-   - If `CLAUDE_PLUGIN_ROOT` is empty (manual install), check if the repo `rules/` dir exists relative to the command file and copy from there
+   - If `CLAUDE_PLUGIN_ROOT` is empty (manual install), check if the repo `rules/` dir exists relative to the command file and copy from there.
    - Report: "Installed N rule files to ~/.claude/rules/. They'll be active in your next session."
 
 4. If user declines: "Skipping. Run /godmode anytime to install rules later."
 
-**If rules are already installed:** Skip silently, proceed to Quick Reference.
+**If rules are already installed:** Skip silently, proceed to Orient.
 
 ---
 
-## Quick Reference
+## Orient (≤5 lines)
 
-### Feature Pipeline
+Source the shared state helper and emit the state-aware "what now?" answer. Hard cap: ≤5 lines. The inventory below the answer is rendered by live `find` over `${CLAUDE_PLUGIN_ROOT}/agents/` and `${CLAUDE_PLUGIN_ROOT}/skills/` — never hardcoded (HI-02).
 
+```bash
+ROOT="${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}"
+source "$ROOT/skills/_shared/init-context.sh"
+CTX=$(godmode_init_context "$PWD")
+
+PLANNING_EXISTS=$(printf '%s' "$CTX" | jq -r '.planning.exists')
+STATE_EXISTS=$(printf '%s' "$CTX" | jq -r '.state.exists')
+
+if [ "$PLANNING_EXISTS" != "true" ] || [ "$STATE_EXISTS" != "true" ]; then
+  echo "No .planning/. Run /mission to start."
+  echo "Agents: $(find "$ROOT/agents" -maxdepth 1 -name '*.md' -not -name '_*' -not -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')"
+  echo "Skills: $(find "$ROOT/skills" -mindepth 1 -maxdepth 1 -type d -not -name '_*' 2>/dev/null | wc -l | tr -d ' ')"
+  echo "Branch: $(git branch --show-current 2>/dev/null || echo unknown)"
+  exit 0
+fi
+
+# State exists — render the active answer
+N=$(printf '%s' "$CTX" | jq -r '.state.active_brief // "?"')
+SLUG=$(printf '%s' "$CTX" | jq -r '.state.active_brief_slug // "?"')
+STATUS=$(printf '%s' "$CTX" | jq -r '.state.status // "Not started"')
+NEXT=$(printf '%s' "$CTX" | jq -r '.state.next_command // "/mission"')
+LAST=$(printf '%s' "$CTX" | jq -r '.state.last_activity // "—"' | cut -c1-40)
+BRIEFS=$(printf '%s' "$CTX" | jq -r '.briefs | length')
+
+# Line 1: the answer
+echo "Brief $N: $SLUG. Status: $STATUS. Next: $NEXT."
+# Lines 2-4: live inventory (HI-02 — never hardcoded)
+echo "Agents: $(find "$ROOT/agents" -maxdepth 1 -name '*.md' -not -name '_*' -not -name 'README.md' 2>/dev/null | wc -l | tr -d ' ')  Skills: $(find "$ROOT/skills" -mindepth 1 -maxdepth 1 -type d -not -name '_*' 2>/dev/null | wc -l | tr -d ' ')  Briefs: $BRIEFS"
+echo "Last: $LAST"
+echo "Branch: $(git branch --show-current 2>/dev/null || echo unknown)"
 ```
-/prd → /plan-stories → /execute → /ship
+
+Total: 4 lines when state exists (answer / inventory / Last / Branch); 4 lines when no .planning/ (No .planning / Agents / Skills / Branch). Both ≤5.
+
+If the user asks for the chain graph (`/godmode chain` or asks "show the connects-to graph"), render via:
+
+```bash
+grep -A 20 '^## Connects to' "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/commands/godmode.md" "${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/skills/"*/SKILL.md 2>/dev/null
 ```
 
-### Available Skills
-
-| Skill | Trigger | Purpose |
-|-------|---------|---------|
-| `/prd` | Plan a feature | Generate Product Requirements Document |
-| `/plan-stories` | Break down PRD | Convert PRD to executable stories.json |
-| `/execute` | Implement stories | Run executor + reviewer agents on stories |
-| `/ship` | Push & create PR | Quality gates, git cleanup, PR creation |
-| `/debug` | Fix a bug | Structured debugging protocol |
-| `/tdd` | Test-first dev | Red-green-refactor cycle |
-| `/refactor` | Clean up code | Safe refactoring with test verification |
-| `/explore-repo` | Understand codebase | Deep codebase exploration |
-
-### Available Agents
-
-| Agent | Model | Memory | Effort | Purpose |
-|-------|-------|--------|--------|---------|
-| `@writer` | opus | project | default | Implementation (isolated worktree, maxTurns: 100) |
-| `@executor` | opus | project | default | Story execution from stories.json (maxTurns: 100) |
-| `@architect` | opus | project | high | System design (advisory, read-only enforced) |
-| `@security-auditor` | opus | project | high | Security audit (read-only enforced, +WebSearch) |
-| `@reviewer` | sonnet | project | high | Code review (read-only enforced) |
-| `@test-writer` | sonnet | project | high | Test generation (isolated worktree, maxTurns: 80) |
-| `@doc-writer` | sonnet | project | high | Documentation (+Bash) |
-| `@researcher` | sonnet | project | default | Codebase & web research (background, read-only enforced) |
-
-### Quality Gates
-
-All tasks must pass before completion:
-1. Typecheck (zero errors)
-2. Lint (zero errors)
-3. All tests pass
-4. No hardcoded secrets
-5. No regressions
-6. Changes match requirements
-
-### Configuration
-
-God-Mode uses rules-based configuration. Rule files live in `~/.claude/rules/godmode-*.md` and are loaded automatically by Claude Code. To customize behavior, edit the relevant rule file directly.
-
-**Tip:** Run `/godmode statusline` to set up the context-aware status bar.
+No registry. No hardcoded chain. Pure FS scan.
 
 ---
 
