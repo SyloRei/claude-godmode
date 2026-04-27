@@ -1,8 +1,45 @@
 ---
 name: execute
-description: "Execute stories from stories.json using agents. Orchestrates @executor and @reviewer to implement, validate, and commit each story. Supports parallel execution when dependsOn fields are present. Triggers on: execute stories, run stories, implement stories, start execution, run pipeline."
+description: "[Deprecated v2.0] Renamed to /build N. See migration note below. Old behavior preserved for v1.x users mid-migration."
 user-invocable: true
 ---
+
+<!-- v2.0 DEPRECATION BANNER — display once per install. Marker file gates display. -->
+
+## v2.0 Migration Note
+
+Check the marker file:
+
+```bash
+MARKER="$HOME/.claude/.claude-godmode-v1-banner-shown"
+if [ ! -f "$MARKER" ]; then
+  # Display banner block below
+  touch "$MARKER" 2>/dev/null || true
+  # Then continue to v1.x body
+fi
+# If marker exists, skip the banner and proceed straight to v1.x body
+```
+
+# ⚠ Deprecated — use `/build N` instead
+
+This command was renamed in v2.0:
+
+| v1.x | v2.0 |
+|---|---|
+| `/prd` | `/brief N` |
+| `/plan-stories` | `/plan N` |
+| `/execute` | `/build N` |
+
+The old body still works for projects on the v1.x layout (`.claude-pipeline/`).
+Run `/mission` to migrate to the v2 layout (`.planning/`).
+
+Banner shown once per install — re-display by running:
+
+```bash
+rm ~/.claude/.claude-godmode-v1-banner-shown
+```
+
+--- v1.x body below ---
 
 # Story Executor
 
