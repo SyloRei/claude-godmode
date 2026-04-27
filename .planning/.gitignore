@@ -1,0 +1,4 @@
+# claude-godmode .planning/ — gitignore (D-41)
+# .build/ holds wave-orchestration marker files (started/done/failed) for /build N.
+# Markers are runtime state, not artifacts — gitignored at the brief level.
+*/.build/
