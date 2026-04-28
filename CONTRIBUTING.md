@@ -10,24 +10,28 @@ Thanks for your interest in improving Claude God-Mode. This project grows throug
 
 ### New Agent
 
-1. Create `agents/<name>.md` with a system prompt
-2. Define the agent's model, permissions, and purpose in the frontmatter
+1. Create `agents/<name>.md` with a system prompt and YAML frontmatter
+2. Set `model:` and `effort:` per the four-tier policy below (see Model Selection)
 3. Add `memory:` to the frontmatter -- choose the appropriate scope:
    - **project** -- the default for most agents. Codebase patterns, conventions, and findings are project-specific and useful for the whole team. Used by all current godmode agents.
-   - **user** -- cross-project learnings. Use only when findings genuinely benefit the user regardless of which project they're in. Currently unused in godmode (all agents use project).
+   - **user** -- cross-project learnings. Use only when findings genuinely benefit the user regardless of which project they're in. Currently unused in godmode.
    - **local** -- sensitive or private findings. Use when memory may contain credentials, vulnerability details, or other data that should not be committed. Currently unused in godmode.
 4. Consider additional frontmatter fields:
-   - `effort: high` -- for agents where thoroughness is critical (reviewers, security, architecture)
    - `maxTurns: N` -- safety valve for agents that write code (prevents runaway token burn)
    - `disallowedTools: Write, Edit` -- enforce read-only mechanically on read-only agents
    - `background: true` -- for agents typically spawned for non-blocking parallel work
+   - `isolation: worktree` -- required on every code-writing agent (`@executor`, `@writer`, `@test-writer`)
 5. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
+6. Run `bash scripts/check-frontmatter.sh` locally to confirm the linter is clean
 
 ### New Skill
 
-1. Create `skills/<name>/SKILL.md` with the skill definition
-2. Include: trigger command, description, step-by-step workflow, and quality gate requirements
-3. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
+1. Create `skills/<name>/SKILL.md` with the skill definition and YAML frontmatter
+2. Include: `name:`, `description:` (≤1,536 chars combined with `when_to_use`), `argument-hint:` if the skill takes args, and `allowed-tools:` scoped to the minimum needed
+3. Body: trigger command, description, step-by-step workflow, and quality gate requirements
+4. Follow the conventions in `rules/godmode-skills.md` (frontmatter contract, Connects-to layout, Auto Mode detection, vocabulary discipline)
+5. Run `bash scripts/check-vocab.sh` locally to confirm no forbidden vocabulary leaks into user-facing prose
+6. Run `bash scripts/check-frontmatter.sh` locally to confirm the frontmatter linter is clean
 
 ### Adding Rules
 
@@ -58,20 +62,46 @@ Existing rule files and their concerns:
 2. Register the hook in `hooks/hooks.json` with the appropriate trigger event
 3. Keep hooks fast -- they run on every matching event
 
-## File Structure (v1.4)
+## File Structure (v2.0)
 
 ```
 claude-godmode/
-  agents/           # Agent definitions (*.md with frontmatter)
-  commands/         # Slash commands (e.g., /godmode)
-  config/           # Settings template and statusline
-    settings.template.json
-    statusline.sh
-  hooks/            # Hook scripts and hooks.json
-  rules/            # Rule files (godmode-*.md) -> ~/.claude/rules/
-  skills/           # Skill definitions (SKILL.md per directory)
-  install.sh        # Installer (plugin-mode + manual-mode)
-  uninstall.sh      # Clean removal of godmode artifacts
+  .claude-plugin/        # plugin manifest (plugin.json — canonical version SoT)
+  .github/workflows/     # CI (ci.yml: 5 lint gates + bats matrix on macos+ubuntu)
+  agents/                # 12 v2 agents (*.md with model/effort/memory frontmatter)
+  bin/                   # bare commands installed onto PATH (e.g., godmode-state)
+  commands/              # /godmode entry point (single user-facing command file)
+  config/                # settings template, statusline, canonical quality gates
+    quality-gates.txt    #   `config/quality-gates.txt` is the single source of truth for the 6 commit-time gates
+    settings.template.json #   merged into ~/.claude/settings.json on install
+    statusline.sh        #   shipped statusline (cost + context + workflow status)
+  hooks/                 # hook scripts + hooks.json (PreToolUse, PostToolUse,
+                         #   SessionStart, PostCompact, UserPromptSubmit)
+  rules/                 # godmode-*.md -> ~/.claude/rules/ (one concern per file)
+  scripts/               # CI-invoked lint scripts (check-vocab/parity/version-drift/
+                         #   frontmatter — same scripts run locally and in CI)
+  skills/                # 11 v2 user-invocable skills + 3 v1.x deprecation banners
+  templates/.planning/   # planning artifact templates (PROJECT.md, ROADMAP.md, etc.)
+  tests/                 # bats-core suite + fixtures
+    install.bats         #   install -> uninstall -> reinstall round-trip + adversarial
+    fixtures/branches/   #   adversarial-branch JSON fixtures (FOUND-04 regression)
+  CHANGELOG.md           # Keep-a-Changelog format; canonical version source: plugin.json
+  CLAUDE.md              # repo conventions; loaded into every Claude Code session
+  CONTRIBUTING.md        # this file
+  README.md              # marketing front door (≤500 lines, vocab-clean)
+  install.sh             # installer (plugin-mode + manual-mode parity)
+  uninstall.sh           # clean removal; refuses on version mismatch (FOUND-03)
+```
+
+Run any of these locally before opening a PR to mirror the CI gates:
+
+```bash
+bash scripts/check-version-drift.sh   # version SoT (.claude-plugin/plugin.json:.version)
+bash scripts/check-frontmatter.sh     # agent + skill YAML frontmatter linter
+bash scripts/check-parity.sh          # plugin-mode vs manual-mode hook bindings
+bash scripts/check-vocab.sh           # forbidden vocab + 11-skill surface count
+shellcheck $(find . -name '*.sh' -not -path './.git/*')
+bats tests/install.bats               # install round-trip + adversarial fixtures
 ```
 
 ## Conventions
@@ -83,27 +113,26 @@ claude-godmode/
 - Hooks: lowercase, hyphenated shell scripts (e.g., `session-start.sh`)
 - Rules: `godmode-{concern}.md` (e.g., `godmode-coding.md`)
 
-### Model Selection (Four-Tier Strategy)
+### Model Selection (v2 — three tiers, twelve agents)
 
-Agents are assigned to one of four tiers based on task complexity and cost:
+Every agent declares `model:` (alias: `opus` / `sonnet` / `haiku`) and `effort:` (`high` or `xhigh`) in its frontmatter. Pinned model IDs are forbidden — aliases keep the upgrade path one config edit instead of twelve.
 
-- **Opus + high effort** -- High-stakes read-only analysis requiring maximum thoroughness. These agents evaluate architecture and security where missed issues are costly.
-  - `@architect`, `@security-auditor`
-- **Opus + default effort** -- Code-writing agents that need Opus-level reasoning to produce correct implementations but don't need the thoroughness overhead.
-  - `@writer`, `@executor`
-- **Sonnet + high effort** -- Structured analysis and generation tasks. Sonnet handles these well when given high effort to be thorough.
-  - `@reviewer`, `@test-writer`, `@doc-writer`
-- **Sonnet + default effort** -- Background research and information gathering where speed and cost matter more than deep reasoning.
-  - `@researcher`
+| Tier | Agents | Use for |
+|------|--------|---------|
+| `opus` + `effort: xhigh` | `@architect`, `@planner`, `@security-auditor`, `@verifier` | Design, audit, and read-only analysis where missed issues are costly. Read-only or read-mostly. |
+| `opus` + `effort: high` | `@executor`, `@writer` | Code-writing. Opus-level reasoning, but `xhigh` skips rules on Opus 4.7 -- do NOT use it on `@executor` / `@writer` / `@test-writer`; use `high` there. |
+| `sonnet` + `effort: high` | `@code-reviewer`, `@doc-writer`, `@researcher`, `@reviewer`, `@spec-reviewer`, `@test-writer` | Structured review, generation, and research tasks where Sonnet's strength profile fits. |
+
+> **Pitfall:** `xhigh skips rules on Opus 4.7`. Anthropic's documented behavior makes the highest-effort tier ignore rule files on Opus 4.7 -- it is safe for read-only audit work (`@architect`, `@planner`, `@security-auditor`, `@verifier`) but unsafe for any agent that writes code. Code-writing agents must stay on `effort: high`.
 
 **Decision tree for placing future agents:**
 
-1. Does the agent write or modify code? -> Opus + default effort
-2. Does the agent perform high-stakes read-only analysis (security, architecture)? -> Opus + high effort
-3. Does the agent produce structured output (reviews, tests, docs)? -> Sonnet + high effort
-4. Is the agent primarily research or information gathering? -> Sonnet + default effort
+1. Does the agent write or modify code? -> `opus` + `effort: high` (e.g., `@executor`, `@writer`, `@test-writer` -- with `isolation: worktree`)
+2. Does the agent perform high-stakes read-only analysis (architecture, security, planning, verification)? -> `opus` + `effort: xhigh`
+3. Does the agent produce structured review, generation, or research output? -> `sonnet` + `effort: high`
+4. Is the agent a trivially-bounded helper (classifier, format checker)? -> `haiku` (default effort)
 
-> **Note:** `effort: max` is an Opus-exclusive setting. Do not assign it to Sonnet agents. Most agents should use `high` or omit the field (default). Reserve `max` for edge cases where Opus needs to exhaust all reasoning before responding.
+For skill frontmatter conventions (the contract `/build`, `/plan`, etc. follow), see `rules/godmode-skills.md`. For agent routing ("which agent does what"), see `rules/godmode-routing.md`. The two rule files are split deliberately -- agent identity vs. skill plumbing.
 
 ### Quality
 
