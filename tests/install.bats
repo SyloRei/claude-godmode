@@ -113,35 +113,114 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-# ---- Tests 7-10: adversarial-branch hook fixtures ----
-@test "hook fixture: branch name contains \"" {
-  FIXTURE="$REPO_ROOT/tests/fixtures/branches/quote.json"
-  [ -f "$FIXTURE" ]
-  run bash -c "cat '$FIXTURE' | bash '$REPO_ROOT/hooks/post-compact.sh'"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | jq -e '.' >/dev/null
+# ---- Tests 7-10: adversarial-branch hook fixtures (CR-03 closure) ----
+# These tests exercise the FOUND-04 / CONCERNS #6 regression class: hook JSON
+# construction must not corrupt under adversarial branch names. We drive the
+# canonical branch-emission path (hooks/session-start.sh:53 — `git branch
+# --show-current`) via a PATH-shimmed fake git that prints the adversarial
+# literal from each fixture. Then we assert the literal survives the JSON
+# round-trip in `.hookSpecificOutput.additionalContext`.
+
+# Helper: build a fake-git stub that responds to the two subcommands
+# session-start.sh invokes. Returns the path to the temp dir holding the stub.
+# The stub reads BRANCH_LITERAL from its environment so per-test fixtures pass
+# adversarial bytes without re-creating the script.
+_make_fake_git() {
+  local FAKE_DIR
+  FAKE_DIR="$(mktemp -d)"
+  cat > "$FAKE_DIR/git" <<'STUB'
+#!/usr/bin/env bash
+# Minimal fake-git stub: respond only to the calls hooks/session-start.sh issues.
+case "$1" in
+  rev-parse)
+    # session-start.sh: `git rev-parse --is-inside-work-tree > /dev/null 2>&1`
+    [ "$2" = "--is-inside-work-tree" ] && exit 0
+    exit 1
+    ;;
+  branch)
+    # session-start.sh: `git branch --show-current 2>/dev/null`
+    if [ "$2" = "--show-current" ]; then
+      # Print the adversarial literal supplied via env. Use printf %s to avoid
+      # any shell-metachar interpretation; literal newlines from $BRANCH_LITERAL
+      # ARE part of the test (newline fixture decodes to a 2-line value).
+      printf '%s' "${BRANCH_LITERAL:-unknown}"
+      exit 0
+    fi
+    exit 1
+    ;;
+  log)
+    # session-start.sh: `git log --oneline -3 2>/dev/null` — keep it empty.
+    exit 0
+    ;;
+  *)
+    exit 1
+    ;;
+esac
+STUB
+  chmod +x "$FAKE_DIR/git"
+  printf '%s' "$FAKE_DIR"
 }
 
-@test "hook fixture: branch name contains \\" {
-  FIXTURE="$REPO_ROOT/tests/fixtures/branches/backslash.json"
-  [ -f "$FIXTURE" ]
-  run bash -c "cat '$FIXTURE' | bash '$REPO_ROOT/hooks/post-compact.sh'"
+# Helper: run session-start.sh against an adversarial fixture and assert the
+# literal survives the JSON round-trip. The fixture's `.branch_hint` field
+# supplies BRANCH_LITERAL. Stdin to the hook is `{"cwd": "<TEST_CWD>"}` so the
+# hook cd's into a stub project dir (with package.json, ensuring CONTEXT is
+# non-empty and the jq emission path is exercised).
+_run_adversarial_branch_test() {
+  local FIXTURE_PATH="$1"
+  [ -f "$FIXTURE_PATH" ]
+
+  # Extract the adversarial literal from the fixture
+  local BRANCH_LITERAL
+  BRANCH_LITERAL=$(jq -r '.branch_hint' "$FIXTURE_PATH")
+  [ -n "$BRANCH_LITERAL" ]
+
+  # Stub project dir that triggers session-start.sh PROJECT_INFO detection
+  local STUB_PROJECT
+  STUB_PROJECT="$(mktemp -d)"
+  echo '{}' > "$STUB_PROJECT/package.json"
+
+  # Fake git on PATH
+  local FAKE_GIT_DIR
+  FAKE_GIT_DIR=$(_make_fake_git)
+
+  # Invoke session-start.sh: stdin = {"cwd": "<STUB>"}, PATH prepends fake-git,
+  # BRANCH_LITERAL exported so the stub returns the adversarial bytes.
+  local INPUT_JSON
+  INPUT_JSON=$(jq -n --arg cwd "$STUB_PROJECT" '{cwd: $cwd}')
+
+  run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
+    bash -c "printf '%s' '$INPUT_JSON' | bash '$REPO_ROOT/hooks/session-start.sh'"
+
+  # Cleanup before assertions (so a failed assertion still cleans up)
+  rm -rf "$FAKE_GIT_DIR" "$STUB_PROJECT"
+
+  # Hook exited cleanly
   [ "$status" -eq 0 ]
+
+  # Output is valid JSON
   printf '%s\n' "$output" | jq -e '.' >/dev/null
+
+  # CR-03 closure: the adversarial literal MUST round-trip into additionalContext.
+  # `jq -e --arg lit "..." '.hookSpecificOutput.additionalContext | contains($lit)'`
+  # exits 0 iff the JSON-decoded additionalContext value contains the literal.
+  printf '%s\n' "$output" | \
+    jq -e --arg lit "$BRANCH_LITERAL" \
+      '.hookSpecificOutput.additionalContext | contains($lit)' >/dev/null
 }
 
-@test "hook fixture: branch name contains \\n" {
-  FIXTURE="$REPO_ROOT/tests/fixtures/branches/newline.json"
-  [ -f "$FIXTURE" ]
-  run bash -c "cat '$FIXTURE' | bash '$REPO_ROOT/hooks/post-compact.sh'"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | jq -e '.' >/dev/null
+@test "hook fixture: branch name contains \" (CR-03 round-trip)" {
+  _run_adversarial_branch_test "$REPO_ROOT/tests/fixtures/branches/quote.json"
 }
 
-@test "hook fixture: branch name contains '" {
-  FIXTURE="$REPO_ROOT/tests/fixtures/branches/apostrophe.json"
-  [ -f "$FIXTURE" ]
-  run bash -c "cat '$FIXTURE' | bash '$REPO_ROOT/hooks/post-compact.sh'"
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | jq -e '.' >/dev/null
+@test "hook fixture: branch name contains \\ (CR-03 round-trip)" {
+  _run_adversarial_branch_test "$REPO_ROOT/tests/fixtures/branches/backslash.json"
+}
+
+@test "hook fixture: branch name contains \\n (CR-03 round-trip)" {
+  _run_adversarial_branch_test "$REPO_ROOT/tests/fixtures/branches/newline.json"
+}
+
+@test "hook fixture: branch name contains ' (CR-03 round-trip)" {
+  _run_adversarial_branch_test "$REPO_ROOT/tests/fixtures/branches/apostrophe.json"
 }
