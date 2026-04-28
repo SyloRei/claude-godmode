@@ -159,4 +159,4 @@ This document evolves at phase transitions and milestone boundaries.
 4. Update Context with current state (users, feedback, metrics)
 
 ---
-*Last updated: 2026-04-26 after initialization (Path A — re-bootstrapped onto GSD planning shape from `.planning-archive-v1/` bespoke setup, sourced from `IDEA.md`)*
+*Last updated: 2026-04-29 — Phase 5 (Quality — CI, Tests, Docs Parity) complete. All 5 milestone phases delivered: substrate hardened, agent layer modernized, hook surface complete, user-facing skills/commands shipped, CI + bats + docs gated. Milestone v2.0.0 ready for merge → tag (D-27) → marketplace listing.*
