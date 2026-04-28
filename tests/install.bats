@@ -123,11 +123,20 @@ teardown() {
 
 # Helper: build a fake-git stub that responds to the two subcommands
 # session-start.sh invokes. Returns the path to the temp dir holding the stub.
-# The stub reads BRANCH_LITERAL from its environment so per-test fixtures pass
-# adversarial bytes without re-creating the script.
+# The stub reads the adversarial branch literal from a sidecar file
+# ("branch_literal") in the same directory as the stub. Passing the literal
+# via tempfile (rather than env) avoids reliance on env(1) preserving
+# embedded newlines in environment values — POSIX permits newlines but
+# some implementations (e.g., older BusyBox) truncate at \n. The tempfile
+# path eliminates that fragility entirely.
+# Argument: $1 = path to a file containing the literal branch bytes to emit.
 _make_fake_git() {
+  local LITERAL_SRC="$1"
   local FAKE_DIR
   FAKE_DIR="$(mktemp -d)"
+  # Copy the adversarial literal into the stub's directory so the stub can
+  # read it back regardless of the environment in which it's invoked.
+  cp "$LITERAL_SRC" "$FAKE_DIR/branch_literal"
   cat > "$FAKE_DIR/git" <<'STUB'
 #!/usr/bin/env bash
 # Minimal fake-git stub: respond only to the calls hooks/session-start.sh issues.
@@ -140,10 +149,15 @@ case "$1" in
   branch)
     # session-start.sh: `git branch --show-current 2>/dev/null`
     if [ "$2" = "--show-current" ]; then
-      # Print the adversarial literal supplied via env. Use printf %s to avoid
-      # any shell-metachar interpretation; literal newlines from $BRANCH_LITERAL
-      # ARE part of the test (newline fixture decodes to a 2-line value).
-      printf '%s' "${BRANCH_LITERAL:-unknown}"
+      # Read the adversarial literal from a sidecar file next to this stub.
+      # Using a file (not env) avoids env(1) newline-truncation risk on
+      # non-POSIX-conformant platforms (e.g., older BusyBox env).
+      LITERAL_FILE="$(dirname "$0")/branch_literal"
+      if [ -f "$LITERAL_FILE" ]; then
+        cat "$LITERAL_FILE"
+      else
+        printf '%s' "unknown"
+      fi
       exit 0
     fi
     exit 1
@@ -185,20 +199,28 @@ _run_adversarial_branch_test() {
   STUB_PROJECT="$(mktemp -d)"
   echo '{}' > "$STUB_PROJECT/package.json"
 
-  # Fake git on PATH
-  local FAKE_GIT_DIR
-  FAKE_GIT_DIR=$(_make_fake_git)
+  # Write the adversarial literal to a tempfile that we hand to the fake-git
+  # stub. Passing the literal via file (not env) avoids reliance on env(1)
+  # preserving embedded newlines in environment values.
+  local LITERAL_FILE
+  LITERAL_FILE="$(mktemp)"
+  printf '%s' "$BRANCH_LITERAL" > "$LITERAL_FILE"
 
-  # Invoke session-start.sh: stdin = {"cwd": "<STUB>"}, PATH prepends fake-git,
-  # BRANCH_LITERAL exported so the stub returns the adversarial bytes.
+  # Fake git on PATH (stub reads the literal from a sidecar file)
+  local FAKE_GIT_DIR
+  FAKE_GIT_DIR=$(_make_fake_git "$LITERAL_FILE")
+
+  # Invoke session-start.sh: stdin = {"cwd": "<STUB>"}, PATH prepends fake-git.
+  # The stub reads the literal from its own sidecar file — no env-passthrough
+  # of newline-bearing values required.
   local INPUT_JSON
   INPUT_JSON=$(jq -n --arg cwd "$STUB_PROJECT" '{cwd: $cwd}')
 
-  run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
+  run env "PATH=$FAKE_GIT_DIR:$PATH" \
     bash -c "bash '$REPO_ROOT/hooks/session-start.sh'" <<< "$INPUT_JSON"
 
   # Cleanup before assertions (so a failed assertion still cleans up)
-  rm -rf "$FAKE_GIT_DIR" "$STUB_PROJECT"
+  rm -rf "$FAKE_GIT_DIR" "$STUB_PROJECT" "$LITERAL_FILE"
 
   # Hook exited cleanly
   [ "$status" -eq 0 ]
