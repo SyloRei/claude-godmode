@@ -100,12 +100,16 @@ Plans:
   3. `bash scripts/check-parity.sh` exits 0 — hook bindings, timeouts, and permissions are byte-for-byte equivalent between `hooks/hooks.json` and `config/settings.template.json[hooks]`.
   4. `bash scripts/check-vocab.sh` exits 0 — no occurrences of `phase`, `task`, `story`, `PRD`, `gsd-*`, `cycle`, or `milestone` in `commands/`, `skills/`, or `README.md`.
   5. `wc -l README.md` ≤ 500; `head -3 CHANGELOG.md` shows a dated `## v2.0.0` heading; `jq -r .description .claude-plugin/plugin.json` returns a marketplace-polished string ≤200 chars; `git tag` shows `v2.0.0`.
-**Plans**: 3 plans
+**Plans**: 7 plans (3 executed + 4 gap-closure from 05-VERIFICATION.md)
 
 Plans:
 - [x] 05-01: CI workflow with 5 lint gates (shellcheck + frontmatter + version drift + parity + vocab)
 - [x] 05-02: bats smoke test with adversarial fixtures + settings merge regression test
 - [x] 05-03: README rewrite + CHANGELOG dated entry + marketplace metadata polish + v2.0.0 tag
+- [ ] 05-04: vocabulary gate green — scrub Phase N from 6 SKILL.md bodies + scoped milestone allowlist for /mission (CR-01)
+- [ ] 05-05: add userConfig.model_profile to plugin.json — documented public API now exists (CR-02)
+- [ ] 05-06: bats Tests 7-10 actually exercise adversarial code path via PATH-shimmed fake git on session-start.sh (CR-03)
+- [ ] 05-07: CONTRIBUTING.md v2 rewrite — file structure, 12-agent enumeration, xhigh pitfall, skill-conventions pointer (CR-04)
 
 ## Progress
 
