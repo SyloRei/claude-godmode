@@ -113,27 +113,26 @@ bats tests/install.bats               # install round-trip + adversarial fixture
 - Hooks: lowercase, hyphenated shell scripts (e.g., `session-start.sh`)
 - Rules: `godmode-{concern}.md` (e.g., `godmode-coding.md`)
 
-### Model Selection (Four-Tier Strategy)
+### Model Selection (v2 — three tiers, twelve agents)
 
-Agents are assigned to one of four tiers based on task complexity and cost:
+Every agent declares `model:` (alias: `opus` / `sonnet` / `haiku`) and `effort:` (`high` or `xhigh`) in its frontmatter. Pinned model IDs are forbidden — aliases keep the upgrade path one config edit instead of twelve.
 
-- **Opus + high effort** -- High-stakes read-only analysis requiring maximum thoroughness. These agents evaluate architecture and security where missed issues are costly.
-  - `@architect`, `@security-auditor`
-- **Opus + default effort** -- Code-writing agents that need Opus-level reasoning to produce correct implementations but don't need the thoroughness overhead.
-  - `@writer`, `@executor`
-- **Sonnet + high effort** -- Structured analysis and generation tasks. Sonnet handles these well when given high effort to be thorough.
-  - `@reviewer`, `@test-writer`, `@doc-writer`
-- **Sonnet + default effort** -- Background research and information gathering where speed and cost matter more than deep reasoning.
-  - `@researcher`
+| Tier | Agents | Use for |
+|------|--------|---------|
+| `opus` + `effort: xhigh` | `@architect`, `@planner`, `@security-auditor`, `@verifier` | Design, audit, and read-only analysis where missed issues are costly. Read-only or read-mostly. |
+| `opus` + `effort: high` | `@executor`, `@writer` | Code-writing. Opus-level reasoning, but `xhigh` skips rules on Opus 4.7 -- do NOT use it on `@executor` / `@writer` / `@test-writer`; use `high` there. |
+| `sonnet` + `effort: high` | `@code-reviewer`, `@doc-writer`, `@researcher`, `@reviewer`, `@spec-reviewer`, `@test-writer` | Structured review, generation, and research tasks where Sonnet's strength profile fits. |
+
+> **Pitfall:** `xhigh skips rules on Opus 4.7`. Anthropic's documented behavior makes the highest-effort tier ignore rule files on Opus 4.7 -- it is safe for read-only audit work (`@architect`, `@planner`, `@security-auditor`, `@verifier`) but unsafe for any agent that writes code. Code-writing agents must stay on `effort: high`.
 
 **Decision tree for placing future agents:**
 
-1. Does the agent write or modify code? -> Opus + default effort
-2. Does the agent perform high-stakes read-only analysis (security, architecture)? -> Opus + high effort
-3. Does the agent produce structured output (reviews, tests, docs)? -> Sonnet + high effort
-4. Is the agent primarily research or information gathering? -> Sonnet + default effort
+1. Does the agent write or modify code? -> `opus` + `effort: high` (e.g., `@executor`, `@writer`, `@test-writer` -- with `isolation: worktree`)
+2. Does the agent perform high-stakes read-only analysis (architecture, security, planning, verification)? -> `opus` + `effort: xhigh`
+3. Does the agent produce structured review, generation, or research output? -> `sonnet` + `effort: high`
+4. Is the agent a trivially-bounded helper (classifier, format checker)? -> `haiku` (default effort)
 
-> **Note:** `effort: max` is an Opus-exclusive setting. Do not assign it to Sonnet agents. Most agents should use `high` or omit the field (default). Reserve `max` for edge cases where Opus needs to exhaust all reasoning before responding.
+For skill frontmatter conventions (the contract `/build`, `/plan`, etc. follow), see `rules/godmode-skills.md`. For agent routing ("which agent does what"), see `rules/godmode-routing.md`. The two rule files are split deliberately -- agent identity vs. skill plumbing.
 
 ### Quality
 
