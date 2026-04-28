@@ -1,389 +1,212 @@
 ---
 phase: 05-quality-ci-tests-docs-parity
-reviewed: 2026-04-28T23:55:00Z
+reviewed: 2026-04-29T00:00:00Z
 depth: standard
-files_reviewed: 12
+files_reviewed: 10
 files_reviewed_list:
-  - .claude-plugin/plugin.json
-  - .github/workflows/ci.yml
-  - CHANGELOG.md
-  - CONTRIBUTING.md
-  - README.md
-  - scripts/check-parity.sh
+  - skills/build/SKILL.md
+  - skills/mission/SKILL.md
+  - skills/plan/SKILL.md
+  - skills/ship/SKILL.md
+  - skills/tdd/SKILL.md
+  - skills/verify/SKILL.md
   - scripts/check-vocab.sh
-  - tests/fixtures/branches/apostrophe.json
-  - tests/fixtures/branches/backslash.json
-  - tests/fixtures/branches/newline.json
-  - tests/fixtures/branches/quote.json
+  - .claude-plugin/plugin.json
   - tests/install.bats
+  - CONTRIBUTING.md
 findings:
-  critical: 4
-  warning: 8
-  info: 5
-  total: 17
+  blocker: 0
+  warning: 5
+  info: 4
+  total: 9
 status: issues_found
 ---
 
-# Phase 5: Code Review Report
+# Phase 05 — Code Review (closure plans 05-04..05-07)
 
-**Reviewed:** 2026-04-28T23:55:00Z
+**Reviewed:** 2026-04-29
 **Depth:** standard
-**Files Reviewed:** 12
-**Status:** issues_found
+**Scope:** Files changed by closure plans 05-04 (vocab gate), 05-05 (userConfig), 05-06 (bats CR-03), and 05-07 (CONTRIBUTING rewrite).
+**Status:** issues_found — no BLOCKERs; 5 WARNINGs and 4 INFO-level concerns.
 
 ## Summary
 
-Phase 5 ships CI workflow, parity/vocab gates, bats smoke tests, branch-name fixtures, and the v2 docs trio (README, CHANGELOG, CONTRIBUTING). The mechanical gates themselves (`scripts/check-parity.sh`, JSON fixtures) are correct and pass. The vocabulary gate works but is currently failing on legitimate dev-side text in shipped SKILL.md files, so wiring it into CI as written will hard-fail the next push to `main` (BLOCKER CR-01).
+The closure work mechanically meets every must-have in the four plans:
 
-Two larger problems sit in the docs/test contract:
+- `bash scripts/check-vocab.sh` exits 0 on the working tree (verified).
+- `.claude-plugin/plugin.json` declares a well-formed `userConfig.model_profile` block matching CONTEXT D-26 / STACK.md.
+- `tests/install.bats` Tests 7-10 invoke `hooks/session-start.sh` (not `post-compact.sh`), PATH-shim a fake `git`, and assert round-trip survival of the adversarial branch literal.
+- `CONTRIBUTING.md` matches v2 reality: v1.4 file structure replaced; all 12 v2 agents named with correct (model, effort) tiers; `effort: max` removed; xhigh-Opus-4.7 pitfall documented; skill conventions correctly pointed at `rules/godmode-skills.md`.
 
-1. **README claims a `userConfig.model_profile` user-tunable knob** that is **not present in `plugin.json`** (CR-02). This is a documented public API that does not exist.
-2. **The four "adversarial branch" bats tests do not actually exercise an adversarial branch path** (CR-03) — the hook under test (`hooks/post-compact.sh`) never reads the `branch_hint` field that distinguishes the four fixtures from each other. All four tests reduce to a single "stdin is valid JSON" smoke check, defeating QUAL-07's stated goal of guarding the CONCERNS #6 regression class.
+No security vulnerabilities and no logic errors that would corrupt data or fail at runtime. The findings below cluster around three classes:
 
-CONTRIBUTING.md is materially out of date (CR-04, WR-04..WR-06): it shows the `v1.4` file-structure block, omits `scripts/`, `tests/`, `bin/`, `templates/`, `.github/`, claims an `effort: max` field the project does not use, lists only 8 of 12 agents, and contradicts the CLAUDE.md effort policy for code-writing agents. Anyone following CONTRIBUTING to add a new agent today will end up with the wrong frontmatter shape.
+1. **Robustness in the new bats tests** — single-quote interpolation into `bash -c`, `BRANCH_LITERAL` propagation across `env`, and the `INPUT_JSON` shell-quoting risk are technically defensible against the current fixture set but fragile if fixtures are extended or the CI matrix grows.
+2. **CONTRIBUTING.md drift** — the rule-file inventory table at lines 47-57 was not updated to list `godmode-skills.md` even though the rewritten Model Selection / New Skill sections now reference it. The table is now internally inconsistent.
+3. **SKILL.md edges** — minor surface inconsistencies (duplicated guidance, self-referential vocab note) preserved through the scrub.
 
-The CI workflow has two latent gaps: `jq` is never explicitly installed (BLOCKER-adjacent — relies on GitHub-hosted-runner pre-install, undocumented), and the `bats` job has no `shell: bash` or shellcheck step gating for the new scripts to fail fast on macOS-only regressions.
-
-## Critical Issues
-
-### CR-01: `scripts/check-vocab.sh` will hard-fail CI on `main` immediately after merge
-
-**File:** `scripts/check-vocab.sh:72-86`, run on current `skills/*/SKILL.md` content
-**Issue:**
-Running the gate against the current tree produces 18 violations and `exit 1`:
-
-```
-[!] skills/build/SKILL.md:34: phase: ...
-[!] skills/build/SKILL.md:115: phase: ...
-[!] skills/mission/SKILL.md:77: milestone: ...
-[!] skills/plan/SKILL.md:128: phase: ...
-[!] skills/ship/SKILL.md:132: phase: ...
-[!] skills/tdd/SKILL.md:68: phase: ...
-[!] skills/verify/SKILL.md:43: phase: ...
-[x] 18 vocabulary/surface violation(s) — see above
-```
-
-`.github/workflows/ci.yml:43-49` wires this script as a required job on every push to `main` and every PR. As soon as this PR merges, every subsequent CI run on `main` will be red until either the SKILL.md bodies are scrubbed of `phase`/`milestone` references or the gate is loosened. This is a mechanical contradiction between the gate and the corpus it gates.
-
-The `task` allowlist for `skills/*/SKILL.md` (lines 49-54) was extended after a "Rule-1 fix"; the same per-file mechanism needs to be applied to `phase`/`milestone` for skills that legitimately reference dev-side milestones (or those references must be removed).
-
-**Fix:** Either (a) extend the allowlist to cover the legitimate dev-cross-references the SKILL bodies make:
-
-```bash
-case "$rel" in
-  skills/build/SKILL.md|skills/ship/SKILL.md|skills/verify/SKILL.md|skills/plan/SKILL.md|skills/tdd/SKILL.md)
-    allowed="$allowed phase" ;;
-esac
-case "$rel" in
-  skills/mission/SKILL.md)
-    allowed="$allowed milestone" ;;
-esac
-```
-
-OR (b) scrub `Phase 3 D-01`-style cross-references out of every shipped SKILL.md and replace with brief-shaped equivalents. The current state (gate active, corpus dirty) ships a broken `main`.
-
-### CR-02: README documents a `userConfig.model_profile` knob that does not exist in `plugin.json`
-
-**File:** `README.md:84`, `CHANGELOG.md:57`, `.claude-plugin/plugin.json:1-22`
-**Issue:**
-README:84 states:
-
-> **One user-tunable knob:** `userConfig.model_profile` in `.claude-plugin/plugin.json` selects `quality | balanced | budget`. Substituted into hook commands as `${user_config.model_profile}` and exported as `CLAUDE_PLUGIN_OPTION_MODEL_PROFILE` to subprocesses.
-
-CHANGELOG.md:57 confirms it as a "preserved" v2 feature:
-
-> `.claude-plugin/plugin.json` — description and keywords polished for marketplace SEO; version bumped to 2.0.0; `userConfig.model_profile` preserved. (QUAL-06)
-
-Actual `.claude-plugin/plugin.json` has no `userConfig` block at all. The plugin.json is 22 lines and contains only `name`, `description`, `version`, `author`, `keywords`, `repository`, `homepage`, `license`. Users following the README to set `model_profile` will edit a nonexistent field and find no behavior change. The hook command substitution `${user_config.model_profile}` referenced in README will resolve to the empty string under the actual manifest.
-
-**Fix:** Either add the missing `userConfig` block to `plugin.json` (and verify hook commands actually substitute it):
-
-```json
-{
-  ...
-  "license": "MIT",
-  "userConfig": {
-    "model_profile": {
-      "type": "string",
-      "default": "balanced",
-      "enum": ["quality", "balanced", "budget"],
-      "description": "Model selection profile"
-    }
-  }
-}
-```
-
-OR remove the bullet from README:84 and the CHANGELOG:57 line. Pick one and reconcile.
-
-### CR-03: Adversarial-branch bats tests don't actually test branch-name handling
-
-**File:** `tests/install.bats:117-147`, `tests/fixtures/branches/{quote,backslash,newline,apostrophe}.json`, `hooks/post-compact.sh`
-**Issue:**
-The four fixtures all carry the same `cwd` and `hook_event_name`; they differ only in a `branch_hint` field, e.g.:
-
-```json
-{"cwd":"/tmp/repo","hook_event_name":"PostCompact","trigger":"manual","branch_hint":"feat/with\"quote"}
-```
-
-`hooks/post-compact.sh` does not reference `branch_hint` anywhere. It reads only `.cwd` (line 13). Branch name is computed by `hooks/session-start.sh` via `git branch --show-current`, never by `post-compact.sh`. So all four tests run the identical code path, see the identical `cwd` (`/tmp/repo`), and reduce to "did stdin parse as JSON and did the hook emit JSON?" — a single smoke check, repeated four times, that never touches the adversarial-branch class CONCERNS #6 was about.
-
-The CONCERNS #6 regression was about JSON construction injecting branch names through `jq -n --arg`. To exercise that, the fixture must drive a code path that *includes the branch name in emitted JSON*. As written, the four fixtures are pure decoration.
-
-**Fix:** Either (a) make `post-compact.sh` consume `.branch_hint` from stdin and include it in `additionalContext` (so the four fixtures actually exercise four different code paths), and assert in each test that the emitted JSON correctly preserves the adversarial branch literal — e.g.:
-
-```bash
-@test "hook fixture: branch name contains \"" {
-  FIXTURE="$REPO_ROOT/tests/fixtures/branches/quote.json"
-  run bash -c "cat '$FIXTURE' | bash '$REPO_ROOT/hooks/post-compact.sh'"
-  [ "$status" -eq 0 ]
-  # Validate JSON is well-formed AND the literal branch survived round-trip
-  echo "$output" | jq -e '.hookSpecificOutput.additionalContext | contains("feat/with\"quote")' >/dev/null
-}
-```
-
-OR (b) drive `session-start.sh` directly with a fake-git-repo fixture (mock `git branch --show-current` output via `PATH` shim) so the actual JSON-construction path is exercised. The current shape gives a green CI light without testing what FOUND-04/QUAL-07 promised.
-
-### CR-04: CONTRIBUTING.md "File Structure (v1.4)" block is materially wrong for v2
-
-**File:** `CONTRIBUTING.md:61-75`
-**Issue:**
-The shipped tree is a v2.0.0 plugin; CONTRIBUTING shows a `v1.4` file structure that:
-
-- Omits `.claude-plugin/plugin.json` (the canonical version SoT — locked in CLAUDE.md)
-- Omits `scripts/` (4 CI lint scripts — central to Phase 5)
-- Omits `tests/` (bats smoke tests, fixtures)
-- Omits `.github/workflows/ci.yml` (5-gate CI)
-- Omits `config/quality-gates.txt` (single source of truth for the 6 gates)
-- Omits `templates/.planning/` (artifact templates)
-- Omits `bin/` (referenced in PROJECT.md/STACK.md as planned)
-
-A new contributor following this section to "add a hook" or "add a skill" will not know the version-drift script will fail their PR if they bump a literal anywhere except `plugin.json`. They will not run the CI gates locally. They will not see the parity contract.
-
-**Fix:** Replace the `(v1.4)` block with a v2 layout:
-
-```markdown
-## File Structure (v2.0)
-
-```
-claude-godmode/
-  .claude-plugin/
-    plugin.json          # canonical version + manifest
-  agents/                # 12 agent definitions
-  commands/              # /godmode (1 command file in v2)
-  config/
-    quality-gates.txt    # canonical gate list (single source)
-    settings.template.json
-    statusline.sh
-  hooks/                 # 4 hook scripts + hooks.json
-  rules/                 # godmode-*.md → ~/.claude/rules/
-  scripts/               # CI lint gates (shellcheck-clean)
-    check-frontmatter.sh
-    check-parity.sh
-    check-version-drift.sh
-    check-vocab.sh
-  skills/                # 14 skills (11 v2 + 3 v1.x deprecated)
-  templates/.planning/   # artifact templates
-  tests/                 # bats smoke + fixtures
-  .github/workflows/     # ci.yml
-  install.sh
-  uninstall.sh
-```
-
-(Update agent/skill counts, drop the `(v1.4)` heading, drop `effort: max` references — see WR-05.)
+No BLOCKER-class defect was found.
 
 ## Warnings
 
-### WR-01: `LC_ALL=C` set without `export` in `check-vocab.sh` and `post-compact.sh`
+### WR-01: `tests/install.bats` — `INPUT_JSON` is single-quoted into `bash -c` without sanitization
 
-**File:** `scripts/check-vocab.sh:89`, `hooks/post-compact.sh:18`
+**File:** `tests/install.bats:192-193`
+**Category:** Bug (robustness)
 **Issue:**
 ```bash
-LC_ALL=C
+run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
+  bash -c "printf '%s' '$INPUT_JSON' | bash '$REPO_ROOT/hooks/session-start.sh'"
 ```
-This sets the variable in the current shell but does NOT export it to subprocesses. `grep`, `find`, `awk`, `sort` invocations after this line run with whatever `LC_ALL` was inherited from the environment (often `en_US.UTF-8` on macOS, which gives different `\b` word-boundary semantics than `C` for non-ASCII). The intent of pinning `LC_ALL=C` is to get deterministic byte-level matching; without `export`, that intent is silently violated.
+`$INPUT_JSON` is interpolated into a double-quoted `bash -c` argument with the JSON wrapped in single quotes. `INPUT_JSON` derives from `jq -n --arg cwd "$STUB_PROJECT" '{cwd: $cwd}'`, where `$STUB_PROJECT` is a `mktemp -d` path. macOS and Linux `mktemp` paths today never contain single quotes, so the test passes; but the shell-quoting contract here is "no single quote in the interpolated value." If anyone later switches the stub-project root to a path under user control (e.g., `$HOME` for an ENV-driven test), the test silently breaks with a confusing parse error instead of a real assertion failure. This is the exact class of bug the FOUND-04 hardening was about — using `jq -n --arg` to avoid string interpolation into JSON. Here we're interpolating JSON into shell, but the principle is identical.
 
 **Fix:**
+Pass the JSON via stdin redirection rather than interpolating into the command line. Replace:
 ```bash
-export LC_ALL=C
+run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
+  bash -c "printf '%s' '$INPUT_JSON' | bash '$REPO_ROOT/hooks/session-start.sh'"
 ```
-
-OR per-command:
+with a here-string:
 ```bash
-LC_ALL=C grep -iqE "\\b${token}\\b"
-LC_ALL=C find ...
+run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
+  bash -c "bash '$REPO_ROOT/hooks/session-start.sh'" <<< "$INPUT_JSON"
 ```
-
-### WR-02: CI workflow does not explicitly install `jq` on either runner
-
-**File:** `.github/workflows/ci.yml`
-**Issue:**
-`scripts/check-version-drift.sh`, `scripts/check-frontmatter.sh`, `scripts/check-parity.sh`, and the bats settings-merge test (`tests/install.bats:97-113`) all require `jq` 1.6+. The workflow installs `bats-core` explicitly but not `jq`. This works *today* because GitHub-hosted `ubuntu-latest` and `macos-latest` images ship `jq` pre-installed, but that is not contractual — it can change in any image refresh. The runtime dependency contract (CLAUDE.md: "bash 3.2+ and `jq` 1.6+ only") should be mirrored explicitly in CI.
-
-**Fix:** Add an explicit step to each job that uses jq:
-
-```yaml
-- name: Install jq
-  run: |
-    if [ "$RUNNER_OS" = "macOS" ]; then
-      brew install jq || true   # may already be present
-    else
-      sudo apt-get update && sudo apt-get install -y jq
-    fi
-```
-
-OR consolidate into a setup composite action. Same applies to `shellcheck` for jobs that don't use `ludeeus/action-shellcheck@master`.
-
-### WR-03: bats Test 4 `--force` path tests two assertions but only checks `status`
-
-**File:** `tests/install.bats:64-77`
-**Issue:**
-The test asserts uninstall refuses on version mismatch (lines 71-73) — good. Then it runs `uninstall.sh --force` and asserts `status -eq 0` (lines 75-76). It does NOT assert the post-condition (`! [ -f "$HOME/.claude/.claude-godmode-version" ]`). If `--force` silently no-ops, this test still passes. The whole point of `--force` is that the marker gets removed; that needs explicit assertion.
-
-**Fix:**
-```bash
-run bash "$REPO_ROOT/uninstall.sh" --force
-[ "$status" -eq 0 ]
-[ ! -f "$HOME/.claude/.claude-godmode-version" ]
-```
-
-### WR-04: CONTRIBUTING.md model-selection guidance contradicts CLAUDE.md and the actual agents
-
-**File:** `CONTRIBUTING.md:86-106`
-**Issue:**
-CONTRIBUTING describes a four-tier strategy:
-- "Opus + high effort: @architect, @security-auditor"
-- "Opus + default effort: @writer, @executor"
-- "Sonnet + high effort: @reviewer, @test-writer, @doc-writer"
-- "Sonnet + default effort: @researcher"
-
-Reality from `agents/*.md` frontmatter:
-- `@architect: opus xhigh`, `@security-auditor: opus xhigh`, `@planner: opus xhigh`, `@verifier: opus xhigh`
-- `@executor: opus high`, `@writer: opus high`, `@test-writer: opus(?) high`
-- `@code-reviewer: ? high`, `@reviewer: ? high`, `@spec-reviewer: ? high`
-- `@researcher: ? high` (NOT default)
-- `@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer` are absent entirely from CONTRIBUTING
-
-CLAUDE.md says explicitly: "Opus 4.7 — `@executor`, `@writer`. Effort: `high` (NOT `xhigh` — `xhigh` skips rules on Opus 4.7, see PITFALLS)." CONTRIBUTING calls this same tier "Opus + default effort" and never mentions the rule-skipping pitfall.
-
-A contributor following CONTRIBUTING to add a new code-writing agent will set no `effort` field (default), miss the `xhigh` pitfall context, and produce frontmatter inconsistent with the rest of `agents/`.
-
-**Fix:** Rewrite §"Model Selection" against the actual tiers from CLAUDE.md "Default model assignments (v2)". Include the `xhigh`-skips-rules pitfall verbatim. Enumerate all 12 agents.
-
-### WR-05: CONTRIBUTING.md references `effort: max`, which is not a valid value
-
-**File:** `CONTRIBUTING.md:106`
-**Issue:**
-> "**Note:** `effort: max` is an Opus-exclusive setting. Do not assign it to Sonnet agents. Most agents should use `high` or omit the field (default). Reserve `max` for edge cases…"
-
-The Claude Code subagent contract documents `effort` as `low | medium | high | xhigh` (per CLAUDE.md research). `max` is not in the project agents anywhere — `grep -r "effort: max" agents/` returns nothing. The actual Opus-exclusive level the project uses is `xhigh`. CLAUDE.md says: "Opus — `@architect`, `@security-auditor`, `@planner`, `@verifier`. Effort: `xhigh`". CONTRIBUTING is teaching a value the codebase rejects.
-
-**Fix:** Replace every occurrence of `effort: max` with `effort: xhigh`. Add a sentence: "`xhigh` skips rules on Opus 4.7 — do NOT use it on code-writing agents (`@executor`, `@writer`, `@test-writer`); use `high` there." Keep the don't-use-on-Sonnet caveat if accurate, but verify against current Anthropic docs.
-
-### WR-06: CONTRIBUTING.md missing routing entries are referenced as required
-
-**File:** `CONTRIBUTING.md:24, 30`
-**Issue:**
-CONTRIBUTING tells contributors to add agents and skills via "a routing entry in `rules/godmode-routing.md` under 'When to Use What'". `rules/godmode-routing.md` exists, but the file's first line is:
-```
-> See `rules/godmode-skills.md` for skill frontmatter convention, Auto Mode detection, and Connects-to chain rendering.
-```
-
-So skill conventions live in `godmode-skills.md`, not `godmode-routing.md`. CONTRIBUTING points contributors at the wrong file for skills (they need to know the frontmatter contract before editing routing). Also: CONTRIBUTING never mentions `rules/godmode-skills.md` exists.
-
-**Fix:** Update CONTRIBUTING §"New Skill" to:
-1. Show frontmatter convention (cite `rules/godmode-skills.md`)
-2. Add routing entry in `rules/godmode-routing.md`
-3. Confirm vocab gate passes (`bash scripts/check-vocab.sh`)
-4. Confirm parity gate passes if hook bindings change
-
-### WR-07: README "Hooks not firing — Re-run ./install.sh to re-merge" misleads when settings.json has unrelated user keys
-
-**File:** `README.md:94`
-**Issue:**
-Test 6 in `tests/install.bats:91-114` covers exactly the case where `~/.claude/settings.json` has user-added top-level keys that should survive. The README troubleshooting bullet says "Re-run `./install.sh` to re-merge" which is correct *if* deep-merge actually preserves user keys. The CHANGELOG line for QUAL-07 says it does. But a user reading README:94 won't know the merge is deep — and the install.sh prompt may still ask `[d/s/r/a/k]` for `settings.json` if it differs from template, which under non-TTY default = keep, will leave hooks NOT re-merged. README:94's advice is incomplete.
-
-**Fix:** Reword to:
-```
-- **Hooks not firing** — verify `~/.claude/settings.json` has the `hooks` block.
-  Re-run `./install.sh --force` to forcibly re-merge if a prior run kept your
-  customized settings. The merge is deep — your other top-level keys survive.
-```
-
-### WR-08: `check-parity.sh` jq normalization regex is fragile to leading/trailing braces
-
-**File:** `scripts/check-parity.sh:28-31`
-**Issue:**
-```jq
-gsub("\\$\\{CLAUDE_PLUGIN_ROOT\\}"; "~/.claude")
-```
-This substitutes `${CLAUDE_PLUGIN_ROOT}` literally. It does not match `$CLAUDE_PLUGIN_ROOT` (no braces) or `${CLAUDE_PLUGIN_ROOT }` (trailing space). If a future hook entry uses the unbraced form (which is valid in shell and might creep in), parity will silently report drift. The current corpus uses braces consistently, so this works *today*, but the gate should fail closed on form changes.
-
-**Fix:** Either (a) extend the regex to match both forms:
-```jq
-gsub("\\$\\{?CLAUDE_PLUGIN_ROOT\\}?"; "~/.claude")
-```
-OR (b) add a separate sanity check in `check-parity.sh` that asserts every `command` string in `hooks/hooks.json` starts with `bash ${CLAUDE_PLUGIN_ROOT}/hooks/` (form-locked), so only the braced form is ever generated.
-
-## Info
-
-### IN-01: `tests/install.bats` `setup()` doesn't `unset` other Claude-related env vars
-
-**File:** `tests/install.bats:10-16`
-**Issue:**
-`setup()` sets `HOME` to a tempdir but doesn't `unset CLAUDE_PLUGIN_ROOT`, `CLAUDE_PLUGIN_DATA`, `CLAUDE_SESSION_ID`, etc. If a developer runs `bats tests/install.bats` from inside a Claude Code session that exports these, the install/uninstall scripts may take plugin-mode branches mid-test. Belt-and-suspenders.
-
-**Fix:**
-```bash
-setup() {
-  unset CLAUDE_PLUGIN_ROOT CLAUDE_PLUGIN_DATA CLAUDE_SESSION_ID
-  ...
-}
-```
-
-### IN-02: `check-vocab.sh` `lint_file` `awk` could replace the per-token grep loop
-
-**File:** `scripts/check-vocab.sh:60-86`
-**Issue:**
-The current shape calls `printf '%s\n' "$line" | grep -iqE` six times per line per file (one per token), plus once for `gsd-*`. For a typical SKILL.md (~250 lines × 7 calls = 1750 grep invocations per file, × 14 skill files), this is fork-heavy on macOS. Not a correctness bug — out of v1 scope per review-scope rules — but worth noting for a future pass: a single `awk` filter against all 7 tokens would be one process per file.
-
-**Fix:** Out of v1 scope. Optional: collapse into a single regex `grep -iqE '\\b(phase|task|story|prd|cycle|milestone|gsd-[a-z])\\b'` and post-classify the matches.
-
-### IN-03: README §"What you get" prose drifts from CHANGELOG list of changes
-
-**File:** `README.md:31`, `CHANGELOG.md:30-77`
-**Issue:**
-README:31 ends "Plugin-mode and manual-mode installs are parity-tested in CI." Good. But the list of new things (PostToolUse hook, bats matrix, frontmatter linter, version-drift, vocab gate) is buried in CHANGELOG only. Users browsing README won't see what's new in v2 unless they click through. Minor — not load-bearing.
-
-**Fix:** Optional: add a "What's new in v2.0" subsection between "Quick start" and "What you get", or keep CHANGELOG as the authority. Pick one.
-
-### IN-04: bats Test 6 doesn't validate that `hooks` block was merged from template
-
-**File:** `tests/install.bats:97-113`
-**Issue:**
-Line 112-113:
-```bash
-run jq -e '.hooks.SessionStart' "$HOME/.claude/settings.json"
-[ "$status" -eq 0 ]
-```
-This asserts `.hooks.SessionStart` exists, but doesn't assert that other hook events (`PreToolUse`, `PostToolUse`, `PostCompact`) are also present. A regression that drops 3 of 4 hooks during merge would still pass this test.
-
-**Fix:**
-```bash
-run jq -e '.hooks | has("SessionStart") and has("PreToolUse") and has("PostToolUse") and has("PostCompact")' "$HOME/.claude/settings.json"
-[ "$status" -eq 0 ]
-[ "$output" = "true" ]
-```
-
-### IN-05: CHANGELOG.md says "tests/fixtures/hooks/setup-fixtures.sh + 5 placeholder fixtures" but Phase 5 ships `tests/fixtures/branches/` (not `hooks/`)
-
-**File:** `CHANGELOG.md:21`
-**Issue:**
-CHANGELOG line 21 (under "Foundation") credits FOUND-04 with creating `tests/fixtures/hooks/setup-fixtures.sh + 5 placeholder fixtures (cwd-{normal,quote-branch,backslash-branch,newline-branch,apostrophe-branch}.json)`. Phase 5 shipped `tests/fixtures/branches/{quote,backslash,newline,apostrophe}.json` (4 fixtures, different path, different filenames). The CHANGELOG describes the Foundation-phase substrate that may have been reorganized in Phase 5. Either this paragraph should be updated to reference the actual final paths, or the older substrate should also still exist. `.gitignore` line 16 (`tests/fixtures/hooks/cwd-*.json`) suggests the older fixtures were expected to be generated and gitignored — confirm whether `tests/fixtures/hooks/setup-fixtures.sh` actually still exists, since it's claimed in the CHANGELOG.
-
-**Fix:** Either (a) verify `tests/fixtures/hooks/setup-fixtures.sh` exists and the 5 placeholder fixtures generate correctly; or (b) update CHANGELOG line 21 to reflect the final Phase-5 shape (`tests/fixtures/branches/*.json`, 4 fixtures, no setup script needed because they're checked-in static files).
+(Bash 3.2 supports `<<<`.) This eliminates the single-quote-in-mktemp-path footgun entirely and also documents the data flow: input is "stdin to the hook," exactly as the production code path consumes it.
 
 ---
 
-_Reviewed: 2026-04-28T23:55:00Z_
+### WR-02: `tests/install.bats` — fake-git stub silently exits 1 on any unhandled subcommand
+
+**File:** `tests/install.bats:131-159` (the `STUB` heredoc)
+**Category:** Bug (robustness / test discipline)
+**Issue:**
+The fake-git stub's `case "$1"` only handles `rev-parse`, `branch`, and `log`. Every other invocation falls through to `exit 1`. `hooks/session-start.sh` only issues these three subcommands today, so the stub is sufficient. **However**, if `session-start.sh` is later extended (e.g., to read `git config user.email` for an author hint, or `git rev-parse HEAD` for a commit-SHA banner), the stub silently exits 1 on the new path. The test still PASSES because `git rev-parse --is-inside-work-tree` and `git branch --show-current` continue to succeed, the hook proceeds, the round-trip assertion holds — and the broken new code path is invisible. Tests give a false-positive PASS until someone manually re-reviews the hook.
+
+**Fix:**
+Add an explicit contract comment in the stub enumerating the subcommands session-start.sh is permitted to call. Better: have the default case write a marker file (e.g., `touch "$FAKE_DIR/unexpected-call-$1"`) and have the helper assert the marker is absent. This converts a silent skip into a loud failure if the contract drifts. Minimum-viable version:
+```bash
+case "$1" in
+  rev-parse) ... ;;
+  branch)    ... ;;
+  log)       ... ;;
+  *)
+    # Stub contract: hooks/session-start.sh today calls only the three cases
+    # above. Adding new git invocations to the hook requires extending this
+    # stub or these tests will silently exit 1 on the unhandled subcommand.
+    exit 1
+    ;;
+esac
+```
+
+---
+
+### WR-03: `CONTRIBUTING.md` — rule-file inventory table at lines 47-57 omits `godmode-skills.md`
+
+**File:** `CONTRIBUTING.md:46-57`
+**Category:** Code quality (documentation drift)
+**Issue:**
+The "Existing rule files and their concerns" table lists 8 rule files (`godmode-identity.md` … `godmode-routing.md`). The actual `rules/` directory contains 9 files — `godmode-skills.md` exists and is referenced TWICE elsewhere in the same CONTRIBUTING.md (line 32: "Follow the conventions in `rules/godmode-skills.md`"; line 135: "see `rules/godmode-skills.md`"). A new contributor reads the New Skill section, follows the pointer to `godmode-skills.md`, then later checks the inventory and sees no such file documented — they assume one of the two is wrong and may file a spurious bug. Plan 05-07 Task 3 added the pointer to `rules/godmode-skills.md` but did not update the inventory table to match.
+
+**Fix:**
+Add a row to the inventory table at line 56-57:
+```markdown
+| `godmode-skills.md` | Skill frontmatter contract, Connects-to layout, Auto Mode detection, vocabulary discipline |
+```
+While editing, also tighten the `godmode-routing.md` row — it currently reads "Agent/skill routing and model selection," but skill conventions now live in `godmode-skills.md`. Update to "Agent routing (which agent does what); model-selection summary."
+
+---
+
+### WR-04: `CONTRIBUTING.md` — `shellcheck $(find …)` recipe breaks on filenames with whitespace
+
+**File:** `CONTRIBUTING.md:103`
+**Category:** Bug (documentation correctness)
+**Issue:**
+```bash
+shellcheck $(find . -name '*.sh' -not -path './.git/*')
+```
+This unquoted command-substitution word-splits on `IFS` (default: space + tab + newline). The repo today has no shell scripts with spaces in their names, so the recipe works — but documenting an unsafe pattern in a CONTRIBUTING file is a bad signal: contributors copy-paste it into other contexts (their own repos) and get silently mis-globbed. Worse, this is the section where the doc says "mirror the CI gates locally" — if CI's `.github/workflows/ci.yml` uses a safer form, the local recipe diverges from CI behavior, undermining the "run these locally" promise.
+
+**Fix:**
+Document a `find -exec`/`xargs -0` form that survives whitespace and avoids word-splitting:
+```bash
+find . -name '*.sh' -not -path './.git/*' -exec shellcheck {} +
+```
+(`-exec … +` is POSIX and bash-3.2 portable.) Or, equivalently:
+```bash
+find . -name '*.sh' -not -path './.git/*' -print0 | xargs -0 shellcheck
+```
+
+---
+
+### WR-05: `tests/install.bats` — newline fixture relies on undocumented `env` newline-passthrough behavior
+
+**File:** `tests/install.bats:174-192` (newline fixture path)
+**Category:** Bug (portability)
+**Issue:**
+`jq -r '.branch_hint' newline.json` returns `feat/with` + literal newline + `newline` (17 bytes — verified). The test passes this through `env "BRANCH_LITERAL=$BRANCH_LITERAL"`. POSIX `execve(2)` permits newlines in environment values, and both Linux and macOS handle this correctly today — so the fixture survives end-to-end. However, this is one of the few cases where bats `run` semantics interact with `execve` quirks, and at least one `env` implementation (older BusyBox `env`, used in Alpine/some Docker contexts) has historically truncated values at the first `\n`. The CI matrix is `[ubuntu-latest, macos-latest]`, neither of which uses BusyBox, so the test passes today. But if the CI matrix ever extends to Alpine, Test 9 silently fails — `BRANCH_LITERAL` is truncated, the round-trip assertion `contains($lit)` returns false, and the diagnostic ("the test failed") doesn't point at `env` as the culprit. The fragility is invisible until it bites.
+
+**Fix:**
+Two options, in order of preference:
+1. **Pass `BRANCH_LITERAL` via a tempfile, not env.** Refactor: write `printf '%s' "$BRANCH_LITERAL" > "$FAKE_DIR/branch_literal"` from the helper, and have the stub `cat "$(dirname "$0")/branch_literal"` instead of reading `$BRANCH_LITERAL`. This eliminates the env-passthrough roundtrip entirely.
+2. **Document the dependency.** Add a comment near the `env` invocation: "Tests 7-10 require an `env` that preserves newlines in values (POSIX-compliant). Tested on Ubuntu, macOS. BusyBox env is not supported."
+
+Preferred: option 1 — it removes the dependency rather than documenting it.
+
+## Info
+
+### IN-01: `skills/plan/SKILL.md` — Constraints "Task NN.M" wording diverges from `build`/`verify`/`ship`
+
+**File:** `skills/plan/SKILL.md:158`
+**Category:** Code quality (consistency)
+**Issue:**
+The Constraints section says: "The token 'Task NN.M' is the documented exception inside PLAN.md headings — see the @planner prompt above. The exception is local to PLAN.md structure (D-35); body prose still uses 'item' or 'step'." Meanwhile `skills/build/SKILL.md:246`, `skills/verify/SKILL.md:178`, and `skills/ship/SKILL.md:211` all close the equivalent constraint with "The CI vocabulary gate allowlists `task` for `skills/<name>/SKILL.md`." `plan/SKILL.md` does NOT add the equivalent allowlist sentence, even though the same per-file allowlist applies (`scripts/check-vocab.sh:50-54` uses a universal `skills/*/SKILL.md` match for `task`).
+
+**Fix:**
+Either align all four SKILL.md constraint blocks to the same template (preferred — readers learn the pattern once), or drop the Constraint entirely from `plan/SKILL.md` since it's not parsing PLAN.md heading text directly (the @planner agent does). Inconsistency is the actual smell here.
+
+---
+
+### IN-02: `skills/build/SKILL.md` / `verify/SKILL.md` — Constraint comment elides the universal-`task` rationale
+
+**File:** `skills/build/SKILL.md:246`, `skills/verify/SKILL.md:178`
+**Category:** Code quality (stale comment)
+**Issue:**
+The constraints in build and verify say "this skill body parses those headings, so the token unavoidably appears in awk patterns and grep arguments. The CI vocabulary gate allowlists `task` for `skills/<name>/SKILL.md`." This is true and accurate. However, `scripts/check-vocab.sh:38-48` documents a SECOND, broader rationale for the universal `task` allowlist: "every SKILL.md that spawns subagents necessarily references the Claude Code SDK `Task` tool by name." The SKILL.md constraint blocks only mention the narrower "we parse PLAN.md headings" reason, which is misleading: a contributor adding a new skill that spawns agents but doesn't parse PLAN.md headings might think the allowlist doesn't apply to them.
+
+**Fix:**
+None required (informational). For clarity, consider citing the broader Task-tool-collision rationale in one canonical SKILL.md and referencing it from the others.
+
+---
+
+### IN-03: `skills/mission/SKILL.md:194` — vocabulary-discipline note is now self-referential
+
+**File:** `skills/mission/SKILL.md:194`
+**Category:** Code quality (documentation)
+**Issue:**
+After the Plan 05-04 scrub, the line reads: "this skill body uses the v2 chain words (`brief`, `mission`, `milestone`, `plan`, `build`, `verify`, `ship`). The v1.x leakage tokens enumerated in `rules/godmode-skills.md` and enforced by the CI vocabulary gate must not appear in user-facing prose." But this sentence USES `milestone`, which is precisely why the per-file allowlist was added in Plan 05-04 Task 3. The sentence is structurally fine (the allowlist permits the word for this file), but the prose now reads as if `milestone` is a generic v2 chain word allowed everywhere — when in fact only `mission/SKILL.md` may use it.
+
+**Fix:**
+Tighten the wording to make the scoped-allowlist explicit:
+```
+this skill body uses the v2 chain words (brief, mission, plan, build, verify, ship)
+plus `milestone` (the chain word above the brief level — surfaced in /mission's
+Socratic flow at lines 77, 80; allowlisted ONLY for this file in scripts/check-vocab.sh).
+```
+
+---
+
+### IN-04: `.claude-plugin/plugin.json:31` — `userConfig.model_profile.description` mixes user and plugin-author surfaces
+
+**File:** `.claude-plugin/plugin.json:31`
+**Category:** Code quality (API surface)
+**Issue:**
+The description reads: "Quality vs cost tradeoff for agent model selection. Substituted into hook commands as `${user_config.model_profile}` and exported as `CLAUDE_PLUGIN_OPTION_MODEL_PROFILE` to subprocesses." The first sentence is the user-facing meaning; the second sentence documents two implementation details (the substitution token and the env-var name) useful to plugin authors but irrelevant to end users running `claude --setting model_profile=quality`. Marketplace UIs render this description verbatim, so end users see a substring they cannot act on.
+
+**Fix:**
+Optional. The current description is correct, JSON-valid, and within the marketplace cap; leaving it is acceptable for v2.0. If trimmed in a follow-up, ensure README.md:84 still mentions the substitution token and env-var name so plugin authors retain the discoverability path.
+
+---
+
+_Reviewed: 2026-04-29_
 _Reviewer: Claude (gsd-code-reviewer)_
 _Depth: standard_
+_Notes: All findings are non-blocking. The work meets every must-have in the four closure plans. Pre-existing issues in `hooks/session-start.sh` (e.g., `tr '\n' ' | '` is buggy — `tr` only takes single chars in this mode) were observed during analysis but are out of scope for this review (file unchanged in plans 05-04..05-07)._
