@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v2.0.0
 milestone_name: — polish mature version
-status: milestone_complete
+status: "Milestone v2.0.0 shipped — PR #8"
 stopped_at: Phase 5 context gathered
-last_updated: "2026-04-28T20:33:28.501Z"
-last_activity: 2026-04-28 -- Phase 05 execution started
+last_updated: "2026-04-28T22:21:20.959Z"
+last_activity: "2026-04-29 -- Milestone v2.0.0 shipped (PR #8)"
 progress:
   total_phases: 5
   completed_phases: 5
   total_plans: 21
-  completed_plans: 17
+  completed_plans: 21
   percent: 100
 ---
 
@@ -27,8 +27,8 @@ See: .planning/PROJECT.md (updated 2026-04-26)
 
 Phase: 05
 Plan: Not started
-Status: Milestone complete
-Last activity: 2026-04-28
+Status: Milestone v2.0.0 shipped — PR #8
+Last activity: 2026-04-29 -- Milestone v2.0.0 shipped (PR #8)
 
 Progress: [░░░░░░░░░░] 0% (0 / 17 plans across 5 phases)
 
