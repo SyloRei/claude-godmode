@@ -101,7 +101,7 @@ bash scripts/check-version-drift.sh   # version SoT (.claude-plugin/plugin.json:
 bash scripts/check-frontmatter.sh     # agent + skill YAML frontmatter linter
 bash scripts/check-parity.sh          # plugin-mode vs manual-mode hook bindings
 bash scripts/check-vocab.sh           # forbidden vocab + 11-skill surface count
-shellcheck $(find . -name '*.sh' -not -path './.git/*')
+find . -name '*.sh' -not -path './.git/*' -exec shellcheck {} +
 bats tests/install.bats               # install round-trip + adversarial fixtures
 ```
 
