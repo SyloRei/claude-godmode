@@ -62,20 +62,46 @@ Existing rule files and their concerns:
 2. Register the hook in `hooks/hooks.json` with the appropriate trigger event
 3. Keep hooks fast -- they run on every matching event
 
-## File Structure (v1.4)
+## File Structure (v2.0)
 
 ```
 claude-godmode/
-  agents/           # Agent definitions (*.md with frontmatter)
-  commands/         # Slash commands (e.g., /godmode)
-  config/           # Settings template and statusline
-    settings.template.json
-    statusline.sh
-  hooks/            # Hook scripts and hooks.json
-  rules/            # Rule files (godmode-*.md) -> ~/.claude/rules/
-  skills/           # Skill definitions (SKILL.md per directory)
-  install.sh        # Installer (plugin-mode + manual-mode)
-  uninstall.sh      # Clean removal of godmode artifacts
+  .claude-plugin/        # plugin manifest (plugin.json — canonical version SoT)
+  .github/workflows/     # CI (ci.yml: 5 lint gates + bats matrix on macos+ubuntu)
+  agents/                # 12 v2 agents (*.md with model/effort/memory frontmatter)
+  bin/                   # bare commands installed onto PATH (e.g., godmode-state)
+  commands/              # /godmode entry point (single user-facing command file)
+  config/                # settings template, statusline, canonical quality gates
+    quality-gates.txt    #   `config/quality-gates.txt` is the single source of truth for the 6 commit-time gates
+    settings.template.json #   merged into ~/.claude/settings.json on install
+    statusline.sh        #   shipped statusline (cost + context + workflow status)
+  hooks/                 # hook scripts + hooks.json (PreToolUse, PostToolUse,
+                         #   SessionStart, PostCompact, UserPromptSubmit)
+  rules/                 # godmode-*.md -> ~/.claude/rules/ (one concern per file)
+  scripts/               # CI-invoked lint scripts (check-vocab/parity/version-drift/
+                         #   frontmatter — same scripts run locally and in CI)
+  skills/                # 11 v2 user-invocable skills + 3 v1.x deprecation banners
+  templates/.planning/   # planning artifact templates (PROJECT.md, ROADMAP.md, etc.)
+  tests/                 # bats-core suite + fixtures
+    install.bats         #   install -> uninstall -> reinstall round-trip + adversarial
+    fixtures/branches/   #   adversarial-branch JSON fixtures (FOUND-04 regression)
+  CHANGELOG.md           # Keep-a-Changelog format; canonical version source: plugin.json
+  CLAUDE.md              # repo conventions; loaded into every Claude Code session
+  CONTRIBUTING.md        # this file
+  README.md              # marketing front door (≤500 lines, vocab-clean)
+  install.sh             # installer (plugin-mode + manual-mode parity)
+  uninstall.sh           # clean removal; refuses on version mismatch (FOUND-03)
+```
+
+Run any of these locally before opening a PR to mirror the CI gates:
+
+```bash
+bash scripts/check-version-drift.sh   # version SoT (.claude-plugin/plugin.json:.version)
+bash scripts/check-frontmatter.sh     # agent + skill YAML frontmatter linter
+bash scripts/check-parity.sh          # plugin-mode vs manual-mode hook bindings
+bash scripts/check-vocab.sh           # forbidden vocab + 11-skill surface count
+shellcheck $(find . -name '*.sh' -not -path './.git/*')
+bats tests/install.bats               # install round-trip + adversarial fixtures
 ```
 
 ## Conventions
