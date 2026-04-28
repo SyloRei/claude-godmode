@@ -103,9 +103,9 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 05-01: CI workflow with 5 lint gates (shellcheck + frontmatter + version drift + parity + vocab)
-- [ ] 05-02: bats smoke test with adversarial fixtures + settings merge regression test
-- [ ] 05-03: README rewrite + CHANGELOG dated entry + marketplace metadata polish + v2.0.0 tag
+- [x] 05-01: CI workflow with 5 lint gates (shellcheck + frontmatter + version drift + parity + vocab)
+- [x] 05-02: bats smoke test with adversarial fixtures + settings merge regression test
+- [x] 05-03: README rewrite + CHANGELOG dated entry + marketplace metadata polish + v2.0.0 tag
 
 ## Progress
 
