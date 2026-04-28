@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  shellcheck:
+    name: shellcheck
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ludeeus/action-shellcheck@master
+        env:
+          SHELLCHECK_OPTS: ""
+
+  frontmatter:
+    name: frontmatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run frontmatter linter
+        run: bash scripts/check-frontmatter.sh
+
+  version-drift:
+    name: version-drift
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run version-drift check
+        run: bash scripts/check-version-drift.sh
+
+  parity:
+    name: parity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run plugin/manual parity check
+        run: bash scripts/check-parity.sh
+
+  vocab:
+    name: vocab
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run vocabulary + surface-count check
+        run: bash scripts/check-vocab.sh
+
+  bats:
+    name: bats (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install bats-core
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            brew install bats-core
+          else
+            sudo apt-get update && sudo apt-get install -y bats
+          fi
+      - name: Verify bats version
+        run: bats --version
+      - name: Run smoke tests
+        run: bats tests/install.bats
