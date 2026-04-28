@@ -18,5 +18,17 @@
   ],
   "repository": "https://github.com/sylorei/claude-godmode",
   "homepage": "https://github.com/sylorei/claude-godmode",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "model_profile": {
+      "type": "string",
+      "default": "balanced",
+      "options": [
+        "quality",
+        "balanced",
+        "budget"
+      ],
+      "description": "Quality vs cost tradeoff for agent model selection. Substituted into hook commands as ${user_config.model_profile} and exported as CLAUDE_PLUGIN_OPTION_MODEL_PROFILE to subprocesses."
+    }
+  }
 }
