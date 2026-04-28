@@ -190,7 +190,7 @@ _run_adversarial_branch_test() {
   INPUT_JSON=$(jq -n --arg cwd "$STUB_PROJECT" '{cwd: $cwd}')
 
   run env "PATH=$FAKE_GIT_DIR:$PATH" "BRANCH_LITERAL=$BRANCH_LITERAL" \
-    bash -c "printf '%s' '$INPUT_JSON' | bash '$REPO_ROOT/hooks/session-start.sh'"
+    bash -c "bash '$REPO_ROOT/hooks/session-start.sh'" <<< "$INPUT_JSON"
 
   # Cleanup before assertions (so a failed assertion still cleans up)
   rm -rf "$FAKE_GIT_DIR" "$STUB_PROJECT"
