@@ -31,7 +31,7 @@ Scan the most recent system reminder for the case-insensitive substring "Auto Mo
 When detected (per D-10):
 - Skip the wave-plan preview confirmation; proceed directly to dispatch.
 - Treat user course corrections as normal input.
-- Never auto-bypass the per-item atomic commit gate enforced by the PreToolUse hook (Phase 3 D-01) — `--no-verify` is mechanically blocked.
+- Never auto-bypass the per-item atomic commit gate enforced by the PreToolUse hook — `--no-verify` is mechanically blocked.
 
 See `rules/godmode-skills.md` § Auto Mode Detection for the full convention.
 
@@ -112,7 +112,7 @@ tasks_in_wave() {
 
 ## Step 2: Wave dispatch loop
 
-Sequentially across waves; parallel within. The 30-min per-item ceiling matches `@executor`'s `maxTurns` budget from Phase 2.
+Sequentially across waves; parallel within. The 30-min per-item ceiling matches `@executor`'s `maxTurns` budget.
 
 ```bash
 INTERVAL="${GODMODE_POLL_INTERVAL:-2}"
@@ -204,12 +204,12 @@ MARKER DISCIPLINE (CR-08 fallback — non-negotiable):
 COMMIT FORMAT (D-38):
   <type>(<scope>): <item-name> [brief ${PADDED}.${SUFFIX}]
 
-Quality gates run on commit (Phase 3 PreToolUse hook):
+Quality gates run on commit (PreToolUse hook):
 - --no-verify is BLOCKED — do not attempt to bypass.
 - Hardcoded secrets are BLOCKED — use env vars.
 - All 6 gates from config/quality-gates.txt must pass.
 
-You have isolation: worktree (Phase 2 D-15). The orchestrator owns concurrency
+You have isolation: worktree. The orchestrator owns concurrency
 (cap = 5) and the per-wave 30-min deadline.
 
 Read the matching item section in PLAN.md for the specifics: files touched,
@@ -238,12 +238,12 @@ On full success: `rm -rf "$BUILD_DIR"`. On any failure: PRESERVE the directory f
 ## Constraints
 
 - Marker-file discipline is the ONLY ground truth (CR-08). Never trust the Task-tool return JSON for completion status of background subagents.
-- The PreToolUse hook (Phase 3 D-01..D-04) blocks `git commit --no-verify` — `/build` does not need extra defense; the hook is the safety net.
+- The PreToolUse hook blocks `git commit --no-verify` — `/build` does not need extra defense; the hook is the safety net.
 - Concurrency cap = 5 hardcoded (D-39). Any future config knob is OUT-03 / v2.1.
 - Polling interval default 2s, env-tunable via `GODMODE_POLL_INTERVAL` (undocumented in v2.0 per OUT-06).
 - Per-wave deadline: 30 min (1800s) hardcoded (D-40, matches `@executor` `maxTurns: 100`).
 - Resume detection greps `git log --grep '[brief NN.M]'`. The token is the durable evidence; markers are convenience (T-04-22 mitigation: dual-source).
-- Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings, so the token unavoidably appears in awk patterns and grep arguments. Phase 5's vocabulary gate must whitelist `task` for `skills/build/SKILL.md`. Body prose still uses "item" or "step".
+- Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings, so the token unavoidably appears in awk patterns and grep arguments. The CI vocabulary gate allowlists `task` for `skills/build/SKILL.md`. Body prose still uses "item" or "step".
 - `--force` does not exist for `/build`; the only way to bypass a failed wave is to fix the failure and re-run (resume skips committed items via the git-log grep).
 - All STATE.md mutations go through `godmode_state_update` from `skills/_shared/state.sh`.
 
