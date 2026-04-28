@@ -54,7 +54,8 @@ Existing rule files and their concerns:
 | `godmode-git.md` | Git discipline |
 | `godmode-testing.md` | Testing, debugging, refactoring protocols |
 | `godmode-context.md` | Context management and continuous learning |
-| `godmode-routing.md` | Agent/skill routing and model selection |
+| `godmode-routing.md` | Agent routing (which agent does what); model-selection summary |
+| `godmode-skills.md` | Skill frontmatter contract, Connects-to layout, Auto Mode detection, vocabulary discipline |
 
 ### New Hook
 
