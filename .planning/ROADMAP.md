@@ -109,7 +109,7 @@ Plans:
 - [x] 05-04: vocabulary gate green — scrub Phase N from 6 SKILL.md bodies + scoped milestone allowlist for /mission (CR-01)
 - [x] 05-05: add userConfig.model_profile to plugin.json — documented public API now exists (CR-02)
 - [x] 05-06: bats Tests 7-10 actually exercise adversarial code path via PATH-shimmed fake git on session-start.sh (CR-03)
-- [ ] 05-07: CONTRIBUTING.md v2 rewrite — file structure, 12-agent enumeration, xhigh pitfall, skill-conventions pointer (CR-04)
+- [x] 05-07: CONTRIBUTING.md v2 rewrite — file structure, 12-agent enumeration, xhigh pitfall, skill-conventions pointer (CR-04)
 
 ## Progress
 
