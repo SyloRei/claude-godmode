@@ -56,6 +56,14 @@ lint_file() {
     skills/prd/SKILL.md|skills/plan-stories/SKILL.md|skills/execute/SKILL.md)
       allowed="$allowed PRD" ;;
   esac
+  # `milestone` is a v2 user-facing chain word ONLY for /mission (PROJECT → Mission →
+  # Brief → Plan, per CLAUDE.md). Granting it scoped to mission/SKILL.md preserves the
+  # gate's discipline elsewhere (other skills must not use the word). Lines 77/80 of
+  # skills/mission/SKILL.md surface "Initial milestone" in the Socratic flow.
+  case "$rel" in
+    skills/mission/SKILL.md)
+      allowed="$allowed milestone" ;;
+  esac
 
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
