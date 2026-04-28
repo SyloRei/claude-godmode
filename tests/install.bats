@@ -153,6 +153,11 @@ case "$1" in
     exit 0
     ;;
   *)
+    # Stub contract: hooks/session-start.sh today calls only the three
+    # subcommands above (rev-parse, branch, log). Any other invocation means
+    # the hook was extended without updating this stub — fail loudly so the
+    # bats test surfaces the drift instead of silently exiting 1.
+    echo "fake-git: unhandled subcommand $1" >&2
     exit 1
     ;;
 esac
