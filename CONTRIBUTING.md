@@ -10,24 +10,28 @@ Thanks for your interest in improving Claude God-Mode. This project grows throug
 
 ### New Agent
 
-1. Create `agents/<name>.md` with a system prompt
-2. Define the agent's model, permissions, and purpose in the frontmatter
+1. Create `agents/<name>.md` with a system prompt and YAML frontmatter
+2. Set `model:` and `effort:` per the four-tier policy below (see Model Selection)
 3. Add `memory:` to the frontmatter -- choose the appropriate scope:
    - **project** -- the default for most agents. Codebase patterns, conventions, and findings are project-specific and useful for the whole team. Used by all current godmode agents.
-   - **user** -- cross-project learnings. Use only when findings genuinely benefit the user regardless of which project they're in. Currently unused in godmode (all agents use project).
+   - **user** -- cross-project learnings. Use only when findings genuinely benefit the user regardless of which project they're in. Currently unused in godmode.
    - **local** -- sensitive or private findings. Use when memory may contain credentials, vulnerability details, or other data that should not be committed. Currently unused in godmode.
 4. Consider additional frontmatter fields:
-   - `effort: high` -- for agents where thoroughness is critical (reviewers, security, architecture)
    - `maxTurns: N` -- safety valve for agents that write code (prevents runaway token burn)
    - `disallowedTools: Write, Edit` -- enforce read-only mechanically on read-only agents
    - `background: true` -- for agents typically spawned for non-blocking parallel work
+   - `isolation: worktree` -- required on every code-writing agent (`@executor`, `@writer`, `@test-writer`)
 5. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
+6. Run `bash scripts/check-frontmatter.sh` locally to confirm the linter is clean
 
 ### New Skill
 
-1. Create `skills/<name>/SKILL.md` with the skill definition
-2. Include: trigger command, description, step-by-step workflow, and quality gate requirements
-3. Add a routing entry in `rules/godmode-routing.md` under "When to Use What"
+1. Create `skills/<name>/SKILL.md` with the skill definition and YAML frontmatter
+2. Include: `name:`, `description:` (≤1,536 chars combined with `when_to_use`), `argument-hint:` if the skill takes args, and `allowed-tools:` scoped to the minimum needed
+3. Body: trigger command, description, step-by-step workflow, and quality gate requirements
+4. Follow the conventions in `rules/godmode-skills.md` (frontmatter contract, Connects-to layout, Auto Mode detection, vocabulary discipline)
+5. Run `bash scripts/check-vocab.sh` locally to confirm no forbidden vocabulary leaks into user-facing prose
+6. Run `bash scripts/check-frontmatter.sh` locally to confirm the frontmatter linter is clean
 
 ### Adding Rules
 
