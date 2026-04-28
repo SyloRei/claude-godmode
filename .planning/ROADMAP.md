@@ -106,9 +106,9 @@ Plans:
 - [x] 05-01: CI workflow with 5 lint gates (shellcheck + frontmatter + version drift + parity + vocab)
 - [x] 05-02: bats smoke test with adversarial fixtures + settings merge regression test
 - [x] 05-03: README rewrite + CHANGELOG dated entry + marketplace metadata polish + v2.0.0 tag
-- [ ] 05-04: vocabulary gate green — scrub Phase N from 6 SKILL.md bodies + scoped milestone allowlist for /mission (CR-01)
-- [ ] 05-05: add userConfig.model_profile to plugin.json — documented public API now exists (CR-02)
-- [ ] 05-06: bats Tests 7-10 actually exercise adversarial code path via PATH-shimmed fake git on session-start.sh (CR-03)
+- [x] 05-04: vocabulary gate green — scrub Phase N from 6 SKILL.md bodies + scoped milestone allowlist for /mission (CR-01)
+- [x] 05-05: add userConfig.model_profile to plugin.json — documented public API now exists (CR-02)
+- [x] 05-06: bats Tests 7-10 actually exercise adversarial code path via PATH-shimmed fake git on session-start.sh (CR-03)
 - [ ] 05-07: CONTRIBUTING.md v2 rewrite — file structure, 12-agent enumeration, xhigh pitfall, skill-conventions pointer (CR-04)
 
 ## Progress
