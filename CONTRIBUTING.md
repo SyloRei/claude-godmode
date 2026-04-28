@@ -1,5 +1,9 @@
 # Contributing to Claude God-Mode
 
+> For installation and usage, see [README.md](README.md). This file is the
+> developer manual: how to add agents/skills/hooks/rules, run CI locally,
+> and propose changes.
+
 Thanks for your interest in improving Claude God-Mode. This project grows through community contributions -- new agents, skills, hooks, rules, and refinements to existing ones.
 
 ## Contribution Paths
@@ -118,6 +122,13 @@ Agents are assigned to one of four tiers based on task complexity and cost:
    - **Manual mode:** Run `./install.sh` and verify rules are copied to `~/.claude/rules/`
 5. Confirm rule files, hooks, and JSON pass quality checks (`shellcheck`, `jq`)
 6. Submit a pull request with a clear description of what you added and why
+
+### Tag protection (release process)
+
+`v*` tags trigger marketplace re-indexing. Repository admins enable tag
+protection in GitHub settings (Settings → Tags → New rule → `v*`).
+Non-admin pushes of `v*` tags are rejected at the GitHub-API level. v2.0
+relies on this UI setting; v2.x may add mechanical enforcement.
 
 ## Bug Reports
 

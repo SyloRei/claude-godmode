@@ -1,7 +1,7 @@
 {
   "name": "claude-godmode",
-  "description": "Production-grade engineering workflow for Claude Code: 8 specialized agents, 8 skills, rules-based configuration, quality gates, and a full feature pipeline. Language-agnostic.",
-  "version": "1.6.0",
+  "description": "Senior engineering team, in a plugin. One arrow chain (/godmode → /mission → /brief → /plan → /build → /verify → /ship), 11 skills, mechanical quality gates.",
+  "version": "2.0.0",
   "author": {
     "name": "sylorei",
     "url": "https://github.com/sylorei"
@@ -11,13 +11,9 @@
     "agents",
     "skills",
     "hooks",
-    "pipeline",
-    "engineering",
+    "planning",
     "quality-gates",
-    "code-review",
-    "tdd",
-    "refactoring",
-    "prd",
+    "auto-mode",
     "claude-code"
   ],
   "repository": "https://github.com/sylorei/claude-godmode",
