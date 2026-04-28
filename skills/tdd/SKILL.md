@@ -65,7 +65,7 @@ Break the feature into small behaviors. For each behavior, run one Red-Green-Ref
 
 - **NEVER write production code without a failing test first**
 - One test at a time. Don't batch.
-- Commit after each GREEN phase (atomic progress)
+- Commit after each GREEN step (atomic progress)
 - Test behavior, not implementation details
 - Keep tests independent — no shared mutable state
 - Detect and use the project's existing test framework

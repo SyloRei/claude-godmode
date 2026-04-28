@@ -191,6 +191,6 @@ info "Run /brief 1 to start the first brief: '$FIRST_BRIEF_TITLE'"
 
 - **Single-line value enforcement:** `|`, `}}`, backslash, and embedded newline are rejected on every Socratic answer before substitution.
 - **Template path resolution:** `${CLAUDE_PLUGIN_ROOT:-$HOME/.claude}/templates/.planning/`. If the templates directory is missing, error with "Templates not found at $TEMPLATES — reinstall the plugin."
-- **Vocabulary discipline:** this skill body uses the v2 chain words (`brief`, `mission`, `milestone`, `plan`, `build`, `verify`, `ship`). The v1.x leakage tokens enumerated in `rules/godmode-skills.md` and enforced by the Phase 5 CI vocabulary gate must not appear in user-facing prose.
+- **Vocabulary discipline:** this skill body uses the v2 chain words (`brief`, `mission`, `milestone`, `plan`, `build`, `verify`, `ship`). The v1.x leakage tokens enumerated in `rules/godmode-skills.md` and enforced by the CI vocabulary gate must not appear in user-facing prose.
 - **No agent dispatch:** `/mission` is purely Socratic + sed substitution. It does NOT spawn agents — that begins at `/brief N`.
 - **Frontmatter discipline:** no `model:` or `effort:` keys (those live on agents); no `argument-hint` / `arguments` (mission takes no `N`).
