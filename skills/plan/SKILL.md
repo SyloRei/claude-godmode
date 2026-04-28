@@ -125,7 +125,7 @@ Capture the agent's stdout into shell variable `PLAN_BODY`.
 DATE=$(date -u +%Y-%m-%d)
 
 # Recommended: trust @planner to produce a complete body (per its prompt).
-# Persist verbatim. Phase 5 lint catches structural drift (## Verification status
+# Persist verbatim. The CI lint catches structural drift (## Verification status
 # + ## Brief success criteria headings must be present — /verify Step 3 relies).
 printf '%s\n' "$PLAN_BODY" > "$BRIEF_DIR/PLAN.md"
 ```

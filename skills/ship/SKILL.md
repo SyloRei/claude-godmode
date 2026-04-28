@@ -129,7 +129,7 @@ fi
 - Use `/debug` to diagnose test/typecheck failures.
 - Use `@writer` agent for complex fixes.
 - For lint: run auto-fix if available, otherwise fix manually.
-- Do NOT skip. Do NOT push with failures. The PreToolUse hook (Phase 3 D-01) already blocks `--no-verify`; this skill enforces gates regardless.
+- Do NOT skip. Do NOT push with failures. The PreToolUse hook already blocks `--no-verify`; this skill enforces gates regardless.
 
 ---
 
@@ -207,7 +207,7 @@ info "Run /brief $NEXT_N to start the next brief."
 
 - `--force` bypasses Step 1 (PARTIAL/MISSING refusal) ONLY — never bypasses Step 2 (gate failures).
 - Auto Mode NEVER auto-forces (D-10). The user must explicitly pass `--force`.
-- Gates source is `config/quality-gates.txt` (Phase 1 D-26 / Phase 3 D-15) — never duplicated inline.
+- Gates source is `config/quality-gates.txt` — never duplicated inline.
 - Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings to verify Step 2 Gate 6 (every item has a matching commit). Body prose still uses "item" or "criterion".
 - All STATE.md mutations go through `godmode_state_update` from `skills/_shared/state.sh`.
 

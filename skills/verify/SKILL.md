@@ -40,11 +40,11 @@ See `rules/godmode-skills.md` § Auto Mode Detection for the full convention.
 
 1. Validate `$N`; resolve `BRIEF_DIR` from the live `.planning/briefs/` listing.
 2. Verify `BRIEF.md` and `PLAN.md` exist; refuse otherwise.
-3. Spawn `@verifier` via the Task tool. The agent is read-only via `disallowedTools: Write, Edit` (Phase 2 D-15) — it returns a structured markdown report, not file mutations.
+3. Spawn `@verifier` via the Task tool. The agent is read-only via `disallowedTools: Write, Edit` — it returns a structured markdown report, not file mutations.
 4. Capture the report and rewrite the `## Verification status` and `## Brief success criteria` sections of `PLAN.md` in place — single atomic replacement per section.
 5. Update `.planning/STATE.md`: `Ready to ship` if all COVERED, else `Verify found gaps` with `/build N` as the next command.
 
-The agent (`@verifier`) reads only; the SKILL writes (scoped to PLAN.md). Any future change making the agent writable would make this mutation flow redundant — that is a Phase 2 contract change, not a `/verify` change. (T-04-28 mitigation: skill body Edit/Write SCOPED to `$BRIEF_DIR/PLAN.md`.)
+The agent (`@verifier`) reads only; the SKILL writes (scoped to PLAN.md). Any future change making the agent writable would make this mutation flow redundant — that is an agent-contract change, not a `/verify` change. (T-04-28 mitigation: skill body Edit/Write SCOPED to `$BRIEF_DIR/PLAN.md`.)
 
 ---
 
@@ -173,9 +173,9 @@ fi
 
 ## Constraints
 
-- The agent MUST be `@verifier` whose Phase 2 frontmatter has `disallowedTools: Write, Edit`. The skill enforces this by trusting the agent contract; if a future change makes the agent writable, this skill's mutation flow becomes redundant — that's a Phase 2 contract change.
+- The agent MUST be `@verifier` whose frontmatter has `disallowedTools: Write, Edit`. The skill enforces this by trusting the agent contract; if a future change makes the agent writable, this skill's mutation flow becomes redundant — that's an agent-contract change.
 - Skill body Edit/Write capability is SCOPED to `$BRIEF_DIR/PLAN.md` and `.planning/STATE.md` (via `godmode_state_update`) only. The orchestrator MUST NOT modify BRIEF.md or any other file (T-04-28).
-- Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings, so the token unavoidably appears in awk patterns and grep arguments. Phase 5's vocabulary gate must whitelist `task` for `skills/verify/SKILL.md`. Body prose still uses "item" or "criterion".
+- Vocabulary: only the v2 user-facing terms. The token "Task NN.M" is the documented exception inside PLAN.md headings (D-35 template constraint) — this skill body parses those headings, so the token unavoidably appears in awk patterns and grep arguments. The CI vocabulary gate allowlists `task` for `skills/verify/SKILL.md`. Body prose still uses "item" or "criterion".
 - All STATE.md mutations go through `godmode_state_update` from `skills/_shared/state.sh`.
 
 ---
