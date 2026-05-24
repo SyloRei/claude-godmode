@@ -9,7 +9,17 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$CLAUDE_DIR/backups/godmode-$TIMESTAMP"
-VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
+
+# --- Persistent install data (survives plugin updates) ---
+# CLAUDE_PLUGIN_DATA (~/.claude/plugins/data/<id>/) persists across plugin
+# updates, unlike CLAUDE_PLUGIN_ROOT which resets on every bump. The install
+# marker and last-version-seen live here so they outlive upgrades. In manual
+# mode the env var is unset, so we derive the canonical per-installation path.
+PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-$CLAUDE_DIR/plugins/data/claude-godmode}"
+VERSION_FILE="$PLUGIN_DATA_DIR/version"
+INSTALL_MARKER="$PLUGIN_DATA_DIR/installed"
+# Prior (pre-v2) version-marker location to migrate from, if present.
+LEGACY_VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
 
 # Colors
 GREEN='\033[0;32m'
@@ -30,6 +40,13 @@ PLUGIN_MANIFEST="$SCRIPT_DIR/.claude-plugin/plugin.json"
 [ -f "$PLUGIN_MANIFEST" ] || error "Plugin manifest not found: $PLUGIN_MANIFEST"
 VERSION="$(jq -r '.version' "$PLUGIN_MANIFEST")"
 [ -n "$VERSION" ] && [ "$VERSION" != "null" ] || error "No version found in $PLUGIN_MANIFEST"
+
+# --- Persistent data dir + legacy marker migration ---
+mkdir -p "$PLUGIN_DATA_DIR"
+if [ -f "$LEGACY_VERSION_FILE" ] && [ ! -f "$VERSION_FILE" ]; then
+  mv "$LEGACY_VERSION_FILE" "$VERSION_FILE"
+  info "Migrated version marker to persistent data dir ($PLUGIN_DATA_DIR)"
+fi
 
 # --- Mode detection ---
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
@@ -204,8 +221,9 @@ if [ "$MODE" = "manual" ]; then
   chmod +x "$CLAUDE_DIR/hooks/"*.sh
 fi
 
-# --- Version file ---
+# --- Persistent install marker + last-version-seen ---
 echo "$VERSION" > "$VERSION_FILE"
+echo "$TIMESTAMP" > "$INSTALL_MARKER"
 
 # --- Done ---
 echo ""

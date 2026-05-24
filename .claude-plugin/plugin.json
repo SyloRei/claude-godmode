@@ -23,5 +23,13 @@
   ],
   "repository": "https://github.com/sylorei/claude-godmode",
   "homepage": "https://github.com/sylorei/claude-godmode",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "model_profile": {
+      "type": "string",
+      "default": "balanced",
+      "options": ["quality", "balanced", "budget"],
+      "description": "Model/effort preset for all agents. 'quality' = opus + xhigh (code-writing agents stay capped at effort:high); 'balanced' = each agent's own frontmatter values; 'budget' = haiku + default effort. See README FAQ for the full preset table and feasibility caveat."
+    }
+  }
 }

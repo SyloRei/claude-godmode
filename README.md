@@ -404,6 +404,20 @@ The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/c
 
 Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Four agents use Sonnet (`@reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and four use Opus (`@writer`, `@executor`, `@architect`, `@security-auditor`).
 
+### What is the `model_profile` config knob?
+
+`model_profile` is the single user-tunable config knob (defined under `userConfig` in `.claude-plugin/plugin.json`). It selects a model/effort **preset** applied across agents:
+
+| `model_profile` | Model | Effort |
+|-----------------|-------|--------|
+| `quality`       | `opus`  | `xhigh` |
+| `balanced` (default) | each agent's own frontmatter values | each agent's own frontmatter values |
+| `budget`        | `haiku` | default |
+
+**Hard carve-out (locked in PROJECT.md):** code-writing agents — `@executor`, `@writer`, `@test-writer` — **cap at `effort: high`** even under `quality`, and are **never** raised to `xhigh`. On Opus 4.7, `effort: xhigh` is documented to skip rules, which is unacceptable for agents that produce code. Only read-only / design agents (`@architect`, `@security-auditor`, and any planner/verifier) receive `xhigh` under `quality`.
+
+**Feasibility caveat (be honest):** an agent's `effort` is **frontmatter-only** and is not dynamically overridable at runtime by the platform — so the `effort` half of a preset is descriptive intent, applied by editing agent frontmatter, not a live override. What *is* feasible at runtime is **model** selection: the orchestrator can override an agent's `model` at spawn time. The knob is exposed to that machinery as `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE}` (env var in hook/subprocess context) and `${user_config.model_profile}` (hook command substitution). The plugin does **not** fake an effort override the platform cannot honor; treat the effort column as the documented target you'd encode in frontmatter, not a flag flipped at spawn.
+
 ### Will this overwrite my config?
 
 No. Claude God-Mode uses a rules-based approach -- it installs individual rule files into `~/.claude/rules/` which Claude Code loads alongside your existing config. Your `~/.claude/CLAUDE.md` is never read, modified, or replaced. Settings are merged additively, preserving your existing permissions and plugins. You can disable any godmode behavior by removing the corresponding rule file.
