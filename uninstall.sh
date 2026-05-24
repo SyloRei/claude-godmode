@@ -8,7 +8,11 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 BACKUP_BASE="$CLAUDE_DIR/backups"
-VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
+# Legacy (pre-v2) marker, plus the v2 persistent data-dir markers written by
+# install.sh. On uninstall we remove the install markers so a later reinstall
+# detects a clean state. (The data dir itself is left if it holds nothing else.)
+LEGACY_VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
+PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-$CLAUDE_DIR/plugins/data/claude-godmode}"
 REMOVED=0
 
 # Colors
@@ -71,8 +75,14 @@ if [ -d "$CLAUDE_DIR/rules" ] && [ -z "$(ls -A "$CLAUDE_DIR/rules" 2>/dev/null)"
   info "Removed empty rules/ directory"
 fi
 
-# 2. Remove version file
-remove_file "$VERSION_FILE"
+# 2. Remove version markers (legacy + v2 persistent data-dir markers)
+remove_file "$LEGACY_VERSION_FILE"
+remove_file "$PLUGIN_DATA_DIR/version"
+remove_file "$PLUGIN_DATA_DIR/installed"
+if [ -d "$PLUGIN_DATA_DIR" ] && [ -z "$(ls -A "$PLUGIN_DATA_DIR" 2>/dev/null)" ]; then
+  rmdir "$PLUGIN_DATA_DIR"
+  info "Removed empty plugin data dir"
+fi
 
 # 3. Manual-mode: also remove agents, skills, hooks installed by install.sh
 if [ "$MODE" = "manual" ]; then
@@ -106,15 +116,49 @@ if [ "$MODE" = "manual" ]; then
     info "Removed empty skills/ directory"
   fi
 
-  # Hooks — deterministic list matching install.sh
+  # Hooks — deterministic list matching install.sh (all 7 hook scripts + statusline)
   remove_file "$CLAUDE_DIR/hooks/session-start.sh"
   remove_file "$CLAUDE_DIR/hooks/post-compact.sh"
+  remove_file "$CLAUDE_DIR/hooks/pre-tool-use.sh"
+  remove_file "$CLAUDE_DIR/hooks/pre-tool-use-secrets.sh"
+  remove_file "$CLAUDE_DIR/hooks/post-tool-use.sh"
+  remove_file "$CLAUDE_DIR/hooks/user-prompt-submit.sh"
+  remove_file "$CLAUDE_DIR/hooks/session-end.sh"
   remove_file "$CLAUDE_DIR/hooks/statusline.sh"
 
   # Remove hooks/ dir if empty
   if [ -d "$CLAUDE_DIR/hooks" ] && [ -z "$(ls -A "$CLAUDE_DIR/hooks" 2>/dev/null)" ]; then
     rmdir "$CLAUDE_DIR/hooks"
     info "Removed empty hooks/ directory"
+  fi
+
+  # bin/ helpers — deterministic list matching install.sh
+  if [ -d "$SCRIPT_DIR/bin" ]; then
+    for helper in "$SCRIPT_DIR/bin/"*; do
+      remove_file "$CLAUDE_DIR/bin/$(basename "$helper")"
+    done
+  fi
+  if [ -d "$CLAUDE_DIR/bin" ] && [ -z "$(ls -A "$CLAUDE_DIR/bin" 2>/dev/null)" ]; then
+    rmdir "$CLAUDE_DIR/bin"
+    info "Removed empty bin/ directory"
+  fi
+
+  # Commands — deterministic list matching install.sh
+  if [ -d "$SCRIPT_DIR/commands" ]; then
+    for cmd in "$SCRIPT_DIR/commands/"*.md; do
+      remove_file "$CLAUDE_DIR/commands/$(basename "$cmd")"
+    done
+  fi
+  if [ -d "$CLAUDE_DIR/commands" ] && [ -z "$(ls -A "$CLAUDE_DIR/commands" 2>/dev/null)" ]; then
+    rmdir "$CLAUDE_DIR/commands"
+    info "Removed empty commands/ directory"
+  fi
+
+  # Config the installer copied
+  remove_file "$CLAUDE_DIR/config/quality-gates.txt"
+  if [ -d "$CLAUDE_DIR/config" ] && [ -z "$(ls -A "$CLAUDE_DIR/config" 2>/dev/null)" ]; then
+    rmdir "$CLAUDE_DIR/config"
+    info "Removed empty config/ directory"
   fi
 fi
 

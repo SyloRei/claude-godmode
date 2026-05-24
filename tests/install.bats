@@ -161,13 +161,26 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "tests never touch the real \$HOME/.claude" {
-  # HOME is the temp dir for the whole test, so install.sh's CLAUDE_DIR
-  # resolves under TEST_HOME, not the developer's real home.
+@test "install targets the temp HOME, not the developer's real \$HOME/.claude" {
+  # Isolation guarantee: install.sh resolves CLAUDE_DIR="$HOME/.claude", and the
+  # harness points HOME at the temp dir. Prove the install actually used it and
+  # could not have written to the real home.
+  [ -n "$ORIG_HOME" ]                 # helper saved the real home
+  [ "$HOME" = "$TEST_HOME" ]          # HOME is redirected for this test
+  [ "$ORIG_HOME" != "$TEST_HOME" ]    # ...and it is genuinely different
+
+  # Record the real ~/.claude/rules listing (if any) BEFORE install.
+  before="$(ls -1 "$ORIG_HOME/.claude/rules" 2>/dev/null || true)"
+
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
-  case "$TEST_HOME" in
-    "${TMPDIR:-/tmp}"*|/tmp/*|/var/folders/*) : ;;
-    *) printf 'TEST_HOME is not under a temp root: %s\n' "$TEST_HOME" >&2; return 1 ;;
-  esac
+
+  # Install populated the TEMP home (proves it honored HOME)...
+  [ -d "$TEST_HOME/.claude/rules" ]
+  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md'
+  [ "$status" -eq 0 ]
+
+  # ...and the real ~/.claude/rules listing is unchanged.
+  after="$(ls -1 "$ORIG_HOME/.claude/rules" 2>/dev/null || true)"
+  [ "$before" = "$after" ]
 }
