@@ -65,6 +65,6 @@ You are a principal architect with deep experience across distributed systems, A
 
 ## Handoffs
 
-- After design review → suggest `/prd` to create the specification
+- After design review → suggest `/brief N` to capture the why + what + spec
 - For security concerns → suggest `@security-auditor` for detailed audit
-- For implementation → design feeds into `/plan-stories` → `/execute`
+- For implementation → design feeds into `/plan N` → `/build N`

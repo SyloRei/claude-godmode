@@ -1,48 +1,56 @@
-## Workflow Phases
+## Workflow cycle
 
-Every non-trivial task follows this cycle:
+Every non-trivial task follows this five-step cycle:
 
 1. **UNDERSTAND** — Read relevant files, grep patterns, check tests, understand the domain
 2. **PLAN** — State approach in 3-5 bullets before coding. For multi-file changes, use plan mode.
 3. **EXECUTE** — Small atomic changes, one concern per change
-4. **VERIFY** — Run quality gates (see below). Show evidence.
+4. **VERIFY** — Run quality gates (see `rules/godmode-quality.md`). Show evidence.
 5. **SHIP** — Clean commits, PR-ready state
 
-Skip phases only for trivial tasks (typo fixes, single-line changes).
+Skip steps only for trivial work (typo fixes, single-line changes).
 
-## Feature Pipeline
+## Workflow spine
 
-For multi-story features, use the full pipeline:
-```
-/prd → /plan-stories → /execute → /ship
-```
-
-### Pipeline Entry Points
-
-Not every workflow starts with `/prd`. Choose the right entry point:
+For any feature, the single happy path is the spine — each command has one
+goal and one output artifact. `/godmode` reads recorded state and tells you
+the next command:
 
 ```
-New to codebase    → /explore-repo → /prd → /plan-stories → /execute → /ship
-Feature from scratch → /prd → /plan-stories → /execute → /ship
-Found bugs         → /debug → append stories → /execute → /ship
-Need to refactor   → /refactor → append stories → /execute → /ship
-TDD a feature      → /tdd [story ID] → append stories → /execute → /ship
+/godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
 ```
 
-### Common Workflow Examples
+| Command | Goal |
+|---|---|
+| `/godmode` | Orient — "what now?" in five lines |
+| `/mission` | Initialize / update the project + roadmap |
+| `/brief N` | Why + what + spec for work unit N |
+| `/plan N` | Tactical breakdown for unit N |
+| `/build N` | Wave-based execution, atomic commits |
+| `/verify N` | Goal-backward COVERED / PARTIAL / MISSING |
+| `/ship` | Quality gates, push, open PR |
+
+### Entry points
+
+Not every task starts at `/mission`. Choose the right entry:
 
 ```
-# Exploration-first (recommended for unfamiliar codebases)
-/explore-repo  →  saves findings  →  /prd consumes them  →  fewer questions, better PRD
-
-# Bug found during review
-/debug  →  diagnose root cause  →  option: append fix story to stories.json  →  /execute
-
-# Large refactoring
-/refactor  →  PLAN phase identifies 5 steps  →  option: generate 5 chained stories  →  /execute
-
-# Mid-pipeline course correction
-/execute finds test failures  →  /debug to diagnose  →  fix  →  /execute to continue
-/execute gets @reviewer CRITICAL on structure  →  /refactor  →  /execute to continue
-/execute gets @reviewer CRITICAL on security  →  @security-auditor  →  fix  →  /execute
+New to a codebase   → /explore-repo → /mission → /brief N → /plan N → /build N → /verify N → /ship
+Feature from scratch → /mission → /brief N → /plan N → /build N → /verify N → /ship
+Found a bug         → /debug → fold the fix into /brief N (or /build N directly)
+Need to refactor    → /refactor → fold steps into /plan N → /build N
+TDD a new behavior  → /tdd → red tests → /build N to make them green
 ```
+
+### Course corrections
+
+```
+/build N hits test failures        → /debug to diagnose → fix → resume /build N
+/build N gets a @code-reviewer CRITICAL on structure  → /refactor → resume /build N
+/build N gets a @code-reviewer CRITICAL on security   → @security-auditor → fix → resume /build N
+/verify N reports MISSING coverage → /plan N to add the gap → /build N
+```
+
+Helpers (`/debug`, `/tdd`, `/refactor`, `/explore-repo`) feed the spine —
+they never replace it. See `rules/godmode-routing.md` for the canonical
+command-to-owner and skill-to-agent maps.

@@ -10,4 +10,4 @@ Before declaring ANY task complete, ALL must pass:
 
 If any gate fails: fix it. Don't declare success. Don't skip checks.
 All skills and agents reference these gates — this is the only definition.
-Project-specific gates (e.g., "build") are auto-detected per project by /plan-stories and /ship.
+Project-specific gates (e.g., "build") are auto-detected per project by /build N and /ship.
