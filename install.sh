@@ -218,16 +218,21 @@ if [ "$MODE" = "manual" ]; then
     cp -r "$skill_dir"* "$CLAUDE_DIR/skills/$skill_name/"
   done
 
-  # Hooks
-  info "Installing hooks (3)"
+  # Hooks — copy the full event-set scripts so manual mode matches plugin mode.
+  # 7 hook scripts + statusline.sh.
+  info "Installing hooks (7)"
   mkdir -p "$CLAUDE_DIR/hooks"
   cp "$SCRIPT_DIR/hooks/session-start.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/pre-tool-use.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/pre-tool-use-secrets.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/post-tool-use.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/user-prompt-submit.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/session-end.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/hooks/"
   chmod +x "$CLAUDE_DIR/hooks/"*.sh
 
   # Canonical config the skills/hooks read at runtime (manual-mode path).
-  # NOTE: full hook-set + parity copy (pre-tool-use*, post-tool-use) is US-009.
   info "Installing config"
   mkdir -p "$CLAUDE_DIR/config"
   cp "$SCRIPT_DIR/config/quality-gates.txt" "$CLAUDE_DIR/config/"
@@ -250,7 +255,7 @@ echo "    - Settings merged (permissions, hooks, statusline)"
 if [ "$MODE" = "manual" ]; then
   echo "    - ${AGENT_COUNT} agents"
   echo "    - ${SKILL_COUNT} skills"
-  echo "    - 3 hooks (session-start, post-compact, statusline)"
+  echo "    - 7 hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end) + statusline"
   echo ""
   echo "  Mode: manual (agents, skills, hooks copied to ~/.claude/)"
 else
