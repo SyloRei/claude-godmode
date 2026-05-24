@@ -12,7 +12,7 @@ Establish the durable foundation for a project: **why** it exists, the **constra
 Two artifacts live in the **consumer's** repo (the project you are helping build), never in the plugin source:
 
 - `.planning/PROJECT.md` — purpose, constraints, success criteria. The persistent project charter.
-- `.planning/ROADMAP.md` — a numbered list of work units (missions). Each entry is referenceable by number: `/brief N` plans entry N.
+- `.planning/ROADMAP.md` — a numbered list of work units. Each entry is referenceable by number: `/brief N` plans entry N.
 
 ---
 
@@ -50,7 +50,7 @@ Establish, from the repo and the user (or inferred defaults in Auto Mode):
 
 ### 3. Establish the numbered roadmap
 
-Break the work into a **numbered** list of work units (missions). Each entry:
+Break the work into a **numbered** list of work units. Each entry:
 
 - Has a stable integer number — the reference `/brief N` will use.
 - Has a short title and a one-line outcome statement.

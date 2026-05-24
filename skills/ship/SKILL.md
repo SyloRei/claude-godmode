@@ -26,12 +26,22 @@ Take a verified work unit to a pull request: run the canonical quality gates, th
 
 The gates are defined in **`config/quality-gates.txt`** — one gate per line. **Read that file; do not hardcode the gate list here.** It is the single source of truth, so the gates stay in sync with the rest of the plugin.
 
+Resolve the file across install modes — plugin mode exposes `${CLAUDE_PLUGIN_ROOT}`; manual mode installs it under `~/.claude/config/`; fall back to a repo-relative path when developing the plugin itself:
+
 ```bash
-# The canonical gate list — read it, don't assume it.
+# Locate the canonical gate list — read it, don't assume it.
+GATES_FILE=""
+for cand in \
+  "${CLAUDE_PLUGIN_ROOT:-}/config/quality-gates.txt" \
+  "$HOME/.claude/config/quality-gates.txt" \
+  "config/quality-gates.txt"; do
+  [ -n "$cand" ] && [ -f "$cand" ] && { GATES_FILE="$cand"; break; }
+done
+[ -n "$GATES_FILE" ] || { echo "error: quality-gates.txt not found" >&2; exit 1; }
 while IFS= read -r gate; do
   [ -n "$gate" ] || continue
   printf 'gate: %s\n' "$gate"
-done < config/quality-gates.txt
+done < "$GATES_FILE"
 ```
 
 For each gate, auto-detect the project's command (typecheck, lint, test, build, secret scan) and run it. Lint includes `shellcheck` clean for any `.sh` change. Report each gate's result:
@@ -72,6 +82,11 @@ After confirmation (or immediately, in Auto Mode):
 
 ```bash
 branch=$(git branch --show-current)
+# Guard: never ship FROM a base branch. If you're on main/master, you'd push
+# the base itself — stop and ask the user to switch to a feature branch.
+case "$branch" in
+  main|master) echo "On base branch '$branch' — switch to a feature branch before /ship." >&2; exit 1 ;;
+esac
 git push -u origin "$branch"
 ```
 

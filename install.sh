@@ -46,6 +46,12 @@ mkdir -p "$PLUGIN_DATA_DIR"
 if [ -f "$LEGACY_VERSION_FILE" ] && [ ! -f "$VERSION_FILE" ]; then
   mv "$LEGACY_VERSION_FILE" "$VERSION_FILE"
   info "Migrated version marker to persistent data dir ($PLUGIN_DATA_DIR)"
+elif [ -f "$LEGACY_VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+  # Both present (e.g. legacy file reappeared from a checkout). The data-dir
+  # copy is canonical; remove the stale legacy marker so it cannot confuse
+  # future migrations.
+  rm -f "$LEGACY_VERSION_FILE"
+  info "Removed stale legacy version marker ($LEGACY_VERSION_FILE)"
 fi
 
 # --- Mode detection ---
@@ -219,6 +225,12 @@ if [ "$MODE" = "manual" ]; then
   cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/hooks/"
   chmod +x "$CLAUDE_DIR/hooks/"*.sh
+
+  # Canonical config the skills/hooks read at runtime (manual-mode path).
+  # NOTE: full hook-set + parity copy (pre-tool-use*, post-tool-use) is US-009.
+  info "Installing config"
+  mkdir -p "$CLAUDE_DIR/config"
+  cp "$SCRIPT_DIR/config/quality-gates.txt" "$CLAUDE_DIR/config/"
 fi
 
 # --- Persistent install marker + last-version-seen ---
