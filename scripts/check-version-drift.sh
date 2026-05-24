@@ -4,12 +4,17 @@ set -euo pipefail
 # check-version-drift.sh
 # Verifies the canonical plugin version (.claude-plugin/plugin.json:.version)
 # is the single source of truth: no other tracked file may hardcode a
-# DIFFERENT version string.
+# DIFFERENT *plugin* version string.
 #
-# Rules:
-#   - install.sh / README.md : any vX.Y.Z or X.Y.Z literal must equal canonical.
-#   - CHANGELOG.md           : historical release entries are allowed, but the
-#                              canonical version MUST appear (latest release).
+# Why context-scoped matching: README/CHANGELOG/install.sh legitimately
+# reference many NON-plugin versions (Claude Code >= v2.1.33, git >= 2.20,
+# jq, shellcheck 0.11.0, a "$0.45" cost example). A naive "any X.Y.Z" scan
+# false-positives on all of them. So we only inspect contexts that can only
+# mean the plugin's own version:
+#   - install.sh : a hardcoded VERSION= assignment (should read via jq instead)
+#   - README.md  : a STATIC shields version badge `badge/version-X.Y.Z`
+#                  (the dynamic `github/v/release` badge carries no literal)
+#   - CHANGELOG  : the canonical version MUST appear as a release entry
 # Exit 0 when consistent, exit 1 (with a clear message) otherwise.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -24,26 +29,39 @@ if [ -z "$CANONICAL" ] || [ "$CANONICAL" = "null" ]; then
   exit 1
 fi
 
-# Regex matching v1.2.3 or 1.2.3 (semver core).
-VER_RE='v?[0-9]+\.[0-9]+\.[0-9]+'
-
+VER_CORE='[0-9]+\.[0-9]+\.[0-9]+'
 drift=0
 
-# Files where ANY version literal must equal the canonical version.
-for rel in install.sh README.md; do
-  f="$REPO_ROOT/$rel"
-  [ -f "$f" ] || continue
+# install.sh: flag a hardcoded VERSION= assignment that differs from canonical.
+# (install.sh should read the version via `jq -r '.version' ...` — no literal.)
+inst="$REPO_ROOT/install.sh"
+if [ -f "$inst" ]; then
   while IFS= read -r found; do
     [ -n "$found" ] || continue
     normalized="${found#v}"
     if [ "$normalized" != "$CANONICAL" ]; then
-      echo "drift: $rel hardcodes version '$found' (canonical is '$CANONICAL')" >&2
+      echo "drift: install.sh hardcodes VERSION='$found' (canonical is '$CANONICAL')" >&2
       drift=1
     fi
-  done < <(grep -oE "$VER_RE" "$f" 2>/dev/null || true)
-done
+  done < <(grep -oE "VERSION=[\"']?v?${VER_CORE}" "$inst" 2>/dev/null \
+            | grep -oE "v?${VER_CORE}" || true)
+fi
 
-# CHANGELOG.md: historical entries allowed, but canonical must be present.
+# README.md: only a STATIC version badge encodes a literal plugin version.
+readme="$REPO_ROOT/README.md"
+if [ -f "$readme" ]; then
+  while IFS= read -r found; do
+    [ -n "$found" ] || continue
+    normalized="${found#v}"
+    if [ "$normalized" != "$CANONICAL" ]; then
+      echo "drift: README.md static version badge shows '$found' (canonical is '$CANONICAL')" >&2
+      drift=1
+    fi
+  done < <(grep -oE "badge/version-v?${VER_CORE}" "$readme" 2>/dev/null \
+            | grep -oE "v?${VER_CORE}" || true)
+fi
+
+# CHANGELOG.md: historical entries allowed, but canonical MUST appear.
 changelog="$REPO_ROOT/CHANGELOG.md"
 if [ -f "$changelog" ]; then
   if ! grep -qE "\[?v?${CANONICAL}\]?" "$changelog"; then
