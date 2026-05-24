@@ -5,7 +5,6 @@ set -euo pipefail
 # Installs rules/ files to ~/.claude/rules/ (never touches CLAUDE.md)
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode (backward compat)
 
-VERSION="1.4.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
@@ -24,7 +23,13 @@ error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
 # --- Preflight ---
 command -v jq >/dev/null 2>&1 || error "jq is required but not installed. See: https://jqlang.github.io/jq/download/"
-[ -d "$CLAUDE_DIR" ] || error "~/.claude/ directory not found. Is Claude Code installed?"
+[ -d "$CLAUDE_DIR" ] || error "$HOME/.claude/ directory not found. Is Claude Code installed?"
+
+# --- Version (single source of truth: .claude-plugin/plugin.json) ---
+PLUGIN_MANIFEST="$SCRIPT_DIR/.claude-plugin/plugin.json"
+[ -f "$PLUGIN_MANIFEST" ] || error "Plugin manifest not found: $PLUGIN_MANIFEST"
+VERSION="$(jq -r '.version' "$PLUGIN_MANIFEST")"
+[ -n "$VERSION" ] && [ "$VERSION" != "null" ] || error "No version found in $PLUGIN_MANIFEST"
 
 # --- Mode detection ---
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then

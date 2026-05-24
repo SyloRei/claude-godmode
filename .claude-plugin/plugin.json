@@ -4,16 +4,17 @@
   "version": "1.6.0",
   "author": {
     "name": "sylorei",
-    "url": "https://github.com/sylorei"
+    "email": "sylorweb@gmail.com",
+    "url": "https://github.com/sylorei/claude-godmode"
   },
   "keywords": [
     "workflow",
     "agents",
     "skills",
     "hooks",
-    "pipeline",
-    "engineering",
+    "planning",
     "quality-gates",
+    "engineering",
     "code-review",
     "tdd",
     "refactoring",
