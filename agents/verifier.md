@@ -6,6 +6,7 @@ tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 effort: xhigh
 maxTurns: 30
+memory: project
 skills: [verify]
 ---
 

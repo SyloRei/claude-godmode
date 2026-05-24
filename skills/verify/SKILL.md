@@ -4,14 +4,14 @@ description: "Check a built unit goal-backward: classify every brief acceptance 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Grep, Glob, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*)
+allowed-tools: Read, Grep, Glob, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*)
 ---
 
 # Verify
 
 Decide what is **truly done** for roadmap unit **$N** by working **goal-backward**: start from the brief's acceptance criteria, not from the diff. For **each** criterion, return a verdict — **COVERED / PARTIAL / MISSING** — backed by concrete evidence (a `file:line`, a passing test name, or command output). A diff can look big and still miss a goal; only the goals decide the verdict.
 
-Run after `/build N` has produced commits. Verify is the gate before shipping: if every criterion is COVERED, the unit is ready for `/ship`. This is the sixth step of the spine: `/mission` → `/brief N` → `/plan N` → `/build N` → **`/verify N`** → `/ship`.
+Run after `/build N` has produced commits. Verify is the gate before shipping: if every criterion is COVERED, the unit is ready for `/ship`. This is the fifth step of the spine: `/mission` → `/brief N` → `/plan N` → `/build N` → **`/verify N`** → `/ship`.
 
 This is a **read-only** operation. You inspect files, search the codebase, and run the project's test command. You do **not** write or edit source — your only writes are workflow-state updates via `bin/godmode-state`.
 
@@ -33,7 +33,7 @@ When Auto Mode is absent, still avoid an interview — verification is mechanica
 - **PARTIAL** — the criterion is partly met: some of the behavior exists, or it exists but a sub-condition or edge case from the criterion is unmet or unproven. Say exactly what is missing.
 - **MISSING** — no evidence the criterion is met, or evidence that it is not.
 
-When in doubt between COVERED and PARTIAL, choose **PARTIAL**. A code comment, a TODO, a stub, or a step that merely *claims* to do the work is **not** evidence. A test that exists but does not run (or is skipped) is **not** evidence.
+When in doubt between COVERED and PARTIAL, choose **PARTIAL**. A code comment, a TODO, a stub, or a step that merely *claims* to do the work is **not** evidence. A test that exists but does not run (or is skipped) is **not** evidence — nor is one that trivially passes without exercising the criterion (e.g. asserts `true`, or never calls the code under test).
 
 ---
 

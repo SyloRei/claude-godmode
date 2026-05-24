@@ -3,9 +3,9 @@ name: planner
 description: "Tactical planning agent. Use this agent when a brief exists and you need ordered, dependency-aware steps plus a verification plan before building — i.e. when the user runs /plan N or asks to break a brief into a buildable plan. Reads the brief, writes one PLAN.md; does not write source code."
 model: opus
 tools: Read, Grep, Glob, Write, Edit, Bash
-disallowedTools:
 effort: xhigh
 maxTurns: 30
+memory: project
 skills: [plan]
 ---
 

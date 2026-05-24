@@ -98,6 +98,8 @@ Every criterion must be **checkable** — a reader can run it or observe it and 
 
 If a criterion can't be made verifiable, it isn't a criterion yet — turn it into one (name the trigger + the observable outcome) or drop it.
 
+Label each criterion sequentially: `AC-1`, `AC-2`, … These IDs are the stable contract `/plan N` (which references them in its steps and verification plan) and `/verify N` (which classifies each by ID) depend on. **When updating a brief, preserve existing AC IDs and append new ones — never renumber**, or you break verification evidence that already cited the old IDs.
+
 ### 5. Write the brief artifact
 
 Create `${brief_dir}/` if needed and write `BRIEF.md` using the format below. Use Write for a first-time create; use Edit for a surgical update to an existing brief (preserve prior decisions and assumptions).
@@ -136,10 +138,10 @@ bin/godmode-state set next_command "/plan $N"
 - [Explicitly excluded — what this unit will NOT do.]
 
 ## Spec — acceptance criteria
-Each criterion is verifiable (a clear trigger and observable result).
+Each criterion is verifiable (a clear trigger and observable result) and carries a stable **`AC-N`** label — these IDs are the references `/plan N` and `/verify N` use.
 
-- [ ] [Returns / renders / writes ... when ...]
-- [ ] [...]
+- [ ] **AC-1:** [Returns / renders / writes ... when ...]
+- [ ] **AC-2:** [...]
 
 ## Assumptions
 [Auto Mode: inferred defaults surfaced here. Otherwise omit or note open questions.]

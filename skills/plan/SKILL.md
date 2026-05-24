@@ -65,7 +65,7 @@ A step should be unambiguous enough that an executor needs no extra judgment.
 
 ### 3. Declare dependencies (`dependsOn`)
 
-Every step declares `dependsOn` — the list of step IDs it requires, or `none`. Declare a dependency only where a **real** ordering constraint exists; spurious dependencies serialize work that could run in parallel. `/build` reads `dependsOn` to group independent steps into **waves**: every step whose dependencies are already satisfied runs in the same wave.
+Every step declares `dependsOn` — the list of step IDs it requires, or `none`. Multiple prerequisites are **comma-separated** in exactly this form: `dependsOn: S1, S2` — so `/build` parses waves unambiguously. Declare a dependency only where a **real** ordering constraint exists; spurious dependencies serialize work that could run in parallel. `/build` reads `dependsOn` to group independent steps into **waves**: every step whose dependencies are already satisfied runs in the same wave.
 
 > Wave 1 = all steps with `dependsOn: none`. Wave 2 = all steps whose dependencies are all in Wave 1. And so on.
 
