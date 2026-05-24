@@ -72,6 +72,10 @@ jobs:
       - name: vocab gate
         run: ./scripts/check-vocab.sh
 
+      # locked command surface: <= 12 user-facing commands (1 reserved).
+      - name: surface-count gate
+        run: ./scripts/check-surface-count.sh
+
       # bats smoke suite.
       - name: bats
         run: bats tests/
