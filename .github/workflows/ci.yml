@@ -1,0 +1,77 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# bash 3.2+ / jq-only project — NO Node, Python, or Ruby anywhere in CI.
+# Static checks (shellcheck, lint-json, lint-frontmatter, version-drift, parity,
+# vocab) plus the bats smoke suite, on both Linux and macOS.
+jobs:
+  ci:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # shellcheck: ubuntu ships it via apt; macOS via Homebrew.
+      - name: Install shellcheck (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Install shellcheck (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
+      # bats-core: official package, no Node. apt on Linux, brew on macOS.
+      - name: Install bats (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get install -y bats
+
+      - name: Install bats (macOS)
+        if: runner.os == 'macOS'
+        run: brew install bats-core
+
+      - name: Tool versions
+        run: |
+          bash --version | head -1
+          jq --version
+          shellcheck --version | head -2
+          bats --version
+
+      # Static analysis — respects .shellcheckrc at the repo root.
+      # Covers *.sh under hooks/ and scripts/, plus the extensionless bash
+      # helpers in bin/ (shebang is /usr/bin/env bash).
+      - name: shellcheck
+        run: |
+          { find hooks scripts -type f -name '*.sh' -print0 2>/dev/null
+            find bin -type f -print0 2>/dev/null
+          } | xargs -0 shellcheck
+
+      - name: lint-json
+        run: ./scripts/lint-json.sh
+
+      - name: lint-frontmatter
+        run: ./scripts/lint-frontmatter.sh
+
+      - name: version-drift
+        run: ./scripts/check-version-drift.sh
+
+      # plugin-mode == manual-mode hook binding parity.
+      - name: parity gate
+        run: ./scripts/check-parity.sh
+
+      # v2 user-facing vocabulary gate.
+      - name: vocab gate
+        run: ./scripts/check-vocab.sh
+
+      # bats smoke suite.
+      - name: bats
+        run: bats tests/
