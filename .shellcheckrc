@@ -1,0 +1,28 @@
+# shellcheck configuration for claude-godmode (shell + jq plugin code).
+#
+# Philosophy: do NOT blanket-disable real warnings. This is portable
+# bash 3.2+ code; we want shellcheck to be strict. We only opt INTO
+# additional optional checks that catch real classes of bugs we care
+# about, and set the dialect explicitly.
+
+# Treat scripts as bash (our shebang is /usr/bin/env bash everywhere).
+shell=bash
+
+# Enable optional checks that are off by default but valuable here:
+#   add-default-case      - flag case statements missing a default branch
+#   avoid-nullary-conditions - flag `[ -n $foo ]`-style nullary [ ] mistakes
+#   deprecate-which       - prefer `command -v` over `which`
+#   quote-safe-variables  - encourage quoting even "safe" variables
+#   require-double-brackets - prefer [[ ]] over [ ] in bash
+#
+# NOTE: we deliberately do NOT enable the "masked return value" family —
+# check-set-e-suppressed (SC2310) and check-extra-masked-returns (SC2312).
+# Our lint scripts are built on the "call a helper, branch on its exit
+# status" pattern (e.g. `if ! extract_keys f`). Both checks flag every such
+# call; they target *accidental* exit-code masking, but here the masking IS
+# the intended control flow, so enabling them yields only false positives.
+enable=add-default-case
+enable=avoid-nullary-conditions
+enable=deprecate-which
+enable=quote-safe-variables
+enable=require-double-brackets
