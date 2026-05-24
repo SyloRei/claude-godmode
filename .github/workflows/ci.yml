@@ -21,10 +21,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # shellcheck: ubuntu ships it via apt; macOS via Homebrew.
-      - name: Install shellcheck (Linux)
+      # shellcheck pinned to v0.11.0 for a reproducible, documented rule set.
+      # Ubuntu's apt package floats to an older version whose rules differ, so
+      # on Linux we install the official release binary (no Node). macOS keeps
+      # Homebrew, which already provides 0.11.0.
+      - name: Install shellcheck v0.11.0 (Linux, pinned binary)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y shellcheck
+        run: |
+          set -euo pipefail
+          url="https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+          curl -fsSL "$url" -o /tmp/sc.tar.xz
+          tar -xJf /tmp/sc.tar.xz -C /tmp
+          sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version | grep 'version:'
 
       - name: Install shellcheck (macOS)
         if: runner.os == 'macOS'

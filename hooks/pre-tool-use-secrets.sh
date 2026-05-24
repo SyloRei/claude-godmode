@@ -64,7 +64,11 @@ if [ "${GODMODE_ALLOW_SECRETS:-}" = "1" ]; then
 fi
 
 # --- Locate the repo via cwd ------------------------------------------------
-[ -n "$CWD" ] && cd "$CWD" 2>/dev/null || true
+# Proper if-form (not `A && B || C`, which SC2015 flags as ambiguous): scan the
+# repo at the event's cwd; a missing/odd cwd just leaves us where we are.
+if [ -n "$CWD" ]; then
+  cd "$CWD" 2>/dev/null || true
+fi
 
 if ! git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   # Not a git repo we can read — nothing to scan, don't block.
