@@ -66,6 +66,10 @@ cmd_get() {
 cmd_set() {
   local key="$1"
   local value="$2"
+  # State values are single-line key: value pairs. Collapse any newlines to
+  # spaces so a multi-line value cannot break the sed s/// command (which
+  # would abort the calling script under set -euo pipefail).
+  value="$(printf '%s' "$value" | tr '\n' ' ')"
   ensure_state_file
 
   if grep -q "^${key}:" "$STATE_FILE"; then

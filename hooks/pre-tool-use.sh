@@ -6,9 +6,14 @@
 #   - exit 2  => BLOCK the tool call; stderr is fed back to Claude.
 #   - exit 0  => allow; stdout (if valid JSON) is parsed, else added as context.
 #
-# This hook blocks `git commit` invocations that attempt to skip verification
-# via `--no-verify` / `-n`. It is the first link in the PreToolUse chain;
-# additional safety checks (e.g. secret scanning, US-002b) append after it.
+# This hook DISCOURAGES the common ways to skip commit verification: it blocks
+# `--no-verify` / `-n` / `--no-verify=...` and the `-c core.hooksPath=...`
+# trick. It is a discipline nudge, NOT a security boundary: a determined caller
+# can still skip git hooks via a git alias or other config, which a stdin
+# string-scanner cannot fully enumerate. The real safety net is the secret-scan
+# hook (pre-tool-use-secrets.sh), which runs as a Claude Code PreToolUse hook
+# and is unaffected by git's own hook-path settings. This is the first link in
+# the PreToolUse chain; additional safety checks append after it.
 #
 # bash 3.2 compatible. JSON read via jq only — never from pwd, never via
 # string interpolation.
@@ -32,9 +37,13 @@ if [ "$TOOL_NAME" != "Bash" ]; then
   exit 0
 fi
 
-# Only concerned with git commit commands.
+# Only concerned with git commit commands. Match both the plain `git commit`
+# and the `git -c <opt> commit` form (so the -c core.hooksPath bypass below is
+# actually reached). The `git ` + `commit` pattern won't false-BLOCK unrelated
+# commands like `git add x_commit.txt` — those simply carry no bypass token, so
+# the detection loop leaves BYPASS=0 and we exit 0 anyway.
 case "$COMMAND" in
-  *"git commit"*) ;;
+  *"git "*"commit"*) ;;
   *) exit 0 ;;
 esac
 
@@ -70,7 +79,7 @@ for tok in $SCAN; do
     -m*|--message=*|-F*|--file=*|-c*|-C*)
       : # attached-value form; value is part of this token, nothing to skip
       ;;
-    --no-verify)
+    --no-verify|--no-verify=*)
       BYPASS=1; break
       ;;
     -n|-n=*)
@@ -87,6 +96,13 @@ for tok in $SCAN; do
       ;;
   esac
 done
+
+# Also catch `-c core.hooksPath=...`, which disables git hooks without ever
+# typing --no-verify. The `-c` token's value may be skipped by the loop above,
+# so scan the quote-stripped command as a whole.
+case "$SCAN" in
+  *hooksPath*) BYPASS=1 ;;
+esac
 
 if [ "$BYPASS" -eq 1 ]; then
   # Exit 2 blocks the call; stderr is surfaced back to Claude.

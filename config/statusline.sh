@@ -34,11 +34,15 @@ MODEL=${MODEL:-—}
 COST=${COST:-0}
 CTX_PCT=${CTX_PCT:-0}
 
-# Project name from directory
-PROJECT=$(basename "$CWD" 2>/dev/null || echo "—")
-
-# Git branch (fast, no network)
-BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "")
+# Project name + git branch from CWD. Guard against an absent/empty cwd so we
+# never fall back to the hook process's own directory (which would show the
+# wrong project/branch).
+PROJECT="—"
+BRANCH=""
+if [ -n "$CWD" ]; then
+  PROJECT=$(basename "$CWD" 2>/dev/null || echo "—")
+  BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "")
+fi
 
 # Format cost
 if command -v awk &>/dev/null; then

@@ -4,7 +4,6 @@ description: "Deep codebase and web research agent. Use for: finding patterns, t
 model: sonnet
 effort: high
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
-disallowedTools: Write, Edit
 memory: project
 maxTurns: 30
 background: true

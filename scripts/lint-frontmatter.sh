@@ -40,7 +40,7 @@ extract_keys() {
       }
     }
     END {
-      if (found != 1) { exit 1 }   # empty file / first line not ---
+      if (found != 1 || infront == 1) { exit 1 }   # no opening --- OR unclosed block
     }
   ' "$1"
 }
