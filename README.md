@@ -349,6 +349,7 @@ Before installing, make sure you have:
 - [ ] **git** >= 2.20 -- required for worktree agents. Verify: `git --version`
 - [ ] **jq** -- used by install script to merge `settings.json`. Verify: `jq --version`
 - [ ] **macOS or Linux** -- Windows is not supported (Claude Code limitation)
+- [ ] **Claude Code >= v2.1.33** -- required for the `@researcher` agent's persistent memory (`memory: project`)
 
 ### Common Issues
 
