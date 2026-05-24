@@ -3,7 +3,7 @@
 - **Monitor context** — the status line shows capacity %. Watch it.
 - **Compact at ~70%** — run `/compact` proactively, not reactively at 90%+
 - **Before compacting** — state what to preserve: `/compact "preserve the auth refactoring progress"`
-- **After milestones** — compact with a summary to start fresh for the next phase
+- **After milestones** — compact with a summary to start fresh for the next work unit
 - **Use subagents** — heavy research goes into @researcher, not main context. Keep main window clean.
 - Summarize research findings before acting on them
 - After compaction, a hook restores quality gates and available skills/agents

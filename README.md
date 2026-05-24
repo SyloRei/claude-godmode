@@ -87,17 +87,16 @@ cd claude-godmode
 
 The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
 
-### Step 2: Install Rules
+### Step 2: Orient
 
-> **Important:** God-Mode's behavior comes from **rule files** in `~/.claude/rules/`. Without them, agents and skills won't follow the engineering workflow. This step is required for both install methods.
-
-Start a Claude Code session and run `/godmode`:
+The installer (Step 1) already copied the rule files into `~/.claude/rules/` — that's where God-Mode's behavior comes from; without them agents and skills won't follow the engineering workflow. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
 
 ```
 You:    /godmode
-Claude: Detected 8 rule files not yet installed. Install now? [Y/n]
-You:    Y
-Claude: Installed 8 rules to ~/.claude/rules/. God-Mode is active.
+Claude: God-Mode v2.0.0 · 10 skills, 12 agents
+        Where: uninitialized — no roadmap yet
+        Next:  /mission   (then /brief 1)
+        Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
 ```
 
 Then enable the status bar:
@@ -426,7 +425,7 @@ The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/c
 
 ### Does this work with Sonnet/Haiku?
 
-Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Five agents use Sonnet (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and seven use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Six agents use Sonnet (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
 
 ### What is the `model_profile` config knob?
 

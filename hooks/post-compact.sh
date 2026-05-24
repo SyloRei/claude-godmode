@@ -91,15 +91,19 @@ BODY="CONTEXT RESTORED AFTER COMPACTION:"
 [ -n "$CONTEXT" ] && BODY="${BODY}
 
 ${CONTEXT}"
+# Quality gates: read the single source (config/quality-gates.txt), never
+# hardcode the list — it stays in sync with the rest of the plugin.
+GATES=""
+if [ -n "$ROOT" ] && [ -f "$ROOT/config/quality-gates.txt" ]; then
+  while IFS= read -r gate || [ -n "$gate" ]; do
+    [ -n "$gate" ] || continue
+    GATES="${GATES}
+- ${gate}"
+  done < "$ROOT/config/quality-gates.txt"
+fi
 BODY="${BODY}
 
-Quality Gates (canonical, from CLAUDE.md — ALL must pass before completing any task):
-1. Typecheck passes
-2. Lint passes (shellcheck clean for any .sh change)
-3. All tests pass
-4. No hardcoded secrets
-5. No regressions
-6. Changes match requirements
+Quality gates (canonical, from config/quality-gates.txt — ALL must pass before completing any task):${GATES}
 "
 [ -n "$SKILLS_LINE" ] && BODY="${BODY}
 ${SKILLS_LINE}"

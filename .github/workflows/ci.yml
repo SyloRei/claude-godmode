@@ -30,14 +30,13 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install shellcheck
 
-      # bats-core: official package, no Node. apt on Linux, brew on macOS.
-      - name: Install bats (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get install -y bats
-
-      - name: Install bats (macOS)
-        if: runner.os == 'macOS'
-        run: brew install bats-core
+      # bats-core pinned to v1.13.0 (no Node): clone the tagged release and run
+      # its installer. The distro/brew packages float to older versions, so we
+      # pin explicitly for reproducible test runs on both OSes.
+      - name: Install bats v1.13.0
+        run: |
+          git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          sudo /tmp/bats-core/install.sh /usr/local
 
       - name: Tool versions
         run: |

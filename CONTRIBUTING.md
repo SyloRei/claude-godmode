@@ -75,7 +75,7 @@ claude-godmode/
 ### Naming
 
 - Agents: lowercase, hyphenated (e.g., `security-auditor.md`)
-- Skills: lowercase, hyphenated directory with `SKILL.md` inside (e.g., `skills/plan-stories/SKILL.md`)
+- Skills: lowercase, hyphenated directory with `SKILL.md` inside (e.g., `skills/brief/SKILL.md`)
 - Hooks: lowercase, hyphenated shell scripts (e.g., `session-start.sh`)
 - Rules: `godmode-{concern}.md` (e.g., `godmode-coding.md`)
 

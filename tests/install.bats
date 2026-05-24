@@ -184,3 +184,28 @@ teardown() {
   after="$(ls -1 "$ORIG_HOME/.claude/rules" 2>/dev/null || true)"
   [ "$before" = "$after" ]
 }
+
+# --- M7 / FR-21: persistent install state survives a version bump -----------
+
+@test "install marker + version under CLAUDE_PLUGIN_DATA survive a reinstall (version bump)" {
+  data_dir="$TEST_HOME/.claude/plugins/data/claude-godmode"
+
+  # First install writes the version + install marker.
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$data_dir/version" ]
+  [ -f "$data_dir/installed" ]
+  first_marker="$(cat "$data_dir/installed")"
+
+  # Simulate a prior, older install by rewriting the recorded version.
+  printf '0.0.1\n' > "$data_dir/version"
+
+  # Reinstall (the "update"): the data dir persists, version is refreshed to
+  # the canonical value, and the install marker is still present.
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$data_dir/installed" ]
+  canonical="$(jq -r '.version' "$PLUGIN_ROOT/.claude-plugin/plugin.json")"
+  [ "$(cat "$data_dir/version")" = "$canonical" ]
+  [ "$(cat "$data_dir/version")" != "0.0.1" ]
+}

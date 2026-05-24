@@ -77,7 +77,7 @@ echo "commands: $(ls -1 "$ROOT/commands" 2>/dev/null | sed 's/\.md$//' | tr '\n'
 echo "agents:   $(ls -1 "$ROOT/agents" 2>/dev/null | sed 's/\.md$//' | tr '\n' ' ')"
 ```
 
-If `$ROOT` is unresolved, run the same scan against the repo-relative `skills/`, `commands/`, `agents/` directories. The `grep -v '^_'` skips the `skills/_shared` helper directory.
+If `$ROOT` is unresolved, run the same scan against the repo-relative `skills/`, `commands/`, `agents/` directories. The `grep -v '^_'` skips any internal `_`-prefixed skill directories.
 
 ## 5. Print the orientation (≤ 5 lines)
 
