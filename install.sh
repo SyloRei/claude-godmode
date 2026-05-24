@@ -169,10 +169,13 @@ if [ -f "$SETTINGS" ]; then
       $existing * {
         statusLine: $template.statusLine,
         hooks: (
-          $existing.hooks // {} |
-          to_entries + ($template.hooks | to_entries) |
+          (($existing.hooks // {}) | to_entries)
+            + (($template.hooks // {}) | to_entries) |
           group_by(.key) |
-          map({key: .[0].key, value: (.[0].value)}) |
+          map({
+            key: .[0].key,
+            value: ([.[].value] | add | unique)
+          }) |
           from_entries
         ),
         permissions: (($existing.permissions // {}) * {
@@ -236,6 +239,21 @@ if [ "$MODE" = "manual" ]; then
   info "Installing config"
   mkdir -p "$CLAUDE_DIR/config"
   cp "$SCRIPT_DIR/config/quality-gates.txt" "$CLAUDE_DIR/config/"
+
+  # bin/ helpers — required by the workflow spine (skills + hooks call
+  # godmode-state). Without these, manual-mode state tracking is broken.
+  BIN_COUNT=$(find "$SCRIPT_DIR/bin" -maxdepth 1 -type f | wc -l | tr -d ' ')
+  info "Installing bin helpers (${BIN_COUNT})"
+  mkdir -p "$CLAUDE_DIR/bin"
+  cp "$SCRIPT_DIR/bin/"* "$CLAUDE_DIR/bin/"
+  chmod +x "$CLAUDE_DIR/bin/"*
+
+  # Commands — /godmode is a command file (not a skill); copy it so the
+  # orientation command is available in manual mode.
+  CMD_COUNT=$(find "$SCRIPT_DIR/commands" -maxdepth 1 -name "*.md" | wc -l | tr -d ' ')
+  info "Installing commands (${CMD_COUNT})"
+  mkdir -p "$CLAUDE_DIR/commands"
+  cp "$SCRIPT_DIR/commands/"*.md "$CLAUDE_DIR/commands/"
 fi
 
 # --- Persistent install marker + last-version-seen ---

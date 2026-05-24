@@ -16,16 +16,26 @@
 
 set -euo pipefail
 
-# Consume stdin so the producer never blocks; guard early EOF under pipefail.
-cat > /dev/null 2>&1 || true
+# Read the event from stdin (don't discard it — we need .cwd). Guard early EOF.
+INPUT="$(cat 2>/dev/null || true)"
 
-STATE_FILE=".planning/STATE.md"
+# jq is required to read .cwd and emit safe JSON; without it, fail silent.
+command -v jq > /dev/null 2>&1 || exit 0
+
+# Resolve the project root from the event's .cwd (NEVER pwd — the session may
+# be rooted in a subdirectory). Fall back to pwd only if cwd is absent.
+CWD=""
+[ -n "$INPUT" ] && CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
+[ -n "$CWD" ] || CWD="$(pwd)"
+
+STATE_FILE="$CWD/.planning/STATE.md"
 
 # Nothing to orient toward without project state.
 [ -f "$STATE_FILE" ] || exit 0
 
-# jq is required to emit safe JSON; without it, fail silent.
-command -v jq > /dev/null 2>&1 || exit 0
+# Run state reads from the project root so godmode-state's relative .planning
+# path resolves correctly.
+cd "$CWD" 2>/dev/null || exit 0
 
 # Locate the godmode-state helper. In plugin mode CLAUDE_PLUGIN_ROOT points at
 # the installed plugin dir; in manual mode it lives under ~/.claude/bin; fall

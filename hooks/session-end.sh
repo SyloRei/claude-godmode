@@ -39,7 +39,7 @@ fi
 VERSION=""
 if command -v jq > /dev/null 2>&1; then
   for manifest in \
-    "${CLAUDE_PLUGIN_ROOT:-}/.claude-plugin/plugin.json" \
+    "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json}" \
     "$HOME/.claude/plugins/data/claude-godmode/version"; do
     if [ -n "$manifest" ] && [ -f "$manifest" ]; then
       case "$manifest" in

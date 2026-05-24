@@ -88,7 +88,7 @@ God-Mode v<VERSION> · <available-skill-count> skills, <agent-count> agents
 Where: work unit <active_unit> — <status>     (or: "uninitialized — no roadmap yet")
 Next:  <next_command>                         (cold start: /mission, then /brief 1)
 Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
-Helpers: /debug · /tdd · /refactor · /explore-repo
+Helpers: <helper skills from the scan above — i.e. scanned skills minus the spine commands; never a memorized list>
 ```
 
 Keep the whole output well under 10,000 characters — five short lines is the target. Do not dump the full inventory tables; the scan counts and the next command are what matter. If the user wants the full list, point them at `/<command> --help` or the inventory scan above.

@@ -4,7 +4,7 @@ description: "Turn a numbered roadmap unit into a single brief — why + what + 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
 ---
 
 # Brief
@@ -56,7 +56,7 @@ Also read for context:
 
 ### 2. Derive the directory name
 
-`NN` is `$N` **zero-padded to match the roadmap's numbering width** (e.g. unit `3` → `03` when the roadmap uses two digits; unit `12` → `12`). Derive a kebab-case `name` from the unit title: lowercase, spaces and punctuation → single hyphens, trim leading/trailing hyphens.
+`NN` is `$N` **zero-padded to two digits** (the project convention: unit `3` → `03`, unit `12` → `12`), matching `printf '%02d'` below. Derive a kebab-case `name` from the unit title: lowercase, spaces and punctuation → single hyphens, trim leading/trailing hyphens.
 
 ```bash
 # N comes from the roadmap unit number ($N).
