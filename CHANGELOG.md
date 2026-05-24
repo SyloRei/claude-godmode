@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [2.0.0] - (version bump pending)
+
+### BREAKING
+
+- **Removed `/prd`, `/plan-stories`, `/execute`** — the v1.x feature pipeline (PRD → stories.json → @executor loop) is gone. These skills and their `.claude-pipeline/` runtime directory are no longer part of the plugin. Migrate to the v2 workflow: `/mission → /brief N → /plan N → /build N → /verify N → /ship`.
+
+### Added
+
+- **`/godmode`** — orient command: reads `.planning/STATE.md` and tells you the next command in 5 lines
+- **`/mission`** — initializes and updates `PROJECT.md` and a numbered `ROADMAP.md`
+- **`/brief N`** — Socratic brief session (why + what + spec) → writes `BRIEF.md`
+- **`/plan N`** — tactical breakdown into dependency-ordered waves → writes `PLAN.md`
+- **`/build N`** — wave-based parallel execution with `@executor` + `@reviewer` per step; atomic commit per step
+- **`/verify N`** — goal-backward verification: each criterion reported as COVERED / PARTIAL / MISSING
+- **`@planner` agent** — opus + `effort: xhigh`; drives `/plan N`; read-only
+- **`@verifier` agent** — opus + `effort: xhigh`; drives `/verify N`; read-only
+- **`@spec-reviewer` agent** — sonnet + `effort: high`; reviews briefs and plans
+- **`@code-reviewer` agent** — sonnet + `effort: high`; deep code review pass
+- **Quality-gate enforcement hook (PreToolUse)** — blocks `git commit` when typecheck, lint, or tests fail; single source of truth in `config/quality-gates.txt`
+- **Secret-scan hook (PostToolUse)** — scans staged diffs for secrets before each commit
+- **`UserPromptSubmit` hook** — injects session context on first message
+- **`SessionEnd` hook** — writes install marker and last-version-seen to `${CLAUDE_PLUGIN_DATA}`
+- **CI workflow** — GitHub Actions matrix (`ubuntu-latest`, `macos-latest`): shellcheck, lint-json, lint-frontmatter, bats smoke tests, plugin-mode/manual-mode parity gate, v2 vocabulary gate
+- **`userConfig.model_profile` knob** — single user-tunable config (`quality | balanced | budget`); exposed as `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE}` to hooks and subprocesses
+- **`config/quality-gates.txt`** — single source of truth for gate definitions; `post-compact.sh` reads from it
+
+### Changed
+
+- **Single clear workflow** — replaces the multi-command v1.x pipeline with one obvious arrow chain: `/godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship`
+- **Agent roster expanded to 12** — added `@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`
+- **Model/effort policy hardened** — code-writing agents (`@executor`, `@writer`, `@test-writer`) cap at `effort: high`; design/audit/read-only agents use `effort: xhigh`; all agents use `opus`/`sonnet`/`haiku` aliases, never pinned IDs
+- **Install/uninstall parity** — plugin-mode and manual-mode hook bindings, permissions, and timeouts are identical; CI parity gate enforces this on every commit
+- **Hook JSON construction** — all hooks use `jq -n --arg`/`--argjson` (never heredoc string interpolation) to prevent adversarial input corruption
+
 ## [1.6.0] - 2026-04-04
 
 ### Added
