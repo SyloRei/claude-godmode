@@ -161,6 +161,85 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
   [ "$output" = "opus high" ]
 }
 
+# --- unit 6: the four new agents across all three profiles (AC-4, AC-5) ---
+
+# balanced echoes the new agents' frontmatter model/effort (sonnet high).
+@test "balanced should echo sonnet high when agent is debugger" {
+  run "$MODEL" debugger balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+@test "balanced should echo sonnet high when agent is migration-engineer" {
+  run "$MODEL" migration-engineer balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+@test "balanced should echo sonnet high when agent is perf-engineer" {
+  run "$MODEL" perf-engineer balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+@test "balanced should echo sonnet high when agent is incident-responder" {
+  run "$MODEL" incident-responder balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+# budget maps the new agents to haiku default.
+@test "budget should map debugger to haiku default when profile is budget" {
+  run "$MODEL" debugger budget
+  [ "$status" -eq 0 ]
+  [ "$output" = "haiku default" ]
+}
+
+@test "budget should map migration-engineer to haiku default when profile is budget" {
+  run "$MODEL" migration-engineer budget
+  [ "$status" -eq 0 ]
+  [ "$output" = "haiku default" ]
+}
+
+@test "budget should map perf-engineer to haiku default when profile is budget" {
+  run "$MODEL" perf-engineer budget
+  [ "$status" -eq 0 ]
+  [ "$output" = "haiku default" ]
+}
+
+@test "budget should map incident-responder to haiku default when profile is budget" {
+  run "$MODEL" incident-responder budget
+  [ "$status" -eq 0 ]
+  [ "$output" = "haiku default" ]
+}
+
+# quality caps the code-writer carve-out (debugger, migration-engineer) at opus
+# high, and maps the non-carve-out agents (perf-engineer, incident-responder) to
+# opus xhigh.
+@test "quality should map debugger to opus high (code-writer carve-out)" {
+  run "$MODEL" debugger quality
+  [ "$status" -eq 0 ]
+  [ "$output" = "opus high" ]
+}
+
+@test "quality should map migration-engineer to opus high (code-writer carve-out)" {
+  run "$MODEL" migration-engineer quality
+  [ "$status" -eq 0 ]
+  [ "$output" = "opus high" ]
+}
+
+@test "quality should map perf-engineer to opus xhigh when agent is non-code-writer" {
+  run "$MODEL" perf-engineer quality
+  [ "$status" -eq 0 ]
+  [ "$output" = "opus xhigh" ]
+}
+
+@test "quality should map incident-responder to opus xhigh when agent is non-code-writer" {
+  run "$MODEL" incident-responder quality
+  [ "$status" -eq 0 ]
+  [ "$output" = "opus xhigh" ]
+}
+
 # AC-1: error exits for unknown agent and for an explicit bad profile arg.
 @test "should exit non-zero when agent is unknown" {
   run "$MODEL" nosuch balanced
