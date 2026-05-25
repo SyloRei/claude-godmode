@@ -52,6 +52,10 @@ done
 # GATES_RUNNER is your auto-detected per-gate dispatcher: it receives one gate's
 # text as $1, runs the project command that gate maps to, and exits 0 (pass) or
 # non-zero (fail). gates.sh reads config/quality-gates.txt and calls it per gate.
+# GATES_RUNNER must resolve to a single executable — a script path or a command
+# name on PATH — NOT a shell function (invisible to the child process) and NOT a
+# space-separated string like "bash runner.sh" (invoked as one token, so it
+# would fail to find that file). Point it at an executable runner script.
 GATES_RUNNER="$run_one_gate" bash "$GATES_SH"
 ```
 

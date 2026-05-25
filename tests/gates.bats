@@ -49,13 +49,22 @@ teardown() {
   chmod +x "$fail_lint"
 
   GATES_FILE="$GATES_FIXTURE" GATES_RUNNER="$fail_lint" run "$GATES"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"Lint passes"* ]]
 }
 
-@test "gates.sh exits non-zero when quality-gates.txt is absent" {
+@test "gates.sh exits 1 when quality-gates.txt is absent" {
   # Pin GATES_FILE at a path that does not exist so resolution fails.
   GATES_FILE="$TEST_HOME/does-not-exist.txt" GATES_RUNNER=true run "$GATES"
-  [ "$status" -ne 0 ]
+  [ "$status" -eq 1 ]
   [[ "$output" == *"not found"* ]]
+}
+
+@test "gates.sh reports every gate unevaluated and exits 1 when GATES_RUNNER is unset" {
+  # No GATES_RUNNER wired: each gate must be flagged unevaluated and the run
+  # must fail, so an unwired gate can never masquerade as a silent pass.
+  unset GATES_RUNNER
+  GATES_FILE="$GATES_FIXTURE" run "$GATES"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unevaluated"* ]]
 }

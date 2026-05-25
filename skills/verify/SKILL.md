@@ -84,12 +84,19 @@ Scope every lens to **unit $N's changes only** — the diff the unit produced, e
 **Coverage-delta check.** When the project produces a coverage value (the consumer's coverage tooling yields a baseline and a current figure), feed both to the bundled `coverage-diff.sh` to report the signed delta and flag a regression — deterministic evidence for the `test-reviewer` lens rather than an eyeballed guess. The script prints the signed delta (`+5` / `0` / `-5`) on stdout and exits non-zero when current coverage regressed beyond the tolerance. Resolve it across install modes:
 
 ```bash
+diff_sh=""
 for cand in \
   "${CLAUDE_PLUGIN_ROOT:-}/skills/verify/scripts/coverage-diff.sh" \
   "$HOME/.claude/skills/verify/scripts/coverage-diff.sh" \
   "skills/verify/scripts/coverage-diff.sh"; do
-  [ -n "$cand" ] && [ -x "$cand" ] && { "$cand" "$baseline" "$current"; break; }
+  [ -n "$cand" ] && [ -x "$cand" ] && { diff_sh="$cand"; break; }
 done
+if [ -n "$diff_sh" ]; then
+  "$diff_sh" "$baseline" "$current"
+else
+  # Make the skip visible — a missing script must not silently no-op the check.
+  >&2 echo "warning: coverage-diff.sh not found — skipping coverage-delta check"
+fi
 ```
 
 A non-zero exit means coverage regressed — a finding for `test-reviewer`, not a hard stop here (`/verify` is read-only).

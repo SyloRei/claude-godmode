@@ -127,12 +127,17 @@ verdict=$(
   awk -v b="$baseline" -v c="$current" -v t="$tolerance" '
     BEGIN {
       delta = c - b
-      # Format: drop a trailing ".0" so "5.0" prints as "5", but keep real
-      # decimals (e.g. -2.5). Sign-prefix non-negative values.
-      s = sprintf("%g", delta)
-      if (delta >= 0) s = "+" s
-      # "+0" reads oddly; normalise zero to "0".
-      if (s == "+0" || s == "-0") s = "0"
+      # Format with a fixed number of decimals (never %g, which emits
+      # scientific notation like "1e-05" for tiny deltas and breaks the
+      # +5 / 0 / -5 stdout contract). %f gives plain decimal across the
+      # coverage range (~ -100..100); then trim trailing zeros and any
+      # trailing dot so integers print without a decimal part ("5"), real
+      # decimals keep theirs ("2.5"), and there is never a dangling ".".
+      s = sprintf("%.6f", delta)
+      sub(/\.?0+$/, "", s)
+      # Sign-prefix non-negative values; "+0"/"-0" normalise to "0".
+      if (s == "0" || s == "-0") s = "0"
+      else if (delta > 0) s = "+" s
       print s
       # Regression when current < baseline - tolerance.
       if (c < b - t) print "1"; else print "0"

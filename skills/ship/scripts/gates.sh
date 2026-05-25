@@ -33,6 +33,11 @@
 #                   every gate is reported UNEVALUATED and the run fails (a
 #                   caller must wire real gate commands; an unevaluated gate is
 #                   never a silent pass).
+#                   GATES_RUNNER must resolve to a SINGLE executable — a script
+#                   path or a command name on PATH — NOT a shell function (those
+#                   are invisible to this child process) and NOT a space-
+#                   separated command string like "bash runner.sh" (it is
+#                   invoked as one token and would fail to find that file).
 #
 #     GATES_FILE    Optional override of the resolved config path (used by
 #                   tests to point at a fixture). Bypasses resolution when set.
