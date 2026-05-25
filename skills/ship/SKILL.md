@@ -14,6 +14,14 @@ Take a verified work unit to a pull request: run the canonical quality gates, th
 
 ---
 
+## Flags
+
+- **`--no-push`** (aliases: `--dry-run`, `--local`) — run every quality gate and prepare git readiness (commit), then **stop before the push and the PR**. Draft and print the PR title/body for review, but do **not** run `git push` or `gh pr create`, and do **not** record `status=shipped`. Use this to land a verified, committed, gate-green branch locally without publishing it.
+
+When `--no-push` is set the confirmation prompt is moot — there is nothing side-effecting to confirm — so skip it and run the gates and git readiness straight through.
+
+---
+
 ## Confirm by default
 
 `/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then wait for explicit confirmation before pushing.
@@ -77,6 +85,8 @@ Re-run all gates after any fix until every one passes.
 ---
 
 ## Step 3: Push and open the PR
+
+**If `--no-push` is set:** stop here. Draft the PR title/body (see below) and print it for the user, then report that the branch is gate-green and committed but **not** pushed — skip Step 4 (do not record `status=shipped`). Tell the user to re-run `/ship` without `--no-push` when ready to publish.
 
 After confirmation (or immediately, in Auto Mode):
 
