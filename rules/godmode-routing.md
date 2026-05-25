@@ -38,6 +38,10 @@ skill's body says to spawn an agent, spawn it — never do the agent's job inlin
 | Test-quality review | `@test-reviewer` |
 | Security audit | `@security-auditor` |
 | Documentation authoring | `@doc-writer` |
+| Debugging / root-cause a failure (delegated; `/debug` skill still owns the workflow) | `@debugger` |
+| Performance analysis / profiling | `@perf-engineer` |
+| Incident response / timeline reconstruction | `@incident-responder` |
+| Schema / dependency / framework migration | `@migration-engineer` |
 
 ## Skill → Agent delegation map
 
@@ -77,6 +81,10 @@ substitute a built-in agent:
 | @test-reviewer | `claude-godmode:test-reviewer` | — |
 | @security-auditor | `claude-godmode:security-auditor` | — |
 | @doc-writer | `claude-godmode:doc-writer` | — |
+| @debugger | `claude-godmode:debugger` | — |
+| @perf-engineer | `claude-godmode:perf-engineer` | — |
+| @incident-responder | `claude-godmode:incident-responder` | — |
+| @migration-engineer | `claude-godmode:migration-engineer` | — |
 
 Built-in agents (`Explore`, `general-purpose`, `Plan`) must never replace a
 godmode agent. `@researcher` is NOT the built-in `Explore` — it returns
