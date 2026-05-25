@@ -1,0 +1,173 @@
+#!/usr/bin/env bash
+# godmode-mission — lifecycle helper for episodic named missions.
+# Manages .planning/missions/NN-<slug>/ subtrees (each with its own
+# ROADMAP.md + briefs/) and keeps the active mission pointer in sync via
+# godmode-state (mission_id, mission_name, active_unit).
+#
+# Usage:
+#   godmode-mission start <feature name...>
+#   godmode-mission current
+#
+# start <name>: slugify the name. If a mission dir for that slug already
+#   exists, switch to it (sets mission_id/mission_name, leaves active_unit
+#   unchanged). Otherwise allocate the next NN, scaffold the mission dir,
+#   seed a header-only ROADMAP.md, set mission_id/mission_name, and reset
+#   active_unit to 1.
+# current: print the active mission_id.
+#
+# .planning/ is resolved relative to the current working directory (the
+# consumer repo root), matching godmode-state. godmode-state itself is
+# resolved relative to this script's own bin/ dir so it works from any CWD.
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. In-place edits use the
+# BSD-safe pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
+
+set -euo pipefail
+
+PLANNING_DIR=".planning"
+MISSIONS_DIR="${PLANNING_DIR}/missions"
+
+# Resolve the sibling godmode-state binary relative to this script's dir,
+# so it works regardless of the caller's CWD.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+STATE_BIN="${SCRIPT_DIR}/godmode-state"
+
+usage() {
+  echo "usage: godmode-mission start <feature name...>" >&2
+  echo "       godmode-mission current" >&2
+}
+
+# slugify <text...> — lowercase, non-alphanumerics to '-', trim leading/
+# trailing '-'. Uses tr (no ${var,,}, which is bash 4+).
+slugify() {
+  printf '%s' "$*" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-*//' -e 's/-*$//'
+}
+
+# find_existing <slug> — print "NN-slug" of an existing mission dir for this
+# slug (any NN), or nothing. Matches the trailing slug exactly.
+find_existing() {
+  local slug="$1"
+  if [ ! -d "$MISSIONS_DIR" ]; then
+    return 0
+  fi
+  local dir name
+  for dir in "$MISSIONS_DIR"/*; do
+    [ -d "$dir" ] || continue
+    name=$(basename "$dir")
+    # name is NN-<rest>; strip leading digits + first '-' and compare.
+    case "$name" in
+      [0-9][0-9]-*)
+        if [ "${name#[0-9][0-9]-}" = "$slug" ]; then
+          printf '%s\n' "$name"
+          return 0
+        fi
+        ;;
+    esac
+  done
+}
+
+# next_nn — print the next zero-padded mission number (max existing + 1, or 01).
+next_nn() {
+  local max=0
+  if [ -d "$MISSIONS_DIR" ]; then
+    local dir name num
+    for dir in "$MISSIONS_DIR"/*; do
+      [ -d "$dir" ] || continue
+      name=$(basename "$dir")
+      case "$name" in
+        [0-9][0-9]-*)
+          num=${name%%-*}
+          # Strip a single leading zero for base-10 arithmetic safety.
+          num=$(printf '%s' "$num" | sed -e 's/^0*//')
+          [ -n "$num" ] || num=0
+          if [ "$num" -gt "$max" ]; then
+            max="$num"
+          fi
+          ;;
+      esac
+    done
+  fi
+  printf '%02d\n' "$((max + 1))"
+}
+
+# seed_roadmap <file> <display name> — write a header-only ROADMAP.md.
+seed_roadmap() {
+  local file="$1"
+  local name="$2"
+  {
+    echo "# Roadmap: ${name}"
+    echo ""
+    echo "| # | Unit | Status |"
+    echo "|---|------|--------|"
+  } > "$file"
+}
+
+cmd_start() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+  local display="$*"
+  local slug
+  slug=$(slugify "$display")
+  if [ -z "$slug" ]; then
+    echo "error: feature name produced an empty slug" >&2
+    usage
+    exit 1
+  fi
+
+  local existing
+  existing=$(find_existing "$slug")
+  if [ -n "$existing" ]; then
+    # Switch to the existing mission; leave active_unit unchanged.
+    "$STATE_BIN" set mission_id "$existing"
+    "$STATE_BIN" set mission_name "$display"
+    echo "switched to mission ${existing}"
+    return 0
+  fi
+
+  # New mission: allocate NN, scaffold dirs, seed roadmap, reset active_unit.
+  local nn id dir
+  nn=$(next_nn)
+  id="${nn}-${slug}"
+  dir="${MISSIONS_DIR}/${id}"
+  mkdir -p "${dir}/briefs"
+  seed_roadmap "${dir}/ROADMAP.md" "$display"
+  "$STATE_BIN" set mission_id "$id"
+  "$STATE_BIN" set mission_name "$display"
+  "$STATE_BIN" set active_unit "1"
+  echo "created mission ${id}"
+}
+
+cmd_current() {
+  "$STATE_BIN" get mission_id
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    start)
+      cmd_start "$@"
+      ;;
+    current)
+      if [ "$#" -ne 0 ]; then usage; exit 1; fi
+      cmd_current
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
