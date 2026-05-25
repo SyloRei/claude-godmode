@@ -17,7 +17,8 @@
 #
 # .planning/ is resolved relative to the current working directory (the
 # consumer repo root), matching godmode-state. godmode-state itself is
-# resolved relative to this script's own bin/ dir so it works from any CWD.
+# resolved relative to this script's source path (${BASH_SOURCE[0]}) so it
+# works from any CWD and survives symlink/PATH invocation.
 #
 # Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
 # no associative arrays, no GNU-only flags. In-place edits use the
@@ -28,9 +29,10 @@ set -euo pipefail
 PLANNING_DIR=".planning"
 MISSIONS_DIR="${PLANNING_DIR}/missions"
 
-# Resolve the sibling godmode-state binary relative to this script's dir,
-# so it works regardless of the caller's CWD.
-SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+# Resolve the sibling godmode-state binary relative to this script's source
+# path, so it works regardless of the caller's CWD and survives symlink/PATH
+# invocation (repo convention — see tests/test_helper.bash).
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 STATE_BIN="${SCRIPT_DIR}/godmode-state"
 
 usage() {
@@ -57,10 +59,11 @@ find_existing() {
   for dir in "$MISSIONS_DIR"/*; do
     [ -d "$dir" ] || continue
     name=$(basename "$dir")
-    # name is NN-<rest>; strip leading digits + first '-' and compare.
+    # name is NN-<rest> (NN is one-or-more digits — supports ≥100); strip the
+    # numeric prefix + first '-' with BSD/POSIX-safe BRE and compare the slug.
     case "$name" in
-      [0-9][0-9]-*)
-        if [ "${name#[0-9][0-9]-}" = "$slug" ]; then
+      [0-9]*-*)
+        if [ "$(printf '%s' "$name" | sed 's/^[0-9]\{1,\}-//')" = "$slug" ]; then
           printf '%s\n' "$name"
           return 0
         fi
@@ -78,7 +81,7 @@ next_nn() {
       [ -d "$dir" ] || continue
       name=$(basename "$dir")
       case "$name" in
-        [0-9][0-9]-*)
+        [0-9]*-*)
           num=${name%%-*}
           # Strip a single leading zero for base-10 arithmetic safety.
           num=$(printf '%s' "$num" | sed -e 's/^0*//')
