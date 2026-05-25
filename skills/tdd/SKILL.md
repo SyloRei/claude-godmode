@@ -94,11 +94,11 @@ Cycle N: [test name]
 After the behavior list is generated (end of "Workflow Per Feature" step 1), decide how the work re-enters the workflow spine:
 
 - **Run all cycles now (default).** Drive each behavior through RED-GREEN-REFACTOR immediately, committing after each GREEN. Best when the feature is small and well-scoped.
-- **Defer as a work unit.** When the feature is large (4+ behaviors) and deserves its own planning pass, append a work unit to `.planning/ROADMAP.md` describing the feature and its behaviors, then pick it up with `/brief N`. The brief captures the why + what, `/plan N` breaks it down into the same behavior list, and `/build N` drives the cycles.
+- **Defer as a work unit.** When the feature is large (4+ behaviors) and deserves its own planning pass, append a work unit to `.planning/missions/<mission_id>/ROADMAP.md` describing the feature and its behaviors, then pick it up with `/brief N`. The brief captures the why + what, `/plan N` breaks it down into the same behavior list, and `/build N` drives the cycles.
 
 In Auto Mode, run all cycles now unless the feature clearly needs its own planning pass — then append a work unit and say so inline.
 
-**Appended work-unit note (for `.planning/ROADMAP.md`):**
+**Appended work-unit note (for `.planning/missions/<mission_id>/ROADMAP.md`):**
 
 ```
 - TDD: [feature name] — N behaviors, each one RED-GREEN-REFACTOR cycle.
@@ -113,4 +113,4 @@ In Auto Mode, run all cycles now unless the feature clearly needs its own planni
 - **/refactor** — for refactoring existing code without adding features
 - **/debug** — if a test reveals a bug, switch to debugging protocol
 
-**Spine:** decompose into behaviors, then either run the cycles now (`/ship`) or append a work unit to `.planning/ROADMAP.md` and resume the spine at `/brief N`.
+**Spine:** decompose into behaviors, then either run the cycles now (`/ship`) or append a work unit to `.planning/missions/<mission_id>/ROADMAP.md` and resume the spine at `/brief N`.

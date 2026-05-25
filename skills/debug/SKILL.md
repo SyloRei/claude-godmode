@@ -104,11 +104,11 @@ H3: [hypothesis] — confirm by [check]
 Once the root cause is found (end of Step 3), decide how the fix re-enters the workflow spine:
 
 - **Fix now (default).** Apply the fix immediately, write the regression test, run quality gates, commit. Best for small, well-understood bugs.
-- **Defer as a work unit.** When the fix is larger or should be planned alongside other work, append a new work unit to `.planning/ROADMAP.md` describing the bug and root cause, then pick it up later with `/brief N`. The brief captures the why + what, `/plan N` breaks it down, and `/build N` ships it.
+- **Defer as a work unit.** When the fix is larger or should be planned alongside other work, append a new work unit to `.planning/missions/<mission_id>/ROADMAP.md` describing the bug and root cause, then pick it up later with `/brief N`. The brief captures the why + what, `/plan N` breaks it down, and `/build N` ships it.
 
 In Auto Mode, fix now unless the bug clearly needs design work — then append a work unit and say so inline.
 
-**Appended work-unit note (for `.planning/ROADMAP.md`):**
+**Appended work-unit note (for `.planning/missions/<mission_id>/ROADMAP.md`):**
 
 ```
 - Fix: [root cause summary] — bug found by /debug.
@@ -123,4 +123,4 @@ In Auto Mode, fix now unless the bug clearly needs design work — then append a
 - **@test-writer** — use for comprehensive test coverage after the fix
 - **/refactor** — if the fix reveals structural issues, refactor separately
 
-**Spine:** find the root cause, then either fix now (`/ship`) or append a work unit to `.planning/ROADMAP.md` and resume the spine at `/brief N`.
+**Spine:** find the root cause, then either fix now (`/ship`) or append a work unit to `.planning/missions/<mission_id>/ROADMAP.md` and resume the spine at `/brief N`.

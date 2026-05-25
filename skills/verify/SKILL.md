@@ -45,7 +45,8 @@ Find the brief directory for unit **$N** and read its acceptance criteria. `NN` 
 
 ```bash
 NN=$(printf '%02d' "$N")
-brief_dir=$(ls -d .planning/briefs/${NN}-* 2>/dev/null | head -1)
+mission_id=$(bin/godmode-state get mission_id)
+brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
 ```
 
 If no brief directory for `$N` exists, stop and tell the user to run `/brief $N` first — there are no goals to verify against.

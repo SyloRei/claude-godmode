@@ -102,7 +102,7 @@ esac
 git push -u origin "$branch"
 ```
 
-Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit`, then glob `.planning/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
+Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/missions/<mission_id>/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit` and `mission_id=$(bin/godmode-state get mission_id)`, then glob `.planning/missions/${mission_id}/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
 
 ```bash
 gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
@@ -110,7 +110,7 @@ gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
 - What this work unit delivers and why (2-3 bullets)
 
 ## Brief
-- .planning/briefs/NN-name/BRIEF.md (the why + what + spec)
+- .planning/missions/<mission_id>/briefs/NN-name/BRIEF.md (the why + what + spec)
 
 ## Changes
 - The concrete changes in this branch
