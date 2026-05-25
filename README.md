@@ -61,7 +61,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
 
-Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 14 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 18 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
 
 The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
@@ -94,7 +94,7 @@ The rules that drive God-Mode's behavior are injected automatically by the Sessi
 
 ```
 You:    /godmode
-Claude: God-Mode v2.0.0 · 10 skills, 14 agents
+Claude: God-Mode v2.0.0 · 10 skills, 18 agents
         Where: uninitialized — no roadmap yet
         Next:  /mission   (then /brief 1)
         Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
