@@ -26,9 +26,10 @@
   "license": "MIT",
   "userConfig": {
     "model_profile": {
+      "title": "Model profile",
       "type": "string",
       "default": "balanced",
-      "options": ["quality", "balanced", "budget"],
+      "enum": ["quality", "balanced", "budget"],
       "description": "Model/effort preset for all agents. 'quality' = opus + xhigh (code-writing agents stay capped at effort:high); 'balanced' = each agent's own frontmatter values; 'budget' = haiku + default effort. See README FAQ for the full preset table and feasibility caveat."
     }
   }
