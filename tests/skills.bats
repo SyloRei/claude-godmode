@@ -40,19 +40,26 @@ load test_helper
   [[ "$output" == *"= 16 user-facing command(s)"* ]]
 }
 
-@test "commands/adr.md exists (unit 8 command addition)" {
+# Pin the cap value itself: the count test above stays green if someone raises
+# the cap to fit a new command, so assert the boundary separately.
+@test "surface cap is pinned at 17 when off-spine commands are added" {
+  run grep -Eq '^CAP=17$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
+  [ "$status" -eq 0 ]
+}
+
+@test "commands/adr.md exists when off-spine commands are added" {
   [ -f "$PLUGIN_ROOT/commands/adr.md" ]
 }
 
-@test "commands/changelog.md exists (unit 8 command addition)" {
+@test "commands/changelog.md exists when off-spine commands are added" {
   [ -f "$PLUGIN_ROOT/commands/changelog.md" ]
 }
 
-@test "commands/pr-describe.md exists (unit 8 command addition)" {
+@test "commands/pr-describe.md exists when off-spine commands are added" {
   [ -f "$PLUGIN_ROOT/commands/pr-describe.md" ]
 }
 
-@test "lint-frontmatter.sh exits 0 with the new command frontmatter" {
+@test "lint-frontmatter.sh exits 0 when command frontmatter is valid" {
   run bash "$PLUGIN_ROOT/scripts/lint-frontmatter.sh"
   [ "$status" -eq 0 ]
 }

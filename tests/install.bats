@@ -113,6 +113,14 @@ teardown() {
   [ -f "$TEST_HOME/.claude/commands/godmode.md" ]
 }
 
+@test "install installs the off-spine command files adr/changelog/pr-describe (unit 8)" {
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_HOME/.claude/commands/adr.md" ]
+  [ -f "$TEST_HOME/.claude/commands/changelog.md" ]
+  [ -f "$TEST_HOME/.claude/commands/pr-describe.md" ]
+}
+
 @test "install writes a valid settings.json with a hooks block" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]

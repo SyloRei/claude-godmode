@@ -29,12 +29,18 @@ spawn agents and is not part of the spine.
 
 ```bash
 LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
-RANGE=${LAST_TAG:+$LAST_TAG..HEAD}
-git log --oneline ${RANGE:-} 
-git diff --stat ${LAST_TAG:+$LAST_TAG..HEAD}
+if [ -n "$LAST_TAG" ]; then
+  RANGE="$LAST_TAG..HEAD"                       # changes since the last release
+else
+  ROOT=$(git rev-list --max-parents=0 HEAD | head -1)
+  RANGE="$ROOT..HEAD"                           # no tag yet — whole history
+fi
+git log --oneline "$RANGE"
+git diff --stat "$RANGE"
 ```
 
-If there is no tag yet, summarize the whole history.
+When there is no tag yet, `RANGE` spans the root commit to `HEAD`, so both
+commands cover the whole history (never the uncommitted working tree).
 
 ## 2. Group the changes
 

@@ -22,9 +22,9 @@ table is canonical — when you reach for a capability, look it up here.
 | Draft a PR description from the branch | `/pr-describe` | command |
 
 `/adr`, `/changelog`, and `/pr-describe` are **off-spine plain commands** —
-reactive, one-shot helpers like `/debug` and `/refactor`, not spine steps. They
-delegate to no agents; `/changelog` is a standalone helper and does **not**
-replace `/ship`'s release/changelog step.
+reactive, one-shot helpers like `/debug` and `/refactor`, not spine steps. Unlike
+those two, these three do the work inline and delegate to no agents; `/changelog`
+is a standalone helper and does **not** replace `/ship`'s release/changelog step.
 
 Skills own the **workflow**. Agents own the **work** a skill delegates. When a
 skill's body says to spawn an agent, spawn it — never do the agent's job inline.
