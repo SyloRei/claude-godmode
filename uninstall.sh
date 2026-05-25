@@ -63,16 +63,29 @@ echo ""
 
 # 1. Remove rules
 info "Removing godmode rules..."
+
+# 1a. Legacy global rules: pre-unit-3 installs copied rules into the auto-loaded
+# $CLAUDE_DIR/rules/. We no longer install there, but clean up any leftovers.
+# The glob is guarded so an empty match (no godmode-*.md present) is a no-op and
+# does not abort under `set -euo pipefail` — uninstall stays idempotent.
 if [ -d "$CLAUDE_DIR/rules" ]; then
   for rule in "$CLAUDE_DIR"/rules/godmode-*.md; do
     [ -f "$rule" ] && remove_file "$rule"
   done
 fi
 
-# Remove rules/ dir if empty after cleanup
+# Remove legacy rules/ dir if empty after cleanup
 if [ -d "$CLAUDE_DIR/rules" ] && [ -z "$(ls -A "$CLAUDE_DIR/rules" 2>/dev/null)" ]; then
   rmdir "$CLAUDE_DIR/rules"
   info "Removed empty rules/ directory"
+fi
+
+# 1b. Private rules dir (current path read by the SessionStart hook).
+remove_dir "$CLAUDE_DIR/godmode/rules"
+# Remove the godmode/ parent if nothing else lives there.
+if [ -d "$CLAUDE_DIR/godmode" ] && [ -z "$(ls -A "$CLAUDE_DIR/godmode" 2>/dev/null)" ]; then
+  rmdir "$CLAUDE_DIR/godmode"
+  info "Removed empty godmode/ directory"
 fi
 
 # 2. Remove version markers (legacy + v2 persistent data-dir markers)

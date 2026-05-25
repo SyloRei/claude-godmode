@@ -2,7 +2,8 @@
 set -euo pipefail
 
 # claude-godmode installer v2
-# Installs rules/ files to ~/.claude/rules/ (never touches CLAUDE.md)
+# Installs rules/ files to the PRIVATE ~/.claude/godmode/rules/ (read by the
+# SessionStart hook, NOT auto-loaded by Claude Code). Never touches CLAUDE.md.
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode (backward compat)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -68,13 +69,13 @@ echo ""
 info "Mode: ${MODE}"
 echo ""
 
-# --- Backup (rules/ and settings.json only) ---
+# --- Backup (settings.json only) ---
+# Rules are no longer copied to ~/.claude/rules/, so there is nothing global to
+# back up there; the private ~/.claude/godmode/rules/ copy is regenerated from
+# source on every install and is never user-customized.
 info "Creating backup at $BACKUP_DIR"
 mkdir -p "$BACKUP_DIR"
 
-if [ -d "$CLAUDE_DIR/rules" ]; then
-  cp -r "$CLAUDE_DIR/rules" "$BACKUP_DIR/rules"
-fi
 if [ -f "$CLAUDE_DIR/settings.json" ]; then
   cp "$CLAUDE_DIR/settings.json" "$BACKUP_DIR/settings.json"
 fi
@@ -86,7 +87,7 @@ if [ -f "$CLAUDE_DIR/CLAUDE.md" ]; then
   if grep -q "Quality Gates (Canonical" "$CLAUDE_DIR/CLAUDE.md" 2>/dev/null; then
     echo ""
     warn "Found godmode v1.x CLAUDE.md"
-    warn "Your rules are now in ~/.claude/rules/godmode-*.md"
+    warn "Rules are now injected by the SessionStart hook (private copy in ~/.claude/godmode/rules/)"
     echo ""
     read -rp "  Remove the old CLAUDE.md? (backed up first) [y/N] " migrate_confirm || migrate_confirm=""
     echo ""
@@ -116,26 +117,19 @@ if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
   fi
 fi
 
-# --- Rules ---
+# --- Rules (PRIVATE copy for the SessionStart hook) ---
+# Rules are NOT copied to $CLAUDE_DIR/rules/ anymore (that path is auto-loaded
+# by Claude Code and would double-inject). Instead they live in the pinned
+# private path $CLAUDE_DIR/godmode/rules/, which the SessionStart hook reads via
+# bin/godmode-rules. The copy is regenerated from source every install; there is
+# no backup/restore or drift-detection — source is canonical.
 RULES_SRC="$SCRIPT_DIR/rules"
+PRIVATE_RULES_DIR="$CLAUDE_DIR/godmode/rules"
 if [ -d "$RULES_SRC" ]; then
   RULES_COUNT=$(find "$RULES_SRC" -maxdepth 1 -name "godmode-*.md" | wc -l | tr -d ' ')
-  # Check if any existing rule files have been customized (differ from source)
-  CUSTOMIZED=0
-  for rule in "$RULES_SRC"/godmode-*.md; do
-    rule_name="$(basename "$rule")"
-    dest="$CLAUDE_DIR/rules/$rule_name"
-    if [ -f "$dest" ] && ! diff -q "$rule" "$dest" >/dev/null 2>&1; then
-      CUSTOMIZED=$((CUSTOMIZED + 1))
-    fi
-  done
-  if [ "$CUSTOMIZED" -gt 0 ]; then
-    warn "${CUSTOMIZED} rule file(s) have local customizations that will be overwritten"
-    warn "Originals are backed up at $BACKUP_DIR/rules/"
-  fi
-  info "Installing rules (${RULES_COUNT} files)"
-  mkdir -p "$CLAUDE_DIR/rules"
-  cp "$RULES_SRC"/godmode-*.md "$CLAUDE_DIR/rules/"
+  info "Installing rules (${RULES_COUNT} files) to private path $PRIVATE_RULES_DIR"
+  mkdir -p "$PRIVATE_RULES_DIR"
+  cp "$RULES_SRC"/godmode-*.md "$PRIVATE_RULES_DIR/"
 else
   warn "No rules/ directory found in source — skipping rules install"
 fi
@@ -266,7 +260,7 @@ info "Installation complete! (v${VERSION})"
 echo ""
 echo "  Installed:"
 if [ -d "$RULES_SRC" ]; then
-  echo "    - ${RULES_COUNT} rules (godmode-*.md in ~/.claude/rules/)"
+  echo "    - ${RULES_COUNT} rules (godmode-*.md in ~/.claude/godmode/rules/, injected by SessionStart hook)"
 fi
 echo "    - Settings merged (permissions, hooks, statusline)"
 
