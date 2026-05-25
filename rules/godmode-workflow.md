@@ -35,7 +35,7 @@ the next command:
 Not every task starts at `/mission`. Choose the right entry:
 
 ```
-New to a codebase   → /explore-repo → /mission → /brief N → /plan N → /build N → /verify N → /ship
+New to a codebase   → /onboard → /mission → /brief N → /plan N → /build N → /verify N → /ship
 Feature from scratch → /mission → /brief N → /plan N → /build N → /verify N → /ship
 Found a bug         → /debug → fold the fix into /brief N (or /build N directly)
 Need to refactor    → /refactor → fold steps into /plan N → /build N
@@ -51,6 +51,6 @@ TDD a new behavior  → /tdd → red tests → /build N to make them green
 /verify N reports MISSING coverage → /plan N to add the gap → /build N
 ```
 
-Helpers (`/debug`, `/tdd`, `/refactor`, `/explore-repo`) feed the spine —
+Helpers (`/debug`, `/tdd`, `/refactor`, `/onboard`) feed the spine —
 they never replace it. See `rules/godmode-routing.md` for the canonical
 command-to-owner and skill-to-agent maps.

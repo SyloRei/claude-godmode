@@ -58,5 +58,5 @@ You have persistent project memory (`memory: project`). At the end of every turn
 
 - For design decisions based on your findings → suggest `@architect`
 - For security concerns found during research → suggest `@security-auditor`
-- For deep codebase understanding → suggest `/explore-repo` skill
+- For deep codebase understanding → suggest `/onboard` skill
 - For bug investigation → findings feed into `/debug` skill

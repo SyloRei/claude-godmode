@@ -63,7 +63,7 @@ else
 fi
 ```
 
-**Cold start** (no `.planning/STATE.md`, or no state recorded): the project has no recorded direction. The next command is `/mission`; after that, `/brief 1`.
+**Cold start** (no `.planning/STATE.md`, or no state recorded): the project has no recorded direction. For an unfamiliar repo, recommend `/onboard` first to orient, then `/mission`; after that, `/brief 1`.
 
 **Warm start**: `next_command` from state *is* the answer. If it is empty but `active_unit` is set, infer from `status` along the spine `/mission → /brief N → /plan N → /build N → /verify N → /ship`.
 
