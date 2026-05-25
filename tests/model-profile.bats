@@ -4,8 +4,9 @@
 #
 # The resolver prints "<model> <effort>" on one line. Profiles:
 #   balanced -> echoes the agent's own frontmatter model/effort
-#   quality  -> code-writers {writer,executor,test-writer} capped at "opus high",
-#               every other agent -> "opus xhigh"
+#   quality  -> code-writers {writer,executor,test-writer,debugger,
+#               migration-engineer} capped at "opus high", every other
+#               agent -> "opus xhigh"
 #   budget   -> any agent -> "haiku default"
 # Profile resolution: no profile arg reads CLAUDE_PLUGIN_OPTION_MODEL_PROFILE;
 # unset/empty/invalid env -> balanced (silent, exit 0). A bad profile passed as
@@ -161,7 +162,7 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
   [ "$output" = "opus high" ]
 }
 
-# --- unit 6: the four new agents across all three profiles (AC-4, AC-5) ---
+# AC-4, AC-5: the four new agents (unit 6) across all three profiles
 
 # balanced echoes the new agents' frontmatter model/effort (sonnet high).
 @test "balanced should echo sonnet high when agent is debugger" {
@@ -184,6 +185,14 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
 
 @test "balanced should echo sonnet high when agent is incident-responder" {
   run "$MODEL" incident-responder balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+# env-fallback: a new agent with no profile arg and unset env resolves to balanced.
+@test "no profile arg should resolve a new agent via the balanced env-fallback" {
+  unset CLAUDE_PLUGIN_OPTION_MODEL_PROFILE
+  run "$MODEL" debugger
   [ "$status" -eq 0 ]
   [ "$output" = "sonnet high" ]
 }
@@ -216,13 +225,13 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
 # quality caps the code-writer carve-out (debugger, migration-engineer) at opus
 # high, and maps the non-carve-out agents (perf-engineer, incident-responder) to
 # opus xhigh.
-@test "quality should map debugger to opus high (code-writer carve-out)" {
+@test "quality should map debugger to opus high when agent is a code-writer" {
   run "$MODEL" debugger quality
   [ "$status" -eq 0 ]
   [ "$output" = "opus high" ]
 }
 
-@test "quality should map migration-engineer to opus high (code-writer carve-out)" {
+@test "quality should map migration-engineer to opus high when agent is a code-writer" {
   run "$MODEL" migration-engineer quality
   [ "$status" -eq 0 ]
   [ "$output" = "opus high" ]

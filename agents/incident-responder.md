@@ -2,10 +2,10 @@
 name: incident-responder
 description: "Incident responder that reconstructs the timeline, assesses blast radius, and recommends remediation. Use for: production incidents, outages, regressions in the wild, post-incident analysis. Read-only — analyzes and reports, does not apply fixes."
 model: sonnet
-effort: high
 tools: Read, Grep, Glob, Bash, WebSearch
 disallowedTools: Write, Edit
 memory: project
+effort: high
 maxTurns: 30
 ---
 

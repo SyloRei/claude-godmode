@@ -2,10 +2,10 @@
 name: perf-engineer
 description: "Performance engineer that profiles code, identifies bottlenecks, and recommends optimizations. Use for: latency/throughput analysis, hotspot identification, algorithmic complexity review, memory/allocation analysis. Read-only — analyzes and reports, does not apply changes."
 model: sonnet
-effort: high
 tools: Read, Grep, Glob, Bash
 disallowedTools: Write, Edit
 memory: project
+effort: high
 maxTurns: 30
 ---
 

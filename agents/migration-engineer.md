@@ -32,6 +32,10 @@ You treat backward compatibility and rollback as first-class requirements. A mig
 - Provide forward and rollback instructions for any data or schema change
 
 ### 4. VERIFY
+- Run the full quality-gate suite (below) after the final step, not just the per-step tests
+- Confirm every consumer mapped in ASSESS still works against the new shape
+- Exercise the rollback path once to prove it reverses cleanly
+- Document the forward and rollback instructions in the output
 
 ## Quality gates (Canonical — from godmode-quality.md)
 
