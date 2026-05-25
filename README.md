@@ -312,6 +312,16 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 | **SessionEnd** | Conversation ends | Writes install marker and last-version-seen to plugin data directory |
 | **StatusLine** | Continuous | Shows context %, model, cost, project, branch (run `/godmode statusline` to enable) |
 
+## Output Style
+
+The plugin ships a `godmode-terse` output style: a bottom-line-up-front, severity-labeled, no-preamble response mode that leads with the answer or action and drops filler.
+
+It is **opt-in** -- not the default. Activate it for the current session with:
+
+```
+/output-style godmode-terse
+```
+
 ## Bundled MCP Servers
 
 Claude God-Mode bundles a `.mcp.json` referenced from `.claude-plugin/plugin.json`, so three MCP servers register automatically when the plugin is enabled. They are `npx`-based stdio servers that spawn on first use.
