@@ -4,7 +4,7 @@ description: "Check a built unit goal-backward: classify every brief acceptance 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Grep, Glob, Bash(bin/godmode-model*), Bash(*/bin/godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*)
+allowed-tools: Read, Grep, Glob, Bash(bin/godmode-model*), Bash(*/bin/godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*), Bash(*/skills/verify/scripts/coverage-diff.sh*), Bash(skills/verify/scripts/coverage-diff.sh*)
 ---
 
 # Verify
@@ -80,6 +80,19 @@ Scope every lens to **unit $N's changes only** — the diff the unit produced, e
 - `perf-reviewer` — hot paths, needless work, allocations, N+1 / blocking calls.
 - `convention-reviewer` — adherence to the repo's detected patterns and naming.
 - `test-reviewer` — test coverage, meaningful assertions, missing edge/error cases.
+
+**Coverage-delta check.** When the project produces a coverage value (the consumer's coverage tooling yields a baseline and a current figure), feed both to the bundled `coverage-diff.sh` to report the signed delta and flag a regression — deterministic evidence for the `test-reviewer` lens rather than an eyeballed guess. The script prints the signed delta (`+5` / `0` / `-5`) on stdout and exits non-zero when current coverage regressed beyond the tolerance. Resolve it across install modes:
+
+```bash
+for cand in \
+  "${CLAUDE_PLUGIN_ROOT:-}/skills/verify/scripts/coverage-diff.sh" \
+  "$HOME/.claude/skills/verify/scripts/coverage-diff.sh" \
+  "skills/verify/scripts/coverage-diff.sh"; do
+  [ -n "$cand" ] && [ -x "$cand" ] && { "$cand" "$baseline" "$current"; break; }
+done
+```
+
+A non-zero exit means coverage regressed — a finding for `test-reviewer`, not a hard stop here (`/verify` is read-only).
 
 **Shared finding schema.** Each lens reports every finding as a structured record so findings merge cleanly:
 
