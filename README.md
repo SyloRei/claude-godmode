@@ -32,6 +32,7 @@ Claude God-Mode is a Claude Code plugin that ships rules (focused config files i
 - [Why Claude God-Mode?](#why-claude-god-mode)
 - [Getting Started](#getting-started)
 - [Workflow](#workflow)
+- [Missions](#missions)
 - [Agents](#agents)
 - [Skills](#skills)
 - [Standalone Workflows](#standalone-workflows)
@@ -187,6 +188,42 @@ Claude: [goal-backward check — each criterion: COVERED / PARTIAL / MISSING]
 You:    /ship
 Claude: [runs quality gates, pushes, creates PR, returns URL]
 ```
+
+## Missions
+
+A **mission** is a named episodic feature cycle -- one initiative, from charter to merged PR. You finish one mission, then start the next under a fresh name. Running [`/mission`](#skills) with a feature name create-or-switches to that mission and makes it the active context for the rest of the spine (`/brief N → /plan N → /build N → /verify N → /ship`).
+
+Crucially, **unit and brief numbers reset to 1 per mission** -- "brief 1" always means the first brief of the *current* mission, not the first brief you ever wrote. This keeps each initiative self-contained instead of accumulating an ever-growing global counter.
+
+### On-disk layout
+
+Planning artifacts live in the consumer repo's `.planning/` directory. Each mission gets its own subdirectory; two files stay project-global at the root:
+
+```
+.planning/
+├── PROJECT.md                       # project-global charter (purpose, constraints, decisions) — spans all missions
+├── STATE.md                         # project-global workflow state (active mission, brief/plan/wave)
+└── missions/
+    └── NN-slug/                     # one directory per mission, NN numbered in creation order
+        ├── ROADMAP.md               # this mission's numbered work units
+        └── briefs/
+            └── NN-name/             # one per unit, numbered from 1 WITHIN the mission
+                ├── BRIEF.md         # why + what + spec
+                └── PLAN.md          # dependency-ordered steps
+```
+
+`PROJECT.md` (the durable charter) and `STATE.md` are **not** per-mission -- they live at the `.planning/` root and apply across every mission.
+
+### New mission vs. updating the current one
+
+`/mission <feature name>` is create-or-switch:
+
+- **A new feature name** starts a new mission -- a fresh `missions/NN-slug/` directory with its unit counter reset to 1.
+- **An existing mission name** updates that mission in place and **preserves its counter** -- you pick up where you left off rather than renumbering.
+
+The active mission is tracked in workflow state, exposed as `mission_id` (e.g. `01-v3`) and `mission_name`; the spine resolves all briefs and roadmaps under whichever mission is active. The whole `.planning/` directory is **local-only and gitignored** -- it is your planning scratch space, not committed alongside the code.
+
+See [`/mission`](#skills) in the Skills table for the full skill behavior.
 
 ## Agents
 
