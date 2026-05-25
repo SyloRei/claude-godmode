@@ -151,6 +151,6 @@ After writing, report:
 
 - **/brief N** — turns roadmap entry N into a work unit with a why + what + spec.
 - **/godmode** — reads the workflow state this skill records and tells the user the next command.
-- **/explore-repo** — run first on an unfamiliar codebase; its findings sharpen the purpose and constraints captured here.
+- **/onboard** — run first on an unfamiliar codebase; its findings sharpen the purpose and constraints captured here.
 
 **Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Mission is the shared-context root every later step reads from.

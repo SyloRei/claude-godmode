@@ -16,7 +16,7 @@ table is canonical — when you reach for a capability, look it up here.
 | Debug — find/fix a defect | `/debug` | skill |
 | Refactor — restructure without behavior change | `/refactor` | skill |
 | TDD — red-green-refactor a new behavior | `/tdd` | skill |
-| Explore / understand a codebase | `/explore-repo` | skill |
+| Explore / understand a codebase | `/onboard` | skill |
 
 Skills own the **workflow**. Agents own the **work** a skill delegates. When a
 skill's body says to spawn an agent, spawn it — never do the agent's job inline.
@@ -57,7 +57,9 @@ Which agent each workflow skill spawns for its heavy lifting:
 | `/debug` | `@researcher` (reproduce/isolate), `@writer` (minimal fix) |
 | `/refactor` | `@writer` (steps), `/verify` (5-lens no-behavior-change check) |
 | `/tdd` | `@test-writer` (red tests), `@writer` (green impl) |
-| `/explore-repo` | `@researcher` (cited findings) |
+| `/onboard` | `@researcher` (cited findings) |
+| `/triage` | `@incident-responder` (timeline reconstruction) |
+| `/profile` | `@perf-engineer` (performance analysis) |
 | `/mission` | `@architect` (roadmap shaping) |
 
 ## Agent Type Mapping
