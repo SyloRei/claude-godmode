@@ -36,6 +36,7 @@ Claude God-Mode is a Claude Code plugin that ships rules (focused config files i
 - [Skills](#skills)
 - [Standalone Workflows](#standalone-workflows)
 - [Hooks](#hooks)
+- [Bundled MCP Servers](#bundled-mcp-servers)
 - [Rules-Based Configuration](#rules-based-configuration)
 - [Agent Memory](#agent-memory)
 - [Customization](#customization)
@@ -310,6 +311,30 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 | **UserPromptSubmit** | Each user message | Injects session context on first message |
 | **SessionEnd** | Conversation ends | Writes install marker and last-version-seen to plugin data directory |
 | **StatusLine** | Continuous | Shows context %, model, cost, project, branch (run `/godmode statusline` to enable) |
+
+## Bundled MCP Servers
+
+Claude God-Mode bundles a `.mcp.json` referenced from `.claude-plugin/plugin.json`, so three MCP servers register automatically when the plugin is enabled. They are `npx`-based stdio servers that spawn on first use.
+
+| Server | Enables |
+|--------|---------|
+| **context7** | Up-to-date library and framework docs for `@writer` and `@executor`, so generated code reflects current APIs rather than stale training data |
+| **github** | PR and repository operations used by `/ship` |
+| **playwright** | Browser-based verification used by `/verify` |
+
+### Requirements
+
+- **Node and `npx`** must be available locally -- the servers spawn on demand via `npx`.
+- **`github` requires a `GITHUB_TOKEN` environment variable.** The bundled config references `GITHUB_TOKEN` as a placeholder; you supply the value in your own environment. No token is stored in the repo.
+
+### Disabling servers
+
+- **One server:** remove its entry from `.mcp.json`.
+- **All servers:** remove the `"mcpServers": "./.mcp.json"` line from `.claude-plugin/plugin.json`.
+
+### Manual installs
+
+The `mcpServers` manifest field applies in plugin mode. If you install manually, copy or merge `.mcp.json` into your own project or user MCP config to opt in to the same servers.
 
 ## Rules-Based Configuration
 
