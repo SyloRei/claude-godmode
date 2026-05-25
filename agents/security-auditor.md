@@ -86,5 +86,5 @@ When fanned out as a parallel review lens, report each finding as: **lens** (`se
 
 ## Handoffs
 
-- Report findings to `@reviewer` for tracking in code review
+- Report findings through `/verify` (security lens) for tracking in code review
 - Critical findings should block `/ship` until resolved
