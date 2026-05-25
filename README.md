@@ -15,13 +15,13 @@
 
 ## Claude God-Mode
 
-Claude God-Mode is a Claude Code plugin that installs rules (focused config files loaded at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual files in `~/.claude/rules/` rather than a monolithic config, so you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
+Claude God-Mode is a Claude Code plugin that ships rules (focused config files injected at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual concern-scoped files injected automatically by the SessionStart hook rather than a monolithic config, so you can read or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
 
 - **Single clear workflow** -- go from idea to merged PR with `/mission → /brief N → /plan N → /build N → /verify N → /ship`
 - **Quality gates enforcement** -- typecheck, lint, test, and security checks run automatically before anything ships
 - **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
-- **Rules-based config** -- additive rule files in `~/.claude/rules/`, your `CLAUDE.md` is never touched
+- **Rules-based config** -- concern-scoped rules injected by the SessionStart hook in every mode, your `CLAUDE.md` is never touched
 - **Persistent memory** -- agents remember project patterns, conventions, and gotchas across sessions
 
 ---
@@ -52,7 +52,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 **Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/mission` to set the goal, `/brief N` to define what to build, `/plan N` to break it into dependency-ordered steps, `/build N` to implement with automated review, `/verify N` to confirm every goal is covered, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
 
-**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. Rules live in `~/.claude/rules/` as individual files, so teams can share a baseline while individuals customize their setup.
+**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. The SessionStart hook injects the same baseline rules into every session, so the whole team gets identical behavior with no per-member setup.
 
 **Contributor extending the plugin.** You want to add a new agent, skill, or rule. Each component is a self-contained markdown file with a clear contract. Drop a new agent into `agents/`, a new skill into `skills/`, or a new rule into `rules/` -- the plugin picks it up automatically.
 
@@ -85,11 +85,11 @@ cd claude-godmode
 ./install.sh
 ```
 
-The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
+The install script copies agents, skills, and hooks to `~/.claude/`, keeps a private copy of the rules at `~/.claude/godmode/rules/`, and merges `settings.json` additively -- your existing config is preserved.
 
 ### Step 2: Orient
 
-The installer (Step 1) already copied the rule files into `~/.claude/rules/` — that's where God-Mode's behavior comes from; without them agents and skills won't follow the engineering workflow. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
+The rules that drive God-Mode's behavior are injected automatically by the SessionStart hook -- nothing is copied into `~/.claude/rules/` and there's no manual step. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
 
 ```
 You:    /godmode
@@ -303,7 +303,7 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| **SessionStart** | Conversation begins | Injects project context (language, package manager, test runner, git state) |
+| **SessionStart** | Conversation begins | Injects the 8 godmode rules plus project context (language, package manager, test runner, git state) via `additionalContext` |
 | **PostCompact** | After `/compact` | Restores quality gates and available skills after context compaction |
 | **PreToolUse** | Before every tool call | Quality-gate enforcement on `git commit` — blocks commits that fail typecheck, lint, or tests |
 | **PostToolUse** | After tool call | Surfaces failed exit codes; triggers secret scan on staged diffs |
@@ -313,15 +313,13 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 
 ## Rules-Based Configuration
 
-Claude God-Mode uses individual rule files instead of a monolithic config. Rule files live in `~/.claude/rules/` and are loaded automatically by Claude Code at session start.
+Claude God-Mode uses individual rules instead of a monolithic config. The 8 rules are injected automatically by the SessionStart hook (via `additionalContext`) at the start of every conversation -- in both plugin mode and manual mode, with zero setup steps. Nothing is written to `~/.claude/rules/`.
 
-### Installing Rules
+### How rules load
 
-**Plugin users:** Run `/godmode` after installing the plugin. It auto-detects missing rules and offers to install them with your confirmation. No manual file copying needed.
+**Plugin users:** Rules ship inside the plugin and are injected by the SessionStart hook. No manual file copying, no separate step.
 
-**Manual install users:** The `./install.sh` script handles rules installation automatically.
-
-> **Why a separate step?** Claude Code's plugin system doesn't yet support a `rules` directory natively ([tracking issue](https://github.com/anthropics/claude-code/issues/14200)). Until that ships, `/godmode` bridges the gap by copying rule files on first run with your explicit consent.
+**Manual install users:** `./install.sh` keeps a private copy of the rules at `~/.claude/godmode/rules/` for the hook to read. This directory is not auto-loaded by Claude Code -- only the SessionStart hook reads it -- so it never collides with your own `~/.claude/rules/`.
 
 | Rule File | Concern |
 |-----------|---------|
@@ -336,9 +334,8 @@ Claude God-Mode uses individual rule files instead of a monolithic config. Rule 
 
 ### Customizing Rules
 
-- **Edit** any `godmode-*.md` file to change behavior for that concern
-- **Remove** a rule file to disable that behavior entirely
-- **Add** your own rule files -- any `.md` in `~/.claude/rules/` is loaded automatically
+- **Add** your own rule files -- any `.md` you drop into `~/.claude/rules/` is loaded automatically by Claude Code and layers on top of the godmode rules
+- **Override** any godmode behavior in your own `~/.claude/rules/` file or `~/.claude/CLAUDE.md`
 - Your personal `~/.claude/CLAUDE.md` is never touched and always takes precedence
 
 ## Agent Memory
@@ -357,10 +354,9 @@ Memory persists between sessions -- agents remember project patterns, convention
 
 After installing, customize to match your workflow:
 
-1. **`~/.claude/rules/godmode-*.md`** -- Edit individual rule files to change specific behaviors (identity, quality gates, routing, etc.)
+1. **Override behaviors** -- The godmode rules (identity, quality gates, routing, etc.) are injected by the SessionStart hook; add a rule file to `~/.claude/rules/` or an entry in `~/.claude/CLAUDE.md` to override any of them
 2. **`~/.claude/settings.json`** -- Add/remove permissions for your toolchain
-3. **Remove rules** -- Delete any `godmode-*.md` file to disable that behavior entirely
-4. **Add rules** -- Drop your own `.md` files into `~/.claude/rules/` for project-specific conventions
+3. **Add rules** -- Drop your own `.md` files into `~/.claude/rules/` for project-specific conventions; they load automatically alongside the godmode rules
 
 For the full file structure and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -392,10 +388,10 @@ npm install -g @anthropic-ai/claude-code
 ```
 
 **Rules not loading after install**
-Cause: Rule files are not in `~/.claude/rules/`. Fix:
+Cause: The SessionStart hook isn't running, so it can't inject the rules. Fix: start a fresh Claude Code session and run `/godmode` -- it confirms the hook is wired up. Manual installs can also verify the private rules copy exists:
 ```bash
-ls ~/.claude/rules/godmode-*.md   # should list 8 files
-./install.sh                      # re-run if missing
+ls ~/.claude/godmode/rules/godmode-*.md   # should list 8 files (manual install)
+./install.sh                              # re-run if missing
 ```
 
 **Permission denied running install.sh**
@@ -405,7 +401,7 @@ chmod +x install.sh && ./install.sh
 ```
 
 **Plugin not appearing after marketplace install**
-Cause: Rules need a one-time setup step. Fix: run `/godmode` inside Claude Code -- it detects missing rules and installs them with your confirmation.
+Cause: The session was started before the plugin finished installing, so the SessionStart hook didn't fire. Fix: start a fresh Claude Code session and run `/godmode` to confirm you're set up.
 
 ### General Tips
 
@@ -445,7 +441,7 @@ Agents specify their target models in their configuration, but you can edit any 
 
 ### Will this overwrite my config?
 
-No. Claude God-Mode uses a rules-based approach -- it installs individual rule files into `~/.claude/rules/` which Claude Code loads alongside your existing config. Your `~/.claude/CLAUDE.md` is never read, modified, or replaced. Settings are merged additively, preserving your existing permissions and plugins. You can disable any godmode behavior by removing the corresponding rule file.
+No. The 8 godmode rules are injected automatically by the SessionStart hook (via `additionalContext`) at the start of every conversation -- no files are written to `~/.claude/rules/`, and there are zero setup steps. This works the same in plugin mode and manual mode. Your `~/.claude/CLAUDE.md` is never read, modified, or replaced. Settings are merged additively, preserving your existing permissions and plugins. Manual installs keep a private copy of the rules at `~/.claude/godmode/rules/` for the hook to read; this directory is not auto-loaded by Claude Code, so it never collides with your own config.
 
 ### Can I use individual parts?
 
