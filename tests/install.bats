@@ -32,13 +32,20 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "install installs godmode rules" {
+@test "install installs rules to the private path, not the auto-loaded global path" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
-  [ -d "$TEST_HOME/.claude/rules" ]
-  # At least one godmode-*.md rule landed.
-  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md'
+
+  # Unit 3: rules must NOT land in the auto-loaded $HOME/.claude/rules/ — the
+  # SessionStart hook injects them, so a global copy would double-inject.
+  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
+  [ "$status" -ne 0 ]
+
+  # They DO land in the pinned private path the hook reads, and all 8 ship.
+  [ -d "$TEST_HOME/.claude/godmode/rules" ]
+  run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
+  [ "$output" = "8" ]
 }
 
 @test "install installs agents and skills" {
@@ -85,15 +92,13 @@ teardown() {
   [ -f "$TEST_HOME/.claude/config/quality-gates.txt" ]
 }
 
-@test "install installs bin helpers godmode-state, godmode-hash-rules and godmode-model (Wave-C completeness)" {
+@test "install installs bin helpers godmode-state and godmode-model (Wave-C completeness)" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$TEST_HOME/.claude/bin/godmode-state" ]
-  [ -f "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
   [ -f "$TEST_HOME/.claude/bin/godmode-model" ]
   # bin helpers must be executable.
   [ -x "$TEST_HOME/.claude/bin/godmode-state" ]
-  [ -x "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
   [ -x "$TEST_HOME/.claude/bin/godmode-model" ]
 }
 
@@ -160,21 +165,37 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "uninstall removes godmode rules; reinstall restores them" {
+@test "uninstall removes private godmode rules; reinstall restores them" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
-  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md'
+  run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md'
   [ "$status" -eq 0 ]
 
   run bash -c 'printf "n\n" | "$1"' _ "$PLUGIN_ROOT/uninstall.sh"
   [ "$status" -eq 0 ]
-  # Rules are the uninstaller's documented removal target.
-  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
-  [ "$status" -ne 0 ]
+  # The private rules dir is the uninstaller's removal target now.
+  [ ! -d "$TEST_HOME/.claude/godmode/rules" ]
 
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
-  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md'
+  run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md'
+  [ "$status" -eq 0 ]
+}
+
+@test "uninstall removes leftover legacy global rules and exits 0" {
+  # Pre-unit-3 installs left rules in the auto-loaded $HOME/.claude/rules/.
+  # uninstall must clean them up even though install no longer writes there.
+  mkdir -p "$TEST_HOME/.claude/rules"
+  printf 'legacy\n' > "$TEST_HOME/.claude/rules/godmode-foo.md"
+
+  run bash -c 'printf "n\n" | "$1"' _ "$PLUGIN_ROOT/uninstall.sh"
+  [ "$status" -eq 0 ]
+  [ ! -f "$TEST_HOME/.claude/rules/godmode-foo.md" ]
+}
+
+@test "uninstall is idempotent: exits 0 when no godmode rules are present" {
+  # Nothing installed; the guarded globs must not abort under set -euo pipefail.
+  run bash -c 'printf "n\n" | "$1"' _ "$PLUGIN_ROOT/uninstall.sh"
   [ "$status" -eq 0 ]
 }
 
@@ -186,19 +207,19 @@ teardown() {
   [ "$HOME" = "$TEST_HOME" ]          # HOME is redirected for this test
   [ "$ORIG_HOME" != "$TEST_HOME" ]    # ...and it is genuinely different
 
-  # Record the real ~/.claude/rules listing (if any) BEFORE install.
-  before="$(ls -1 "$ORIG_HOME/.claude/rules" 2>/dev/null || true)"
+  # Record the real ~/.claude/godmode/rules listing (if any) BEFORE install.
+  before="$(ls -1 "$ORIG_HOME/.claude/godmode/rules" 2>/dev/null || true)"
 
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
 
   # Install populated the TEMP home (proves it honored HOME)...
-  [ -d "$TEST_HOME/.claude/rules" ]
-  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md'
+  [ -d "$TEST_HOME/.claude/godmode/rules" ]
+  run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md'
   [ "$status" -eq 0 ]
 
-  # ...and the real ~/.claude/rules listing is unchanged.
-  after="$(ls -1 "$ORIG_HOME/.claude/rules" 2>/dev/null || true)"
+  # ...and the real ~/.claude/godmode/rules listing is unchanged.
+  after="$(ls -1 "$ORIG_HOME/.claude/godmode/rules" 2>/dev/null || true)"
   [ "$before" = "$after" ]
 }
 
