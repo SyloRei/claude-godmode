@@ -25,6 +25,7 @@
   "homepage": "https://github.com/sylorei/claude-godmode",
   "license": "MIT",
   "mcpServers": "./.mcp.json",
+  "outputStyles": "./outputStyles/",
   "userConfig": {
     "model_profile": {
       "title": "Model profile",
