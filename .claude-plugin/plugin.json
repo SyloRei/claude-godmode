@@ -29,8 +29,7 @@
       "title": "Model profile",
       "type": "string",
       "default": "balanced",
-      "enum": ["quality", "balanced", "budget"],
-      "description": "Model/effort preset for all agents. 'quality' = opus + xhigh (code-writing agents stay capped at effort:high); 'balanced' = each agent's own frontmatter values; 'budget' = haiku + default effort. See README FAQ for the full preset table and feasibility caveat."
+      "description": "Model/effort preset for all agents. One of: quality, balanced, budget. 'quality' = opus + xhigh (code-writing agents stay capped at effort:high); 'balanced' = each agent's own frontmatter values; 'budget' = haiku + default effort. See README FAQ for the full preset table and feasibility caveat."
     }
   }
 }
