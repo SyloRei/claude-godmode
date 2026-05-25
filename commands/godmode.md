@@ -44,7 +44,7 @@ echo "version: $VERSION"
 
 ## 3. Read the workflow state
 
-`/mission` records three keys via `bin/godmode-state`. Read them to derive the next action. Resolve the helper from the plugin root, then `~/.claude`, then the repo:
+`/mission` records the workflow keys via `bin/godmode-state` — including the active **mission** (`mission_id` + human-readable `mission_name`). Read them to derive the next action. Resolve the helper from the plugin root, then `~/.claude`, then the repo:
 
 ```bash
 STATE_BIN=""
@@ -52,9 +52,13 @@ for cand in "$ROOT/bin/godmode-state" "$HOME/.claude/bin/godmode-state" "bin/god
   if [ -x "$cand" ]; then STATE_BIN="$cand"; break; fi
 done
 if [ -n "$STATE_BIN" ] && [ -f .planning/STATE.md ]; then
+  MISSION_ID=$("$STATE_BIN" get mission_id)
+  MISSION_NAME=$("$STATE_BIN" get mission_name)
   ACTIVE=$("$STATE_BIN" get active_unit)
   STATUS=$("$STATE_BIN" get status)
   NEXT=$("$STATE_BIN" get next_command)
+  echo "mission_id: $MISSION_ID"
+  echo "mission_name: $MISSION_NAME"
   echo "active_unit: $ACTIVE"
   echo "status: $STATUS"
   echo "next_command: $NEXT"
@@ -63,7 +67,7 @@ else
 fi
 ```
 
-**Cold start** (no `.planning/STATE.md`, or no state recorded): the project has no recorded direction. For an unfamiliar repo, recommend `/onboard` first to orient, then `/mission`; after that, `/brief 1`.
+**Cold start** (no `.planning/STATE.md`, or no state recorded): the project has no recorded direction — there is no active mission yet. For an unfamiliar repo, recommend `/onboard` first to orient, then `/mission`; after that, `/brief 1`.
 
 **Warm start**: `next_command` from state *is* the answer. If it is empty but `active_unit` is set, infer from `status` along the spine `/mission → /brief N → /plan N → /build N → /verify N → /ship`.
 
@@ -85,10 +89,13 @@ Compose at most five lines. Lead with the next command — it is the one thing t
 
 ```
 God-Mode v<VERSION> · <available-skill-count> skills, <agent-count> agents
+Mission: <mission_id> (<mission_name>) · unit <active_unit> · next: <next_command>
 Where: work unit <active_unit> — <status>     (or: "uninitialized — no roadmap yet")
 Next:  <next_command>                         (cold start: /mission, then /brief 1)
 Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
 Helpers: <helper skills from the scan above — i.e. scanned skills minus the spine commands; never a memorized list>
 ```
+
+The **Mission** line names the active mission from state (`mission_id` + `mission_name`) and the mission-scoped next command. On **cold start** there is no active mission, so omit the Mission line entirely and let the Next line point at `/mission`.
 
 Keep the whole output well under 10,000 characters — five short lines is the target. Do not dump the full inventory tables; the scan counts and the next command are what matter. If the user wants the full list, point them at `/<command> --help` or the inventory scan above.

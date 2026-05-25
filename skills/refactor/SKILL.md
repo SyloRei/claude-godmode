@@ -99,11 +99,11 @@ d. If RED → revert immediately, try smaller step
 After the PLAN step, decide how the refactoring re-enters the workflow spine:
 
 - **Execute now (default).** Apply all steps immediately with per-step test verification and an atomic commit per step. Best for small refactorings (1-2 steps).
-- **Defer as a work unit.** When the refactoring is large (3+ steps) and deserves its own planning pass, append a work unit to `.planning/ROADMAP.md` describing the area and the planned steps, then pick it up with `/brief N`. The brief captures the why + what, `/plan N` re-derives the steps, and `/build N` executes them with the same per-step verification.
+- **Defer as a work unit.** When the refactoring is large (3+ steps) and deserves its own planning pass, append a work unit to `.planning/missions/<mission_id>/ROADMAP.md` describing the area and the planned steps, then pick it up with `/brief N`. The brief captures the why + what, `/plan N` re-derives the steps, and `/build N` executes them with the same per-step verification.
 
 In Auto Mode, execute now for small refactorings; for large ones, append a work unit and say so inline.
 
-**Appended work-unit note (for `.planning/ROADMAP.md`):**
+**Appended work-unit note (for `.planning/missions/<mission_id>/ROADMAP.md`):**
 
 ```
 - Refactor: [area] — N steps, structure only, no behavior change.
@@ -131,4 +131,4 @@ Coverage: [before] → [after]
 - **/debug** — if refactoring reveals bugs, switch to debug protocol
 - **/verify** — runs the 5 parallel review lenses on refactoring changes before committing
 
-**Spine:** plan the steps, then either execute now (`/ship`) or append a work unit to `.planning/ROADMAP.md` and resume the spine at `/brief N`.
+**Spine:** plan the steps, then either execute now (`/ship`) or append a work unit to `.planning/missions/<mission_id>/ROADMAP.md` and resume the spine at `/brief N`.

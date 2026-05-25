@@ -15,8 +15,8 @@ Run after `/brief N` has captured the why + what + spec. The plan is the contrac
 
 The artifact lives in the **consumer's** repo, alongside the brief it reads:
 
-- Reads `.planning/briefs/NN-name/BRIEF.md` — the brief for roadmap unit `$N`.
-- Writes `.planning/briefs/NN-name/PLAN.md` — the single tactical plan for that unit.
+- Reads `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the brief for roadmap unit `$N` (`mission_id=$(bin/godmode-state get mission_id)`).
+- Writes `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md` — the single tactical plan for that unit.
 
 **Exactly two artifact files per work unit: `BRIEF.md` + `PLAN.md`.** Do NOT introduce a third file — no `EXECUTE.md`, no separate execution-log file. The git log is the execution log. Write `PLAN.md` and nothing else.
 
@@ -40,7 +40,8 @@ Find the brief directory for unit **$N** and read its `BRIEF.md`. `NN` is `$N` z
 
 ```bash
 NN=$(printf '%02d' "$N")
-brief_dir=$(ls -d .planning/briefs/${NN}-* 2>/dev/null | head -1)
+mission_id=$(bin/godmode-state get mission_id)
+brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
 ```
 
 If no brief directory for `$N` exists, stop and tell the user to run `/brief $N` first — do not invent a brief. Read the brief's **Spec — acceptance criteria** carefully: each criterion is what the plan must make buildable and verifiable. Note each criterion's ID (its order/identifier in the brief).
@@ -95,13 +96,13 @@ bin/godmode-state set next_command "/build $N"
 
 ## Artifact format
 
-### `.planning/briefs/NN-name/PLAN.md`
+### `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md`
 
 ```markdown
 # Plan NN: [unit title]
 
 **Updated:** [YYYY-MM-DD]
-**Brief:** .planning/briefs/NN-name/BRIEF.md
+**Brief:** .planning/missions/<mission_id>/briefs/NN-name/BRIEF.md
 
 ## Steps
 Each step is mechanical, names the files it touches, and references the brief
@@ -139,7 +140,7 @@ Every brief acceptance criterion, by ID, with how it is checked.
 
 After writing, report:
 
-- Whether the plan was created or updated, and its path `.planning/briefs/NN-name/PLAN.md`.
+- Whether the plan was created or updated, and its path `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md`.
 - The ordered steps and the wave grouping implied by `dependsOn`.
 - Confirmation that **every** brief acceptance criterion has a verification entry (by ID).
 - In Auto Mode, the **Assumptions** that were made.
