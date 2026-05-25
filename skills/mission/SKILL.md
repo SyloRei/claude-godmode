@@ -18,9 +18,13 @@ Two artifacts live in the **consumer's** repo (the project you are helping build
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not ask clarifying questions. Infer purpose, constraints, and roadmap from the repo (README, existing `.planning/` files, package manifests, recent commits) plus the user's request. Pick reasonable defaults, surface every assumption inline under an **Assumptions** heading, and write the artifacts. Treat user course-corrections as normal input.
+Auto Mode suppresses **confirmation prompts** ("proceed? / shall I write it?") — never the **clarifying questions** that decide what the project actually is. A charter built on silent guesses is confidently wrong, and every later step inherits the error. So even in Auto Mode:
 
-When Auto Mode is absent, ask only the few questions needed to fill gaps the repo cannot answer (target users, success criteria, hard constraints). Keep it brief — this is a charter, not an interview.
+- **Still ask the consequential questions** — the ones whose answer materially changes the charter (who it's for, what "success" concretely means, hard constraints, scope edges) AND that the repo/README/manifests/recent commits cannot answer. Batch them up front, lettered/option style, so they're answered fast.
+- **Assume the trivial** — for low-stakes gaps the repo can reasonably imply, pick a sensible default and record it under an **Assumptions** heading rather than asking.
+- Don't interrogate: if the repo already answers something, don't ask it. Treat user course-corrections as normal input.
+
+When Auto Mode is absent, same principle — ask the essential questions, keep it brief. This is a charter, not an interview, but the few questions that set direction are worth asking in either mode.
 
 ---
 

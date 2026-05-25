@@ -12,7 +12,7 @@ Implement features using strict Red-Green-Refactor cycles. Implements the testin
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not ask clarifying questions. Decompose the feature into behaviors using reasonable defaults, surface the behavior list and any assumptions inline, then run all cycles immediately. Treat user course-corrections as normal input.
+Auto Mode suppresses confirmation prompts, not the clarifying questions that decide what the tests assert. **If a target behavior is genuinely ambiguous — the expected output, an edge case's contract — ask** (the tests encode it; guessing bakes the wrong contract into red-green). For low-stakes decomposition choices, use reasonable defaults and surface the behavior list + assumptions inline, then run the cycles. Treat course-corrections as normal input.
 
 ---
 

@@ -24,9 +24,11 @@ The artifact lives in the **consumer's** repo, alongside the brief it reads:
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not ask clarifying questions. Derive the steps, dependencies, and verification plan from the brief, `.planning/PROJECT.md`, and the repo. Pick reasonable defaults, surface any judgment calls inline under an **Assumptions** heading, and write the artifact. Treat user course-corrections as normal input.
+Auto Mode suppresses **confirmation prompts**, not the **clarifying questions** that decide the shape of the plan. In **either** mode:
 
-When Auto Mode is absent, ask only the **essential** questions the brief and repo cannot answer (a genuinely ambiguous ordering, an unstated constraint). Keep it tight — a plan is a breakdown, not an interview.
+- **Ask the consequential questions** — a genuinely ambiguous step ordering, an unstated constraint, a design fork where the options diverge materially — when the brief, `.planning/PROJECT.md`, and the repo can't settle it. Guessing here produces a plan that builds the wrong thing efficiently.
+- **Assume the trivial** — for low-stakes judgment calls, pick a sensible default and record it under an **Assumptions** heading rather than asking.
+- Don't re-ask what the brief already decided. Treat user course-corrections as normal input. A plan is a breakdown, not an interview — but the few questions that change the breakdown are worth asking in either mode.
 
 ---
 

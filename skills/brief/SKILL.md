@@ -23,9 +23,13 @@ The artifact lives in the **consumer's** repo, never in the plugin source:
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not ask clarifying questions. Infer the why + what + spec from the roadmap entry, `.planning/PROJECT.md`, the README, and the repo. Pick reasonable defaults, surface every assumption inline under an **Assumptions** heading in the brief, and write the artifact. Treat user course-corrections as normal input.
+Auto Mode suppresses **confirmation prompts**, not the **clarifying questions** that decide what gets built. The brief is where this unit's quality is set — a spec built on silent guesses sends `/plan` and `/build` confidently in the wrong direction. So in **either** mode:
 
-When Auto Mode is absent, ask only the **essential** clarifying questions — the ones the roadmap and repo cannot answer (scope edges, the bar for "done", hard constraints). Use a lettered/option style so the user can answer fast:
+- **Ask the consequential questions** — the ones whose answer materially changes the spec (scope edges, the exact bar for "done", behavioral choices that genuinely diverge, hard constraints) AND that the roadmap entry / `.planning/PROJECT.md` / README / repo cannot answer. Auto Mode does not waive these; it just batches them.
+- **Assume the trivial** — for low-stakes gaps the context reasonably implies, pick a sensible default and record it under an **Assumptions** heading instead of asking.
+- Never ask what the repo already answers. Treat user course-corrections as normal input.
+
+Use a lettered/option style so the essential questions can be answered fast:
 
 ```
 Scope of unit N — which of these is in scope?

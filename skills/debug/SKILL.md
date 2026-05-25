@@ -12,7 +12,7 @@ Find and fix bugs systematically using evidence, never guessing. Implements the 
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not run clarifying-question loops. Pick reasonable defaults (fix immediately after root cause is found), surface every assumption inline as you go, and treat any course-correction from the user as normal input rather than a prompt to pause.
+Auto Mode suppresses confirmation prompts and proceed-pauses — not the one clarifying question that can matter here: **if the symptom isn't reproducible and the exact error/repro steps aren't given, ask for them** (debugging the wrong symptom wastes the whole effort). Once you can reproduce, proceed: fix immediately after the root cause is found, surface assumptions inline, and treat course-corrections as normal input. Don't loop on trivia.
 
 ---
 
