@@ -4,3 +4,12 @@ node_modules/
 
 # claude-godmode pipeline artifacts
 .claude-pipeline/
+
+# Local runtime state (worktrees, agent memory, local settings)
+.claude/
+
+# Generated hook test fixtures (sourced from setup script)
+tests/fixtures/
+
+# Local design notes
+IDEA.md
