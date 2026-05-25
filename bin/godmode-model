@@ -1,0 +1,148 @@
+#!/usr/bin/env bash
+# godmode-model — deterministic resolver mapping (agent, profile) to the
+# model + effort a spine skill should use when spawning that agent.
+#
+# Usage:
+#   godmode-model <agent> [profile]
+#
+# Profiles: quality | balanced | budget
+#   If [profile] is omitted, the env var CLAUDE_PLUGIN_OPTION_MODEL_PROFILE
+#   is consulted; an unset/empty/invalid env value silently falls back to
+#   "balanced". A bad profile passed EXPLICITLY as an argument is an error.
+#
+# Resolution:
+#   balanced — read model:/effort: from the agent's frontmatter as-is.
+#   quality  — code-writing agents {writer, executor, test-writer} are
+#              capped at "opus high" (locked carve-out, never xhigh);
+#              every other agent maps to "opus xhigh".
+#   budget   — every agent maps to "haiku default".
+#
+# Output: exactly one line "<model> <effort>" to stdout, exit 0 on success.
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. Any in-place edits use the
+# BSD-safe sed pattern.
+
+set -euo pipefail
+
+usage() {
+  echo "usage: godmode-model <agent> [profile]" >&2
+  echo "profiles: quality | balanced | budget" >&2
+}
+
+# valid_profile <value> — true if value is a known profile.
+valid_profile() {
+  case "$1" in
+    quality|balanced|budget) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# is_writer_agent <agent> — true for the locked code-writing carve-out.
+is_writer_agent() {
+  case "$1" in
+    writer|executor|test-writer) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# locate_agent_file <agent> — print the path to the agent's .md file, or
+# return 1 if not found. Tries the CWD/repo layout first, then the layout
+# relative to this script (installed ~/.claude/ layout).
+locate_agent_file() {
+  local agent="$1"
+  local script_dir
+  script_dir=$(dirname "$0")
+  local candidate
+  for candidate in "agents/${agent}.md" "${script_dir}/../agents/${agent}.md"; do
+    if [ -f "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+# frontmatter_value <file> <key> — print the value of "key:" from the first
+# --- ... --- block of the file. Empty if not present.
+frontmatter_value() {
+  local file="$1"
+  local key="$2"
+  # awk: track the first frontmatter block (between the first two --- lines)
+  # and emit the value for the requested key, then stop.
+  awk -v key="$key" '
+    NR == 1 && $0 == "---" { inblock = 1; next }
+    inblock && $0 == "---" { exit }
+    inblock {
+      pos = index($0, ":")
+      if (pos > 0) {
+        k = substr($0, 1, pos - 1)
+        if (k == key) {
+          v = substr($0, pos + 1)
+          gsub(/^[[:space:]]+/, "", v)
+          gsub(/[[:space:]]+$/, "", v)
+          print v
+          exit
+        }
+      }
+    }
+  ' "$file"
+}
+
+main() {
+  if [ "$#" -lt 1 ] || [ "$#" -gt 2 ]; then
+    usage
+    exit 1
+  fi
+
+  local agent="$1"
+  local profile
+
+  if [ "$#" -eq 2 ]; then
+    # Explicit profile arg: a bad value is a hard error (AC-1).
+    profile="$2"
+    if ! valid_profile "$profile"; then
+      echo "error: unknown profile '$profile' (expected quality|balanced|budget)" >&2
+      exit 1
+    fi
+  else
+    # No arg: consult env, silently fall back to balanced on any bad value (AC-6).
+    profile="${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-}"
+    if ! valid_profile "$profile"; then
+      profile="balanced"
+    fi
+  fi
+
+  # budget short-circuits before touching the filesystem: every agent maps
+  # to the same result, but the agent must still be a real agent (AC-1).
+  local agent_file
+  if ! agent_file=$(locate_agent_file "$agent"); then
+    echo "error: unknown agent '$agent' (no agents/${agent}.md found)" >&2
+    exit 1
+  fi
+
+  case "$profile" in
+    balanced)
+      local model effort
+      model=$(frontmatter_value "$agent_file" "model")
+      effort=$(frontmatter_value "$agent_file" "effort")
+      if [ -z "$model" ] || [ -z "$effort" ]; then
+        echo "error: agent '$agent' is missing model/effort in frontmatter" >&2
+        exit 1
+      fi
+      printf '%s %s\n' "$model" "$effort"
+      ;;
+    quality)
+      if is_writer_agent "$agent"; then
+        printf '%s %s\n' "opus" "high"
+      else
+        printf '%s %s\n' "opus" "xhigh"
+      fi
+      ;;
+    budget)
+      printf '%s %s\n' "haiku" "default"
+      ;;
+  esac
+}
+
+main "$@"

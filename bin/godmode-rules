@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# godmode-rules — resolve the shipped rules directory and print every
+# godmode-*.md file concatenated to stdout. The session-start and
+# post-compact hooks call this to inject the workflow rules (replacing
+# the legacy ~/.claude/rules auto-load and the old godmode-hash-rules).
+#
+# Usage: godmode-rules        (no arguments)
+#
+# Resolution order (first dir that exists AND contains godmode-*.md wins):
+#   1. ${CLAUDE_PLUGIN_ROOT}/rules   — plugin mode
+#   2. ${HOME}/.claude/godmode/rules — manual install (pinned location)
+#   3. rules                         — repo/dev mode, relative to CWD
+# We deliberately do NOT consult ~/.claude/rules (the legacy auto-loaded
+# directory we are migrating away from).
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. BSD-safe.
+
+set -euo pipefail
+
+# has_rules <dir> — true if dir exists and holds at least one godmode-*.md.
+has_rules() {
+  local dir="$1"
+  [ -d "$dir" ] || return 1
+  # Guard the glob: if it doesn't expand, the literal stays and -e is false.
+  local f
+  for f in "$dir"/godmode-*.md; do
+    [ -e "$f" ] && return 0
+  done
+  return 1
+}
+
+# resolve_rules_dir — echo the first candidate dir holding godmode-*.md.
+resolve_rules_dir() {
+  local cand
+  for cand in "${CLAUDE_PLUGIN_ROOT:-}/rules" "${HOME}/.claude/godmode/rules" "rules"; do
+    if has_rules "$cand"; then
+      printf '%s\n' "$cand"
+      return 0
+    fi
+  done
+  return 1
+}
+
+main() {
+  local dir
+  if ! dir=$(resolve_rules_dir); then
+    echo "error: no rules directory found (looked in \$CLAUDE_PLUGIN_ROOT/rules, \$HOME/.claude/godmode/rules, ./rules)" >&2
+    exit 1
+  fi
+
+  # Emit each rule file in sorted path order, separated by a blank line.
+  # The glob expands in sorted order here; the has_rules guard above
+  # already confirmed at least one match exists.
+  local f
+  for f in "$dir"/godmode-*.md; do
+    [ -e "$f" ] || continue
+    cat "$f"
+    printf '\n'
+  done
+}
+
+main "$@"

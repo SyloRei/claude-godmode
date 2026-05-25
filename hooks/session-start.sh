@@ -67,6 +67,17 @@ if [ -n "$STATE_BIN" ] && [ -f .planning/STATE.md ]; then
   fi
 fi
 
+# Resolve the rules concatenator and capture the shipped godmode-*.md rules.
+# Same resolution order as godmode-state: plugin root, ~/.claude, then the repo.
+RULES=""
+RULES_BIN=""
+for cand in "${CLAUDE_PLUGIN_ROOT:-}/bin/godmode-rules" "$HOME/.claude/bin/godmode-rules" "bin/godmode-rules"; do
+  if [ -x "$cand" ]; then RULES_BIN="$cand"; break; fi
+done
+if [ -n "$RULES_BIN" ]; then
+  RULES=$("$RULES_BIN" 2>/dev/null || true)
+fi
+
 # Build context body (real newlines; jq -n encodes them safely below).
 CONTEXT=""
 [ -n "$PROJECT_INFO" ] && CONTEXT="Project: ${PROJECT_INFO}"
@@ -87,6 +98,12 @@ if [ -n "$CONTEXT" ]; then
 
 Workflow spine: /godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
 Run /godmode to orient. See rules/godmode-routing.md for skill/agent selection."
+  if [ -n "$RULES" ]; then
+    BODY="${BODY}
+
+# Godmode rules
+${RULES}"
+  fi
   jq -n --arg ctx "$BODY" '{
     hookSpecificOutput: {
       hookEventName: "SessionStart",

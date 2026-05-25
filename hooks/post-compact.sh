@@ -86,6 +86,18 @@ SKILLS_LINE=""
 AGENTS_LINE=""
 [ -n "$AGENTS" ] && AGENTS_LINE="Available Agents: ${AGENTS}"
 
+# Re-inject the 8 godmode rules so they survive compaction. Resolve the
+# bin/godmode-rules helper the same way commands/godmode.md does; gracefully
+# skip if the helper is missing or emits nothing.
+RULES=""
+for cand in "${CLAUDE_PLUGIN_ROOT:-}/bin/godmode-rules" "$HOME/.claude/bin/godmode-rules" "bin/godmode-rules"; do
+  [ -n "$cand" ] || continue
+  if [ -x "$cand" ]; then
+    RULES=$("$cand" 2>/dev/null || true)
+    break
+  fi
+done
+
 # Assemble the restored-context body, then emit as JSON via jq -n (never string-interpolate).
 BODY="CONTEXT RESTORED AFTER COMPACTION:"
 [ -n "$CONTEXT" ] && BODY="${BODY}
@@ -113,6 +125,11 @@ BODY="${BODY}
 Workflow spine: /godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
 
 Refer to CLAUDE.md and rules/godmode-routing.md for the full lifecycle and coding standards."
+# Append the concatenated godmode rules (if resolved) under a clear separator.
+[ -n "$RULES" ] && BODY="${BODY}
+
+# Godmode rules
+${RULES}"
 
 jq -n --arg ctx "$BODY" '{
   hookSpecificOutput: {

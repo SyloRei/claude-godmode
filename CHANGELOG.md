@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+## [2.1.0] - 2026-05-25
+
+v3 Phase 1: the `model_profile` knob now does something, code review fans out
+into focused lenses, rules load through the SessionStart hook, three MCP servers
+ship out of the box, and a selectable terse output style is available.
+
+### Added
+
+- **`model_profile` is now wired (model-only switching at spawn)** — `bin/godmode-model` deterministically resolves `(agent, profile)` → `model`, and the spine skills (`/build`, `/verify`, `/ship`) spawn agents with the resolver's `model` via the Agent tool override. `balanced` reads each agent's own frontmatter (single source of truth); `quality` and `budget` apply preset rules with a code-writer effort carve-out. Defaults to `balanced` when `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE}` is unset/unrecognized. Effort stays frontmatter-only (the platform cannot override it at spawn — documented). Proven by `tests/model-profile.bats`.
+- **Three new code-review lens agents** — `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, joining `@code-reviewer` (correctness) and `@security-auditor` (security) as five focused, read-only lenses.
+- **Three bundled MCP servers** (`.mcp.json`, referenced via `plugin.json` `mcpServers`) — `context7` (live library docs), `github` (PR/issue ops), `playwright` (browser verification), as `npx` stdio servers. GitHub's token is an env-var placeholder, never a literal. README documents requirements, manual-mode opt-in, and how to disable.
+- **`godmode-terse` output style** (`outputStyles/godmode-terse.md`, referenced via `plugin.json` `outputStyles`) — an opt-in (`/output-style godmode-terse`), bottom-line-up-front, severity-labeled (CRITICAL/WARNING/NIT), no-preamble response mode. Not the default.
+- **New tests** — `tests/model-profile.bats`, `tests/mcp.bats`, `tests/output-style.bats`, plus expanded `tests/hooks.bats` and `tests/install.bats`.
+
+### Changed
+
+- **`/verify` runs 5 parallel review lenses** — instead of a single generalist pass, `/verify N` fans out the five lens agents + `@verifier` scoped to the unit's diff, merges findings (dedup, drop LOW-confidence NITs, group by lens, severity-ordered) using a shared finding schema (lens, severity, confidence, `file:line`, note), and reports both the unchanged AC-coverage table and the merged findings. Read-only, goal-backward semantics preserved.
+- **Rules now load via the SessionStart hook** — the 8 godmode rules are injected into every conversation through the hook's `additionalContext`, automatically and in all install modes (plugin and manual), with zero setup steps. Previously `install.sh` copied them into the auto-loaded `~/.claude/rules/` and plugin-mode installs received no rules at all.
+- **Agent roster expanded to 14** — net +2 from retiring the generalist `@reviewer` and adding three lenses; `plugin.json` description and README updated. Every `@reviewer` reference repointed (`rules/godmode-routing.md`, `skills/refactor`, `skills/tdd`, README, CONTRIBUTING).
+
+### Removed
+
+- **Retired the generalist `@reviewer` agent** (`agents/reviewer.md`) — its job is now the union of the five lenses run inside `/verify`.
+- **Retired the `~/.claude/rules/` install path and drift-detection machinery** — godmode no longer writes rule files into `~/.claude/rules/`, and the hashing/drift-detection that guarded those copies is gone.
+- **Removed `bin/godmode-hash-rules`** — only existed to support rule-file drift detection, which no longer applies.
+
+### Migration
+
+- **Upgrade note:** existing users who previously installed godmode should delete the stale auto-loaded copies to avoid double-loading the rules:
+  ```bash
+  rm ~/.claude/rules/godmode-*.md
+  ```
+  Manual installs now keep a private (non-auto-loaded) copy at `~/.claude/godmode/rules/` that only the SessionStart hook reads.
+
 ## [2.0.0] - 2026-05-25
 
 ### BREAKING

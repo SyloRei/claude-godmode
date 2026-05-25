@@ -101,6 +101,10 @@ Both agents declare `isolation: worktree` in their frontmatter. **Each agent's w
 
 Do **not** implement steps inline in this orchestrating context — always dispatch to `@executor`/`@writer`. This skill orchestrates; the agents write the code, run the gates, and commit in their worktrees.
 
+### Model profile
+
+Before spawning any agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
+
 ---
 
 ## Step 4: Per-step quality gates (run by the agent, in its worktree)

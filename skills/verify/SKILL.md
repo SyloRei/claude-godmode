@@ -4,7 +4,7 @@ description: "Check a built unit goal-backward: classify every brief acceptance 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Grep, Glob, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*)
+allowed-tools: Read, Grep, Glob, Bash(bin/godmode-model*), Bash(*/bin/godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*)
 ---
 
 # Verify
@@ -13,7 +13,7 @@ Decide what is **truly done** for roadmap unit **$N** by working **goal-backward
 
 Run after `/build N` has produced commits. Verify is the gate before shipping: if every criterion is COVERED, the unit is ready for `/ship`. This is the fifth step of the spine: `/mission` → `/brief N` → `/plan N` → `/build N` → **`/verify N`** → `/ship`.
 
-This is a **read-only** operation. You inspect files, search the codebase, and run the project's test command. You do **not** write or edit source — your only writes are workflow-state updates via `bin/godmode-state`.
+This is a **read-only** operation. You inspect files, search the codebase, read the unit's diff, run the project's test command, and dispatch review lenses that themselves only read. You do **not** write or edit source — your only writes are workflow-state updates via `bin/godmode-state`.
 
 ---
 
@@ -66,11 +66,48 @@ For **each** acceptance criterion, go and find the proof — goal-backward:
 
 A criterion is only COVERED if the evidence you gathered demonstrates the brief's observable result — not merely that related code exists.
 
-### 3. Classify
+**Model profile.** Before spawning any review/verifier agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
-Assign COVERED / PARTIAL / MISSING to each criterion under the strictness rule above. Attach the evidence inline: `file:line`, the test name, or a short slice of command output. For PARTIAL and MISSING, state precisely what is unmet.
+### 3. Fan out the review lenses
 
-### 4. Record workflow state
+Verifying "done" has two halves. **`@verifier` owns AC-coverage** — does the unit meet the brief's goals? **Five code-quality lenses own the findings** — is the code that meets those goals sound? Run both halves **in parallel**: in a single message, dispatch **all six** agents concurrently (one Agent call per lens plus `@verifier`), each resolving its model via `bin/godmode-model <agent>` as the **Model profile** note above requires.
+
+Scope every lens to **unit $N's changes only** — the diff the unit produced, e.g. `git diff` for the unit's commits — not the whole codebase. The six agents:
+
+- `@verifier` — goal-backward AC-coverage (drives §4 below; owns COVERED / PARTIAL / MISSING).
+- `code-reviewer` — correctness, structure, error handling, readability.
+- `security-auditor` — injection, secrets, unsafe input, path/command traversal.
+- `perf-reviewer` — hot paths, needless work, allocations, N+1 / blocking calls.
+- `convention-reviewer` — adherence to the repo's detected patterns and naming.
+- `test-reviewer` — test coverage, meaningful assertions, missing edge/error cases.
+
+**Shared finding schema.** Each lens reports every finding as a structured record so findings merge cleanly:
+
+```
+{ lens, severity, confidence, location, note }
+```
+
+- `lens` — which reviewer produced it (`code-reviewer`, `security-auditor`, …).
+- `severity` — one of **CRITICAL | WARNING | NIT**.
+- `confidence` — one of **HIGH | MEDIUM | LOW** (the lens's certainty the finding is real and actionable).
+- `location` — a `file:line` anchor in the unit's diff.
+- `note` — one concrete sentence: what is wrong and why.
+
+### 4. Merge the findings
+
+After all lenses return, merge their findings into one set:
+
+- **Dedup** — collapse findings that multiple lenses raise about the same `file:line` / issue into a single record; keep the highest severity and note the contributing lenses.
+- **Drop LOW-confidence NITs** — discard any finding that is both `NIT` and `LOW` confidence; it is noise.
+- **Group by lens**, and within the report **order severity CRITICAL → WARNING → NIT** so the most important findings surface first.
+
+The `@verifier` lens does not feed this findings set — its output drives the AC-coverage verdict in §5 (Classify) instead.
+
+### 5. Classify
+
+Assign COVERED / PARTIAL / MISSING to each criterion under the strictness rule above, using `@verifier`'s goal-backward analysis. Attach the evidence inline: `file:line`, the test name, or a short slice of command output. For PARTIAL and MISSING, state precisely what is unmet.
+
+### 6. Record workflow state
 
 If — and only if — **every** criterion is COVERED, point the workflow at shipping:
 
@@ -92,7 +129,11 @@ bin/godmode-state set next_command "/build $N"
 
 ## Output format
 
-Report a per-criterion verdict table, then a verdict line.
+The report has **two sections**: (a) the goal-backward AC-coverage verdict, then (b) the merged review findings.
+
+### (a) AC-coverage verdict
+
+A per-criterion verdict table, then a verdict line.
 
 ```markdown
 ## Verification — unit N
@@ -105,6 +146,25 @@ Report a per-criterion verdict table, then a verdict line.
 
 **Verdict:** N COVERED / N PARTIAL / N MISSING.
 ```
+
+### (b) Review findings
+
+The merged findings from the five code-quality lenses (§4), grouped by lens and ordered CRITICAL → WARNING → NIT, after dedup and dropping LOW-confidence NITs.
+
+```markdown
+## Review findings — unit N
+
+**code-reviewer**
+- CRITICAL (HIGH) — api.ts:88 — 404 branch returns 200, masking the error.
+
+**security-auditor**
+- WARNING (MEDIUM) — db.ts:14 — query built by string concat; use a parameterized query.
+
+**test-reviewer**
+- NIT (HIGH) — foo.test.ts:30 — happy path only; add the empty-input case.
+```
+
+If the merged set is empty, say so: "No review findings after merge."
 
 Then the next step:
 

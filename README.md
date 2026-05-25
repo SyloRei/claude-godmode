@@ -15,13 +15,13 @@
 
 ## Claude God-Mode
 
-Claude God-Mode is a Claude Code plugin that installs rules (focused config files loaded at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual files in `~/.claude/rules/` rather than a monolithic config, so you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
+Claude God-Mode is a Claude Code plugin that ships rules (focused config files injected at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual concern-scoped files injected automatically by the SessionStart hook rather than a monolithic config, so you can read or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
 
 - **Single clear workflow** -- go from idea to merged PR with `/mission → /brief N → /plan N → /build N → /verify N → /ship`
 - **Quality gates enforcement** -- typecheck, lint, test, and security checks run automatically before anything ships
 - **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
-- **Rules-based config** -- additive rule files in `~/.claude/rules/`, your `CLAUDE.md` is never touched
+- **Rules-based config** -- concern-scoped rules injected by the SessionStart hook in every mode, your `CLAUDE.md` is never touched
 - **Persistent memory** -- agents remember project patterns, conventions, and gotchas across sessions
 
 ---
@@ -36,6 +36,7 @@ Claude God-Mode is a Claude Code plugin that installs rules (focused config file
 - [Skills](#skills)
 - [Standalone Workflows](#standalone-workflows)
 - [Hooks](#hooks)
+- [Bundled MCP Servers](#bundled-mcp-servers)
 - [Rules-Based Configuration](#rules-based-configuration)
 - [Agent Memory](#agent-memory)
 - [Customization](#customization)
@@ -52,7 +53,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 **Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/mission` to set the goal, `/brief N` to define what to build, `/plan N` to break it into dependency-ordered steps, `/build N` to implement with automated review, `/verify N` to confirm every goal is covered, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
 
-**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. Rules live in `~/.claude/rules/` as individual files, so teams can share a baseline while individuals customize their setup.
+**Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. The SessionStart hook injects the same baseline rules into every session, so the whole team gets identical behavior with no per-member setup.
 
 **Contributor extending the plugin.** You want to add a new agent, skill, or rule. Each component is a self-contained markdown file with a clear contract. Drop a new agent into `agents/`, a new skill into `skills/`, or a new rule into `rules/` -- the plugin picks it up automatically.
 
@@ -60,7 +61,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
 
-Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 12 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 14 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
 
 The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
@@ -85,15 +86,15 @@ cd claude-godmode
 ./install.sh
 ```
 
-The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
+The install script copies agents, skills, and hooks to `~/.claude/`, keeps a private copy of the rules at `~/.claude/godmode/rules/`, and merges `settings.json` additively -- your existing config is preserved.
 
 ### Step 2: Orient
 
-The installer (Step 1) already copied the rule files into `~/.claude/rules/` — that's where God-Mode's behavior comes from; without them agents and skills won't follow the engineering workflow. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
+The rules that drive God-Mode's behavior are injected automatically by the SessionStart hook -- nothing is copied into `~/.claude/rules/` and there's no manual step. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
 
 ```
 You:    /godmode
-Claude: God-Mode v2.0.0 · 10 skills, 12 agents
+Claude: God-Mode v2.0.0 · 10 skills, 14 agents
         Where: uninitialized — no roadmap yet
         Next:  /mission   (then /brief 1)
         Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
@@ -123,7 +124,7 @@ You:    /plan 1
 Claude: [breaks brief into dependency-ordered steps, writes PLAN.md]
 
 You:    /build 1
-Claude: [spawns @executor per step, @reviewer validates each, atomic commits]
+Claude: [spawns @executor per step, /verify review lenses validate each, atomic commits]
         Brief 1 complete! Run /verify 1 to confirm goals, then /ship.
 
 You:    /verify 1
@@ -157,7 +158,7 @@ Re-run the install command for your method (plugin: `claude plugin install`, man
 /godmode  -->  /mission  -->  /brief N  -->  /plan N  -->  /build N  -->  /verify N  -->  /ship
   |               |              |              |              |               |             |
 orient         PROJECT.md     BRIEF.md       PLAN.md       @executor       COVERED/       gates
-               ROADMAP.md     (why+what)    (dep waves)    @reviewer      PARTIAL/        PR
+               ROADMAP.md     (why+what)    (dep waves)   review lenses   PARTIAL/        PR
                                                            per step       MISSING
 ```
 
@@ -177,7 +178,7 @@ Claude: [breaks brief into dependency-ordered waves, writes PLAN.md]
 
 You:    /build 1
 Claude: [wave-based parallel execution — @executor implements,
-        @reviewer validates, atomic commit per step]
+        /verify review lenses validate, atomic commit per step]
         Brief 1 complete! Run /verify 1 to confirm goals.
 
 You:    /verify 1
@@ -197,15 +198,17 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | `@verifier` | opus | project | xhigh | Goal-backward verification for `/verify N` (read-only) |
 | `@architect` | opus | project | xhigh | System design (advisory, read-only enforced) |
 | `@security-auditor` | opus | project | xhigh | Security audit (read-only, enforced) |
-| `@reviewer` | sonnet | project | high | Code review (read-only, enforced) |
 | `@spec-reviewer` | sonnet | project | high | Brief/plan spec review (read-only) |
-| `@code-reviewer` | sonnet | project | high | Deep code review (read-only) |
+| `@code-reviewer` | sonnet | project | high | Deep code review lens (read-only) |
+| `@perf-reviewer` | sonnet | project | high | Performance review lens (read-only) |
+| `@convention-reviewer` | sonnet | project | high | Convention/style review lens (read-only) |
+| `@test-reviewer` | sonnet | project | high | Test-quality review lens (read-only) |
 | `@test-writer` | sonnet | project | high | Test generation in isolated worktree |
 | `@doc-writer` | sonnet | project | high | Documentation |
 | `@researcher` | sonnet | project | high | Codebase and web research (background) |
 
 **Safety features:**
-- Read-only agents (`@architect`, `@planner`, `@verifier`, `@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
+- Read-only agents (`@architect`, `@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
 - Code-writing agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
 - Code-writing agents cap at `effort: high` even under the `quality` model profile — `effort: xhigh` is documented to skip rules on Opus 4.7
 - `@researcher` runs in background mode by default for non-blocking parallel research
@@ -236,7 +239,7 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | "What do I do next?" | `/godmode` |
 | Implementing a one-off change | `@writer` (general-purpose, worktree) |
 | Executing a build step | `@executor` (spawned by `/build N`) |
-| Code review | `@reviewer` |
+| Code review | `/verify` (5 parallel lenses) |
 | Bug fixing | `/debug` |
 | Adding tests to existing code | `@test-writer` |
 | TDD for new feature | `/tdd` |
@@ -263,8 +266,8 @@ Claude: [analyzes code, writes tests, runs them, reports coverage]
 
 ### Code Review
 ```
-You:    @reviewer review my staged changes
-Claude: [analyzes diff, returns verdict with CRITICAL/WARNING/NIT findings]
+You:    /verify my staged changes
+Claude: [runs 5 parallel review lenses, returns verdict with CRITICAL/WARNING/NIT findings]
 ```
 
 ### Refactor Safely
@@ -301,7 +304,7 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 
 | Hook | Trigger | Purpose |
 |------|---------|---------|
-| **SessionStart** | Conversation begins | Injects project context (language, package manager, test runner, git state) |
+| **SessionStart** | Conversation begins | Injects the 8 godmode rules plus project context (language, package manager, test runner, git state) via `additionalContext` |
 | **PostCompact** | After `/compact` | Restores quality gates and available skills after context compaction |
 | **PreToolUse** | Before every tool call | Quality-gate enforcement on `git commit` — blocks commits that fail typecheck, lint, or tests |
 | **PostToolUse** | After tool call | Surfaces failed exit codes; triggers secret scan on staged diffs |
@@ -309,17 +312,49 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 | **SessionEnd** | Conversation ends | Writes install marker and last-version-seen to plugin data directory |
 | **StatusLine** | Continuous | Shows context %, model, cost, project, branch (run `/godmode statusline` to enable) |
 
+## Output Style
+
+The plugin ships a `godmode-terse` output style: a bottom-line-up-front, severity-labeled, no-preamble response mode that leads with the answer or action and drops filler.
+
+It is **opt-in** -- not the default. Activate it for the current session with:
+
+```
+/output-style godmode-terse
+```
+
+## Bundled MCP Servers
+
+Claude God-Mode bundles a `.mcp.json` referenced from `.claude-plugin/plugin.json`, so three MCP servers register automatically when the plugin is enabled. They are `npx`-based stdio servers that spawn on first use.
+
+| Server | Enables |
+|--------|---------|
+| **context7** | Up-to-date library and framework docs for `@writer` and `@executor`, so generated code reflects current APIs rather than stale training data |
+| **github** | PR and repository operations used by `/ship` |
+| **playwright** | Browser-based verification used by `/verify` |
+
+### Requirements
+
+- **Node and `npx`** must be available locally -- the servers spawn on demand via `npx`.
+- **`github` requires a `GITHUB_TOKEN` environment variable.** The bundled config references `GITHUB_TOKEN` as a placeholder; you supply the value in your own environment. No token is stored in the repo.
+
+### Disabling servers
+
+- **One server:** remove its entry from `.mcp.json`.
+- **All servers:** remove the `"mcpServers": "./.mcp.json"` line from `.claude-plugin/plugin.json`.
+
+### Manual installs
+
+The `mcpServers` manifest field applies in plugin mode. If you install manually, copy or merge `.mcp.json` into your own project or user MCP config to opt in to the same servers.
+
 ## Rules-Based Configuration
 
-Claude God-Mode uses individual rule files instead of a monolithic config. Rule files live in `~/.claude/rules/` and are loaded automatically by Claude Code at session start.
+Claude God-Mode uses individual rules instead of a monolithic config. The 8 rules are injected automatically by the SessionStart hook (via `additionalContext`) at the start of every conversation -- in both plugin mode and manual mode, with zero setup steps. Nothing is written to `~/.claude/rules/`.
 
-### Installing Rules
+### How rules load
 
-**Plugin users:** Run `/godmode` after installing the plugin. It auto-detects missing rules and offers to install them with your confirmation. No manual file copying needed.
+**Plugin users:** Rules ship inside the plugin and are injected by the SessionStart hook. No manual file copying, no separate step.
 
-**Manual install users:** The `./install.sh` script handles rules installation automatically.
-
-> **Why a separate step?** Claude Code's plugin system doesn't yet support a `rules` directory natively ([tracking issue](https://github.com/anthropics/claude-code/issues/14200)). Until that ships, `/godmode` bridges the gap by copying rule files on first run with your explicit consent.
+**Manual install users:** `./install.sh` keeps a private copy of the rules at `~/.claude/godmode/rules/` for the hook to read. This directory is not auto-loaded by Claude Code -- only the SessionStart hook reads it -- so it never collides with your own `~/.claude/rules/`.
 
 | Rule File | Concern |
 |-----------|---------|
@@ -334,9 +369,8 @@ Claude God-Mode uses individual rule files instead of a monolithic config. Rule 
 
 ### Customizing Rules
 
-- **Edit** any `godmode-*.md` file to change behavior for that concern
-- **Remove** a rule file to disable that behavior entirely
-- **Add** your own rule files -- any `.md` in `~/.claude/rules/` is loaded automatically
+- **Add** your own rule files -- any `.md` you drop into `~/.claude/rules/` is loaded automatically by Claude Code and layers on top of the godmode rules
+- **Override** any godmode behavior in your own `~/.claude/rules/` file or `~/.claude/CLAUDE.md`
 - Your personal `~/.claude/CLAUDE.md` is never touched and always takes precedence
 
 ## Agent Memory
@@ -355,10 +389,9 @@ Memory persists between sessions -- agents remember project patterns, convention
 
 After installing, customize to match your workflow:
 
-1. **`~/.claude/rules/godmode-*.md`** -- Edit individual rule files to change specific behaviors (identity, quality gates, routing, etc.)
+1. **Override behaviors** -- The godmode rules (identity, quality gates, routing, etc.) are injected by the SessionStart hook; add a rule file to `~/.claude/rules/` or an entry in `~/.claude/CLAUDE.md` to override any of them
 2. **`~/.claude/settings.json`** -- Add/remove permissions for your toolchain
-3. **Remove rules** -- Delete any `godmode-*.md` file to disable that behavior entirely
-4. **Add rules** -- Drop your own `.md` files into `~/.claude/rules/` for project-specific conventions
+3. **Add rules** -- Drop your own `.md` files into `~/.claude/rules/` for project-specific conventions; they load automatically alongside the godmode rules
 
 For the full file structure and contribution guidelines, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
@@ -390,10 +423,10 @@ npm install -g @anthropic-ai/claude-code
 ```
 
 **Rules not loading after install**
-Cause: Rule files are not in `~/.claude/rules/`. Fix:
+Cause: The SessionStart hook isn't running, so it can't inject the rules. Fix: start a fresh Claude Code session and run `/godmode` -- it confirms the hook is wired up. Manual installs can also verify the private rules copy exists:
 ```bash
-ls ~/.claude/rules/godmode-*.md   # should list 8 files
-./install.sh                      # re-run if missing
+ls ~/.claude/godmode/rules/godmode-*.md   # should list 8 files (manual install)
+./install.sh                              # re-run if missing
 ```
 
 **Permission denied running install.sh**
@@ -403,7 +436,7 @@ chmod +x install.sh && ./install.sh
 ```
 
 **Plugin not appearing after marketplace install**
-Cause: Rules need a one-time setup step. Fix: run `/godmode` inside Claude Code -- it detects missing rules and installs them with your confirmation.
+Cause: The session was started before the plugin finished installing, so the SessionStart hook didn't fire. Fix: start a fresh Claude Code session and run `/godmode` to confirm you're set up.
 
 ### General Tips
 
@@ -425,7 +458,7 @@ The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/c
 
 ### Does this work with Sonnet/Haiku?
 
-Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Six agents use Sonnet (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Eight agents use Sonnet (`@spec-reviewer`, `@code-reviewer`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
 
 ### What is the `model_profile` config knob?
 
@@ -439,11 +472,11 @@ Agents specify their target models in their configuration, but you can edit any 
 
 **Hard carve-out (locked in PROJECT.md):** code-writing agents — `@executor`, `@writer`, `@test-writer` — **cap at `effort: high`** even under `quality`, and are **never** raised to `xhigh`. On Opus 4.7, `effort: xhigh` is documented to skip rules, which is unacceptable for agents that produce code. Only read-only / design agents (`@architect`, `@security-auditor`, and any planner/verifier) receive `xhigh` under `quality`.
 
-**Current state (be honest):** the preset table describes the **intended** model/effort per profile, encoded in each agent's frontmatter. In v2, switching `model_profile` does **not** dynamically change models or effort at runtime — nothing in the plugin yet consumes the value to re-spawn agents. The knob is *exposed* to hook/subprocess machinery as `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE}` (env) and `${user_config.model_profile}` (hook substitution) so future versions can wire it up. For now, to apply a different profile you edit agent frontmatter (and an agent's `effort` is frontmatter-only — not runtime-overridable by the platform in any case). Treat the table as the target you encode, not a flag flipped at spawn.
+**Current state (be honest):** the knob is now wired for **model switching at spawn**. `/build`, `/verify`, and `/ship` read the active profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, call the resolver `bin/godmode-model <agent>` to get that agent's model under the profile, and pass it to the Agent tool's `model` override when spawning. `balanced` resolves to each agent's own frontmatter model; `quality` and `budget` apply the preset (with code-writing agents capped at `high` under `quality` per the carve-out above). This is **model-only**: the resolver also reports an effort value, but `effort` is **frontmatter-only and is NOT overridable at agent spawn** by the platform, so effort always stays whatever the agent's frontmatter declares regardless of profile. To change effort you still edit agent frontmatter.
 
 ### Will this overwrite my config?
 
-No. Claude God-Mode uses a rules-based approach -- it installs individual rule files into `~/.claude/rules/` which Claude Code loads alongside your existing config. Your `~/.claude/CLAUDE.md` is never read, modified, or replaced. Settings are merged additively, preserving your existing permissions and plugins. You can disable any godmode behavior by removing the corresponding rule file.
+No. The 8 godmode rules are injected automatically by the SessionStart hook (via `additionalContext`) at the start of every conversation -- no files are written to `~/.claude/rules/`, and there are zero setup steps. This works the same in plugin mode and manual mode. Your `~/.claude/CLAUDE.md` is never read, modified, or replaced. Settings are merged additively, preserving your existing permissions and plugins. Manual installs keep a private copy of the rules at `~/.claude/godmode/rules/` for the hook to read; this directory is not auto-loaded by Claude Code, so it never collides with your own config.
 
 ### Can I use individual parts?
 

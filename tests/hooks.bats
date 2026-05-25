@@ -16,6 +16,7 @@ load test_helper
 PRE="$PLUGIN_ROOT/hooks/pre-tool-use.sh"
 SECRETS="$PLUGIN_ROOT/hooks/pre-tool-use-secrets.sh"
 POST="$PLUGIN_ROOT/hooks/post-tool-use.sh"
+SESSION_START="$PLUGIN_ROOT/hooks/session-start.sh"
 
 setup() {
   make_temp_home
@@ -177,4 +178,37 @@ EOF
   run bash "$POST" <<<'{"tool_name":"Edit","tool_response":{"exit_code":1}}'
   [ "$status" -eq 0 ]
   [ -z "$output" ]
+}
+
+# --- session-start.sh: inject godmode rules (AC-10) -----------------------
+# The hook resolves bin/godmode-rules and rules/ relative to CWD, so run from
+# PLUGIN_ROOT (the repo root). make_temp_home only relocates $HOME, leaving the
+# repo-relative resolution intact.
+
+@test "session-start: emits SessionStart additionalContext with all 8 rules" {
+  run bash -c "cd '$PLUGIN_ROOT' && echo '{\"hook_event_name\":\"SessionStart\"}' | bash hooks/session-start.sh"
+  [ "$status" -eq 0 ]
+  [ -n "$output" ]
+
+  # Valid JSON with the expected hook event name.
+  printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName == "SessionStart"' > /dev/null
+
+  # Pull the injected context and assert every rule marker is present.
+  local ctx
+  ctx="$(printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext')"
+  printf '%s' "$ctx" | grep -qF '## Identity'                                   # godmode-identity
+  printf '%s' "$ctx" | grep -qF '## Quality Gates (Canonical'                   # godmode-quality
+  printf '%s' "$ctx" | grep -qF '## Git Discipline'                             # godmode-git
+  printf '%s' "$ctx" | grep -qF '## Lifecycle Routing'                          # godmode-routing
+  printf '%s' "$ctx" | grep -qF '## Context Management'                         # godmode-context
+  printf '%s' "$ctx" | grep -qF '## Auto-Detection'                            # godmode-coding
+  printf '%s' "$ctx" | grep -qF '## Debugging Protocol'                         # godmode-testing
+  printf '%s' "$ctx" | grep -qF '## Workflow cycle'                             # godmode-workflow
+}
+
+@test "session-start: preserves the existing workflow-spine context" {
+  run bash -c "cd '$PLUGIN_ROOT' && echo '{\"hook_event_name\":\"SessionStart\"}' | bash hooks/session-start.sh"
+  [ "$status" -eq 0 ]
+  printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' \
+    | grep -qF 'Workflow spine:'
 }
