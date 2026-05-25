@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **Rules now load via the SessionStart hook** — the 8 godmode rules are injected into every conversation through the hook's `additionalContext`, automatically and in all install modes (plugin and manual), with zero setup steps. Previously `install.sh` copied them into the auto-loaded `~/.claude/rules/` and plugin-mode installs received no rules at all.
+
+### Removed
+
+- **Retired the `~/.claude/rules/` install path and drift-detection machinery** — godmode no longer writes rule files into `~/.claude/rules/`, and the hashing/drift-detection that guarded those copies is gone.
+- **Removed `bin/godmode-hash-rules`** — only existed to support rule-file drift detection, which no longer applies.
+
+### Migration
+
+- **Upgrade note:** existing users who previously installed godmode should delete the stale auto-loaded copies to avoid double-loading the rules:
+  ```bash
+  rm ~/.claude/rules/godmode-*.md
+  ```
+  Manual installs now keep a private (non-auto-loaded) copy at `~/.claude/godmode/rules/` that only the SessionStart hook reads.
+
 ## [2.0.0] - 2026-05-25
 
 ### BREAKING
