@@ -88,7 +88,7 @@ Agents are assigned to one of four tiers based on task complexity and cost:
 - **Opus + default effort** -- Code-writing agents that need Opus-level reasoning to produce correct implementations but don't need the thoroughness overhead.
   - `@writer`, `@executor`
 - **Sonnet + high effort** -- Structured analysis and generation tasks. Sonnet handles these well when given high effort to be thorough.
-  - `@reviewer`, `@test-writer`, `@doc-writer`
+  - `@code-reviewer`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, `@test-writer`, `@doc-writer`
 - **Sonnet + default effort** -- Background research and information gathering where speed and cost matter more than deep reasoning.
   - `@researcher`
 
