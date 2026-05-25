@@ -60,7 +60,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
 
-Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 12 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 14 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
 
 The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
@@ -93,7 +93,7 @@ The installer (Step 1) already copied the rule files into `~/.claude/rules/` —
 
 ```
 You:    /godmode
-Claude: God-Mode v2.0.0 · 10 skills, 12 agents
+Claude: God-Mode v2.0.0 · 10 skills, 14 agents
         Where: uninitialized — no roadmap yet
         Next:  /mission   (then /brief 1)
         Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
@@ -123,7 +123,7 @@ You:    /plan 1
 Claude: [breaks brief into dependency-ordered steps, writes PLAN.md]
 
 You:    /build 1
-Claude: [spawns @executor per step, @reviewer validates each, atomic commits]
+Claude: [spawns @executor per step, /verify review lenses validate each, atomic commits]
         Brief 1 complete! Run /verify 1 to confirm goals, then /ship.
 
 You:    /verify 1
@@ -157,7 +157,7 @@ Re-run the install command for your method (plugin: `claude plugin install`, man
 /godmode  -->  /mission  -->  /brief N  -->  /plan N  -->  /build N  -->  /verify N  -->  /ship
   |               |              |              |              |               |             |
 orient         PROJECT.md     BRIEF.md       PLAN.md       @executor       COVERED/       gates
-               ROADMAP.md     (why+what)    (dep waves)    @reviewer      PARTIAL/        PR
+               ROADMAP.md     (why+what)    (dep waves)   review lenses   PARTIAL/        PR
                                                            per step       MISSING
 ```
 
@@ -177,7 +177,7 @@ Claude: [breaks brief into dependency-ordered waves, writes PLAN.md]
 
 You:    /build 1
 Claude: [wave-based parallel execution — @executor implements,
-        @reviewer validates, atomic commit per step]
+        /verify review lenses validate, atomic commit per step]
         Brief 1 complete! Run /verify 1 to confirm goals.
 
 You:    /verify 1
@@ -197,15 +197,17 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | `@verifier` | opus | project | xhigh | Goal-backward verification for `/verify N` (read-only) |
 | `@architect` | opus | project | xhigh | System design (advisory, read-only enforced) |
 | `@security-auditor` | opus | project | xhigh | Security audit (read-only, enforced) |
-| `@reviewer` | sonnet | project | high | Code review (read-only, enforced) |
 | `@spec-reviewer` | sonnet | project | high | Brief/plan spec review (read-only) |
-| `@code-reviewer` | sonnet | project | high | Deep code review (read-only) |
+| `@code-reviewer` | sonnet | project | high | Deep code review lens (read-only) |
+| `@perf-reviewer` | sonnet | project | high | Performance review lens (read-only) |
+| `@convention-reviewer` | sonnet | project | high | Convention/style review lens (read-only) |
+| `@test-reviewer` | sonnet | project | high | Test-quality review lens (read-only) |
 | `@test-writer` | sonnet | project | high | Test generation in isolated worktree |
 | `@doc-writer` | sonnet | project | high | Documentation |
 | `@researcher` | sonnet | project | high | Codebase and web research (background) |
 
 **Safety features:**
-- Read-only agents (`@architect`, `@planner`, `@verifier`, `@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
+- Read-only agents (`@architect`, `@planner`, `@verifier`, `@spec-reviewer`, `@code-reviewer`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
 - Code-writing agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
 - Code-writing agents cap at `effort: high` even under the `quality` model profile — `effort: xhigh` is documented to skip rules on Opus 4.7
 - `@researcher` runs in background mode by default for non-blocking parallel research
@@ -236,7 +238,7 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | "What do I do next?" | `/godmode` |
 | Implementing a one-off change | `@writer` (general-purpose, worktree) |
 | Executing a build step | `@executor` (spawned by `/build N`) |
-| Code review | `@reviewer` |
+| Code review | `/verify` (5 parallel lenses) |
 | Bug fixing | `/debug` |
 | Adding tests to existing code | `@test-writer` |
 | TDD for new feature | `/tdd` |
@@ -263,8 +265,8 @@ Claude: [analyzes code, writes tests, runs them, reports coverage]
 
 ### Code Review
 ```
-You:    @reviewer review my staged changes
-Claude: [analyzes diff, returns verdict with CRITICAL/WARNING/NIT findings]
+You:    /verify my staged changes
+Claude: [runs 5 parallel review lenses, returns verdict with CRITICAL/WARNING/NIT findings]
 ```
 
 ### Refactor Safely
@@ -425,7 +427,7 @@ The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/c
 
 ### Does this work with Sonnet/Haiku?
 
-Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Six agents use Sonnet (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Eight agents use Sonnet (`@spec-reviewer`, `@code-reviewer`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
 
 ### What is the `model_profile` config knob?
 

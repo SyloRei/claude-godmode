@@ -30,9 +30,12 @@ skill's body says to spawn an agent, spawn it — never do the agent's job inlin
 | Implement an isolated, general-purpose change | `@writer` |
 | Write tests for existing code | `@test-writer` |
 | Research / cited codebase & web findings | `@researcher` |
-| Code review (general, severity-scaled) | `@reviewer` |
+| Code review (5 parallel lenses) | `/verify` → `@code-reviewer`, `@security-auditor`, `@perf-reviewer`, `@convention-reviewer`, `@test-reviewer` |
 | Spec-level review (does the plan meet the brief) | `@spec-reviewer` |
 | Code-level review (does the diff meet the plan) | `@code-reviewer` |
+| Performance review | `@perf-reviewer` |
+| Convention/style review | `@convention-reviewer` |
+| Test-quality review | `@test-reviewer` |
 | Security audit | `@security-auditor` |
 | Documentation authoring | `@doc-writer` |
 
@@ -46,9 +49,9 @@ Which agent each workflow skill spawns for its heavy lifting:
 | `/plan N` | `@planner` (authoring), `@spec-reviewer` (plan vs brief) |
 | `/build N` | `@executor` (implement), `@test-writer` (tests), `@code-reviewer` (diff vs plan) |
 | `/verify N` | `@verifier` (goal-backward coverage) |
-| `/ship` | `@reviewer` (final pass), `@security-auditor` (secret/vuln scan) |
+| `/ship` | `/verify` (5-lens review final pass), `@security-auditor` (secret/vuln scan) |
 | `/debug` | `@researcher` (reproduce/isolate), `@writer` (minimal fix) |
-| `/refactor` | `@writer` (steps), `@reviewer` (no-behavior-change check) |
+| `/refactor` | `@writer` (steps), `/verify` (5-lens no-behavior-change check) |
 | `/tdd` | `@test-writer` (red tests), `@writer` (green impl) |
 | `/explore-repo` | `@researcher` (cited findings) |
 | `/mission` | `@architect` (roadmap shaping) |
@@ -67,9 +70,11 @@ substitute a built-in agent:
 | @writer | `claude-godmode:writer` | NOT `general-purpose` (built-in) |
 | @test-writer | `claude-godmode:test-writer` | — |
 | @researcher | `claude-godmode:researcher` | NOT `Explore` (built-in) |
-| @reviewer | `claude-godmode:reviewer` | — |
 | @spec-reviewer | `claude-godmode:spec-reviewer` | — |
 | @code-reviewer | `claude-godmode:code-reviewer` | — |
+| @perf-reviewer | `claude-godmode:perf-reviewer` | — |
+| @convention-reviewer | `claude-godmode:convention-reviewer` | — |
+| @test-reviewer | `claude-godmode:test-reviewer` | — |
 | @security-auditor | `claude-godmode:security-auditor` | — |
 | @doc-writer | `claude-godmode:doc-writer` | — |
 
@@ -86,5 +91,5 @@ with `WebFetch` and `WebSearch` access.
 ## Severity Scales
 
 Different domains, established conventions:
-- Code review (`@reviewer`, `@code-reviewer`, `@spec-reviewer`): CRITICAL / WARNING / NIT
+- Code review (`@code-reviewer`, `@spec-reviewer`, and the `/verify` lenses): CRITICAL / WARNING / NIT
 - Security audit (`@security-auditor`): CRITICAL / HIGH / MEDIUM / LOW
