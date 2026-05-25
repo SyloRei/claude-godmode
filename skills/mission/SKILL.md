@@ -1,18 +1,21 @@
 ---
 name: mission
-description: "Capture project purpose, constraints, and a numbered roadmap once, so every later step shares the same context. Use this to start a new project or update its direction — it initializes or updates .planning/PROJECT.md and .planning/ROADMAP.md."
+description: "Start or switch to a named feature mission and capture its purpose, constraints, and numbered roadmap, so every later step shares the same context. Use this to begin a new feature cycle or update its direction — it drives bin/godmode-mission, maintains the project-global .planning/PROJECT.md, and writes the mission's .planning/missions/<mission_id>/ROADMAP.md."
 user-invocable: true
-allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*), Bash(bin/godmode-mission*)
 ---
 
 # Mission
 
-Establish the durable foundation for a project: **why** it exists, the **constraints** it must respect, what **success** looks like, and a **numbered roadmap** of work units. Run once to initialize; re-run any time to update direction. Every later step (`/brief N`, `/plan N`, `/build N`, `/verify N`, `/ship`) reads this shared context.
+Establish the durable foundation for a **named feature cycle** — a *mission*: **why** it exists, the **constraints** it must respect, what **success** looks like, and a **numbered roadmap** of work units. Run `/mission <feature name>` to create-or-switch a mission; re-run any time to update its direction. Every later step (`/brief N`, `/plan N`, `/build N`, `/verify N`, `/ship`) reads this shared context for the active mission.
 
-Two artifacts live in the **consumer's** repo (the project you are helping build), never in the plugin source:
+A **mission** is a named feature cycle stored at `.planning/missions/<mission_id>/`, where `<mission_id>` is `NN-slug` (allocated by `bin/godmode-mission`). Each mission owns its own roadmap and briefs, and its work units number from 1 *within the mission*.
 
-- `.planning/PROJECT.md` — purpose, constraints, success criteria. The persistent project charter.
-- `.planning/ROADMAP.md` — a numbered list of work units. Each entry is referenceable by number: `/brief N` plans entry N.
+Artifacts live in the **consumer's** repo (the project you are helping build), never in the plugin source. Two are **project-global** at the `.planning/` root and span every mission; one is **mission-scoped**:
+
+- `.planning/PROJECT.md` *(root, global)* — purpose, constraints, success criteria. The persistent project charter, shared by all missions.
+- `.planning/STATE.md` *(root, global)* — workflow state, including the active `mission_id`.
+- `.planning/missions/<mission_id>/ROADMAP.md` *(per-mission)* — this mission's numbered list of work units. Each entry is referenceable by number: `/brief N` plans entry N **of the active mission**.
 
 ---
 
@@ -20,7 +23,7 @@ Two artifacts live in the **consumer's** repo (the project you are helping build
 
 Auto Mode suppresses **confirmation prompts** ("proceed? / shall I write it?") — never the **clarifying questions** that decide what the project actually is. A charter built on silent guesses is confidently wrong, and every later step inherits the error. So even in Auto Mode:
 
-- **Still ask the consequential questions** — the ones whose answer materially changes the charter (who it's for, what "success" concretely means, hard constraints, scope edges) AND that the repo/README/manifests/recent commits cannot answer. Batch them up front, lettered/option style, so they're answered fast.
+- **Still ask the consequential questions** — the ones whose answer materially changes the charter or this mission's scope (who it's for, what "success" concretely means, hard constraints, scope edges) AND that the repo/README/manifests/recent commits cannot answer. Batch them up front, lettered/option style, so they're answered fast.
 - **Assume the trivial** — for low-stakes gaps the repo can reasonably imply, pick a sensible default and record it under an **Assumptions** heading rather than asking.
 - Don't interrogate: if the repo already answers something, don't ask it. Treat user course-corrections as normal input.
 
@@ -30,73 +33,101 @@ When Auto Mode is absent, same principle — ask the essential questions, keep i
 
 ## Process
 
-### 1. Read before writing
+### 1. Start or switch the mission
 
-Always Read existing state first — this is an **update**, not a fresh write:
+`/mission` always takes a **feature name** as its argument. Hand it to the lifecycle helper, which slugifies the name and decides create-vs-switch:
 
-- `.planning/PROJECT.md` (if present) — current purpose, constraints, decisions.
-- `.planning/ROADMAP.md` (if present) — current numbered work units and their status.
+```bash
+bin/godmode-mission start <feature name>
+```
+
+- **New name** (no `.planning/missions/NN-slug` for that slug yet) → the helper allocates the next `NN`, scaffolds `.planning/missions/NN-slug/` with a header-only `ROADMAP.md` and a `briefs/` directory, records `mission_id`/`mission_name` in state, and **resets `active_unit` to 1**. This is a fresh feature cycle: its roadmap and briefs number from 1.
+- **Existing name** (a mission dir already exists for that slug) → the helper **switches** to it: it sets `mission_id`/`mission_name` and **leaves `active_unit` unchanged**, preserving that mission's counter.
+
+Then resolve the active mission so every later path is mission-scoped:
+
+```bash
+mission_id=$(bin/godmode-state get mission_id)
+```
+
+If `/mission` was invoked without a feature name, ask the user for one before doing anything else — a mission must be named.
+
+### 2. Read before writing
+
+Always Read existing state first — re-running `/mission` for the same mission is an **update**, not a fresh write:
+
+- `.planning/PROJECT.md` (if present) — current purpose, constraints, decisions (project-global, at the `.planning/` root; shared by all missions).
+- `.planning/missions/${mission_id}/ROADMAP.md` — this mission's numbered work units and their status. For a freshly created mission the helper has already seeded a header-only file.
 - Read the current workflow state:
   ```bash
   bin/godmode-state get active_unit
   bin/godmode-state get status
   ```
 
-If neither doc exists, this is a first-time initialization. If they exist, preserve what is already decided (see Merge behavior below).
+If `PROJECT.md` does not exist, this is a first-time project initialization. If it exists, preserve what is already decided (see Merge behavior below).
 
-### 2. Gather purpose, constraints, success criteria
+### 3. Gather purpose, constraints, success criteria
 
 Establish, from the repo and the user (or inferred defaults in Auto Mode):
 
-- **Purpose** — what the project is for and who it serves. One or two paragraphs.
+- **Purpose** — what the project is for and who it serves. One or two paragraphs. This is project-global; refine it across missions, don't rewrite it per feature.
 - **Constraints** — hard limits: tech stack, portability targets, license, dependency budget, anything non-negotiable.
 - **Success criteria** — the concrete bar that says the project achieved its goal. Measurable where possible.
 
-### 3. Establish the numbered roadmap
+The charter (`PROJECT.md`) spans all missions. The current mission's roadmap captures only the work units that belong to *this* feature cycle.
 
-Break the work into a **numbered** list of work units. Each entry:
+### 4. Establish the mission's numbered roadmap
 
-- Has a stable integer number — the reference `/brief N` will use.
+Break this mission's work into a **numbered** list of work units. Each entry:
+
+- Has a stable integer number — the reference `/brief N` will use. Numbering starts at 1 **within the mission**.
 - Has a short title and a one-line outcome statement.
 - Has a status: `pending`, `active`, or `done`.
 
 Number entries sequentially. New work units append with the next free number; **never renumber existing entries** (their numbers are referenced elsewhere).
 
-### 4. Write the artifacts (merge, never clobber)
+### 5. Write the artifacts (merge, never clobber)
 
-Write `.planning/PROJECT.md` and `.planning/ROADMAP.md` using the formats below.
+Write the project-global `.planning/PROJECT.md` (at the root) and the mission-scoped `.planning/missions/${mission_id}/ROADMAP.md` using the formats below.
 
-### 5. Record workflow state
+### 6. Record workflow state
 
 Point the workflow at the first unstarted roadmap entry so `/godmode` can tell the user what to do next:
 
 ```bash
-# N = the lowest-numbered roadmap entry that is still pending
+# N = the lowest-numbered roadmap entry of this mission that is still pending
 bin/godmode-state set active_unit "N"
 bin/godmode-state set status "mission defined"
 bin/godmode-state set next_command "/brief N"
 ```
 
-If every roadmap entry is already `done`, set `status` to `roadmap complete` and leave `next_command` pointing at `/mission` to add more work units.
+`mission_id`/`mission_name` are already set by `bin/godmode-mission start` (step 1) — do not set them by hand here.
+
+If every roadmap entry is already `done`, set `status` to `roadmap complete` and leave `next_command` pointing at `/mission` to add more work units to this mission (or start a new one).
 
 ---
 
 ## Merge behavior (re-running updates, does not clobber)
 
-`/mission` is safe to re-run. On every run:
+`/mission` is safe to re-run, and the name you pass decides what happens — this is enforced by `bin/godmode-mission`:
 
-- **Preserve existing decisions.** Read the current `PROJECT.md` and carry forward purpose, constraints, success criteria, and any **Decisions** section verbatim unless the user explicitly changes one. Edit individual lines or sections; do not rewrite the whole file from a blank slate.
-- **Append, don't renumber, roadmap entries.** Existing numbered entries keep their numbers and status. New work units get the next free number. If the user marks an entry done or active, change only that entry's status field.
+- **New feature name → new mission, counter reset.** A name with no existing mission dir scaffolds a fresh `.planning/missions/NN-slug/` and resets `active_unit` to 1. The new mission's roadmap and briefs number from 1, independent of every other mission.
+- **Existing feature name → merge in place, counter preserved.** Re-running with a name that already has a mission dir switches to it and leaves `active_unit` (its counter) untouched. You then **update** that mission's existing `ROADMAP.md` rather than starting over. Merge-never-clobber is now scoped to that mission.
+
+On every run, regardless of create-vs-switch:
+
+- **Preserve existing decisions.** Read the current project-global `PROJECT.md` and carry forward purpose, constraints, success criteria, and any **Decisions** section verbatim unless the user explicitly changes one. Edit individual lines or sections; do not rewrite the whole file from a blank slate. `PROJECT.md` is shared across missions — never reset it when starting a new mission.
+- **Append, don't renumber, roadmap entries.** Within the active mission's `ROADMAP.md`, existing numbered entries keep their numbers and status. New work units get the next free number. If the user marks an entry done or active, change only that entry's status field.
 - **Never silently drop content.** When updating a section, keep prior context; if a constraint or decision is being removed, note it explicitly (e.g. move it under a `## Superseded` heading rather than deleting it).
 - **Show a diff summary.** After writing, report which sections changed and which roadmap entries were added or had their status updated.
 
-Use Edit for surgical changes to existing files and Write only for first-time creation of an absent file.
+Use Edit for surgical changes to existing files (the project-global `PROJECT.md`, and an existing mission's `ROADMAP.md`) and Write only for first-time population of a freshly seeded or absent file.
 
 ---
 
 ## Artifact formats
 
-### `.planning/PROJECT.md`
+### `.planning/PROJECT.md` *(root, project-global)*
 
 ```markdown
 # Project: [name]
@@ -113,17 +144,19 @@ Use Edit for surgical changes to existing files and Write only for first-time cr
 - [Hard limits: stack, portability, license, dependency budget, non-negotiables.]
 
 ## Decisions
-- [YYYY-MM-DD] [Decision] — [rationale]. (Preserved across re-runs.)
+- [YYYY-MM-DD] [Decision] — [rationale]. (Preserved across re-runs and missions.)
 ```
 
-### `.planning/ROADMAP.md`
+### `.planning/missions/<mission_id>/ROADMAP.md` *(per-mission)*
+
+`bin/godmode-mission` seeds this header-only when the mission is created; `/mission` populates and updates it. `<mission_id>` is the active mission's `NN-slug` from `bin/godmode-state get mission_id`.
 
 ```markdown
-# Roadmap: [project name]
+# Roadmap: [mission name]
 
 **Updated:** [YYYY-MM-DD]
 
-Numbered work units. Reference an entry with `/brief N`.
+Numbered work units for this mission. Reference an entry with `/brief N`.
 
 | # | Work unit | Outcome | Status |
 |---|-----------|---------|--------|
@@ -138,19 +171,21 @@ Numbered work units. Reference an entry with `/brief N`.
 
 After writing, report:
 
-- Which artifacts were created vs updated.
+- The active mission (`mission_id` and `mission_name`), and whether it was created fresh or switched into.
+- Which artifacts were created vs updated, with their paths (the global `.planning/PROJECT.md` and the mission-scoped `.planning/missions/<mission_id>/ROADMAP.md`).
 - A short diff summary: changed sections and added/updated roadmap entries.
 - In Auto Mode, an **Assumptions** list of inferred defaults.
 - The workflow state set and the next step:
 
-> "Mission defined. Run `/brief N` to plan work unit N."
+> "Mission '<mission_name>' defined. Run `/brief N` to plan work unit N."
 
 ---
 
 ## Related
 
-- **/brief N** — turns roadmap entry N into a work unit with a why + what + spec.
-- **/godmode** — reads the workflow state this skill records and tells the user the next command.
-- **/onboard** — run first on an unfamiliar codebase; its findings sharpen the purpose and constraints captured here.
+- **/brief N** — turns roadmap entry N of the active mission into a work unit with a why + what + spec.
+- **/godmode** — reads the workflow state this skill records (including the active `mission_id`) and tells the user the next command.
+- **/onboard** — run first on an unfamiliar codebase; its findings sharpen the purpose and constraints captured in `PROJECT.md`.
+- **bin/godmode-mission** — the lifecycle helper this skill drives to create-or-switch missions and keep `mission_id`/`mission_name` in sync.
 
-**Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Mission is the shared-context root every later step reads from.
+**Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Mission is the shared-context root every later step reads from, scoped to the active mission.
