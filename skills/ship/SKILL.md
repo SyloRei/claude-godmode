@@ -70,6 +70,8 @@ Quality gates (from config/quality-gates.txt):
 - Lint → auto-fix where available, otherwise fix manually.
 - Multi-file fixes → spawn `@writer`.
 
+**Model profile.** Before spawning `@writer` (or any agent), resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
+
 Re-run all gates after any fix until every one passes.
 
 ---
