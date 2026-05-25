@@ -8,6 +8,9 @@ node_modules/
 # Local runtime state (worktrees, agent memory, local settings)
 .claude/
 
+# Local planning artifacts (mission/brief/plan/state — local-only, not shared)
+.planning/
+
 # Generated hook test fixtures (sourced from setup script)
 tests/fixtures/
 
