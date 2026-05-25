@@ -1,0 +1,120 @@
+#!/usr/bin/env bash
+# godmode-state — single source of truth for project workflow state.
+# Reads/writes three values persisted in .planning/STATE.md so the
+# active-unit number, status, and next-command pointer never drift.
+#
+# Usage:
+#   godmode-state get <key>
+#   godmode-state set <key> <value>
+#
+# Keys: active_unit | status | next_command
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. In-place edits use the
+# BSD-safe pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
+
+set -euo pipefail
+
+STATE_DIR=".planning"
+STATE_FILE="${STATE_DIR}/STATE.md"
+
+usage() {
+  echo "usage: godmode-state get <key>" >&2
+  echo "       godmode-state set <key> <value>" >&2
+  echo "keys:  active_unit | status | next_command" >&2
+}
+
+# Validate that a key is one of the supported state keys.
+valid_key() {
+  case "$1" in
+    active_unit|status|next_command) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Create the state file (and its directory) if absent. Idempotent.
+ensure_state_file() {
+  if [ ! -f "$STATE_FILE" ]; then
+    mkdir -p "$STATE_DIR"
+    {
+      echo "# Project State"
+      echo ""
+      echo "active_unit:"
+      echo "status:"
+      echo "next_command:"
+    } > "$STATE_FILE"
+  fi
+}
+
+# get <key> — print the value, or empty string if file/key absent. Never errors.
+cmd_get() {
+  local key="$1"
+  if [ ! -f "$STATE_FILE" ]; then
+    return 0
+  fi
+  # Match "key:" at line start, strip the prefix and surrounding whitespace.
+  local line
+  line=$(grep "^${key}:" "$STATE_FILE" | head -1 || true)
+  if [ -z "$line" ]; then
+    return 0
+  fi
+  # Remove "key:" prefix, then trim leading/trailing whitespace.
+  printf '%s\n' "${line#"${key}":}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# set <key> <value> — upsert the key in the state file.
+cmd_set() {
+  local key="$1"
+  local value="$2"
+  # State values are single-line key: value pairs. Collapse any newlines to
+  # spaces so a multi-line value cannot break the sed s/// command (which
+  # would abort the calling script under set -euo pipefail).
+  value="$(printf '%s' "$value" | tr '\n' ' ')"
+  ensure_state_file
+
+  if grep -q "^${key}:" "$STATE_FILE"; then
+    # Escape characters special to sed's replacement text: \ & / and newlines.
+    local esc
+    esc=$(printf '%s' "$value" | sed -e 's/[\/&\\]/\\&/g')
+    sed -i.bak "s/^${key}:.*/${key}: ${esc}/" "$STATE_FILE" && rm -f "${STATE_FILE}.bak"
+  else
+    printf '%s: %s\n' "$key" "$value" >> "$STATE_FILE"
+  fi
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    get)
+      if [ "$#" -ne 1 ]; then usage; exit 1; fi
+      if ! valid_key "$1"; then
+        echo "error: unknown key '$1'" >&2
+        usage
+        exit 1
+      fi
+      cmd_get "$1"
+      ;;
+    set)
+      if [ "$#" -ne 2 ]; then usage; exit 1; fi
+      if ! valid_key "$1"; then
+        echo "error: unknown key '$1'" >&2
+        usage
+        exit 1
+      fi
+      cmd_set "$1" "$2"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

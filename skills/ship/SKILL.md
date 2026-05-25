@@ -1,165 +1,151 @@
 ---
 name: ship
-description: "Pre-push verification and PR creation. Use when: ship it, ready to ship, create pr, push this, prepare for merge."
+description: "Run every canonical quality gate, push the branch, and open a pull request — release in one command. Use when: ship it, ready to ship, create the PR, push and open a PR."
 user-invocable: true
+disable-model-invocation: true
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(bin/godmode-state*)
 ---
 
 # Ship
 
-Verify all quality gates, clean up commits, push, and create PR.
+Take a verified work unit to a pull request: run the canonical quality gates, then — only if every gate passes — push the branch and open a PR. This is the final step of the spine: `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → **`/ship`**.
+
+`/ship` is side-effecting (it pushes and opens a PR), so it is **user-triggered only** (`disable-model-invocation: true`). It is never auto-invoked.
 
 ---
 
-## The Job
+## Confirm by default
 
-1. Run canonical quality gates
-2. Verify requirements match
-3. Security scan
-4. Git cleanup
-5. Push and create PR
+`/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then wait for explicit confirmation before pushing.
+
+**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (below) is never skipped, in either mode.
 
 ---
 
-## Step 1: Quality Gates (from CLAUDE.md — canonical list)
+## Step 1: Quality gates (read from the canonical source)
 
-Run ALL gates. Auto-detect commands from project config:
+The gates are defined in **`config/quality-gates.txt`** — one gate per line. **Read that file; do not hardcode the gate list here.** It is the single source of truth, so the gates stay in sync with the rest of the plugin.
 
-| Gate | Example Commands |
-|------|-----------------|
-| Typecheck | `tsc --noEmit`, `mypy`, `cargo check`, `go vet` |
-| Lint | `eslint`, `ruff`, `cargo clippy`, `golangci-lint` |
-| Tests | `vitest`, `pytest`, `cargo test`, `go test` |
-| Build | `tsup`, `cargo build`, `go build` |
-
-```
-Quality Gates:
-  [✓/✗] Typecheck
-  [✓/✗] Lint
-  [✓/✗] Tests
-  [✓/✗] Build
-```
-
-**If ANY gate fails:**
-- Use `/debug` to diagnose test/typecheck failures
-- Use `@writer` agent for complex fixes
-- For lint: run auto-fix if available, otherwise fix manually
-- **Do NOT skip. Do NOT push with failures.**
-
----
-
-## Step 2: Requirements Verification
-
-- Review the original task/issue/PRD
-- Confirm all acceptance criteria are met
-- Check: does the diff match what was requested?
-
-```
-Requirements:
-  [✓/✗] Changes match original request
-  [✓/✗] No unrelated changes included
-```
-
----
-
-## Step 3: Security Scan
-
-Scan the diff for:
-- Hardcoded secrets, API keys, tokens, passwords
-- .env files or credentials in staged changes
-- Sensitive data in logs or error messages
-
-If found: STOP. Remove them. Never push secrets.
-
----
-
-## Step 4: Git Cleanup
-
-- Check for uncommitted changes — commit or stash
-- Ensure branch is up to date with base branch
-- Review commit history — atomic and well-messaged?
-- If messy: suggest rebase (ask user first)
-
----
-
-## Step 5: Push & PR
+Resolve the file across install modes — plugin mode exposes `${CLAUDE_PLUGIN_ROOT}`; manual mode installs it under `~/.claude/config/`; fall back to a repo-relative path when developing the plugin itself:
 
 ```bash
-git push -u origin <branch>
+# Locate the canonical gate list — read it, don't assume it.
+GATES_FILE=""
+for cand in \
+  "${CLAUDE_PLUGIN_ROOT:-}/config/quality-gates.txt" \
+  "$HOME/.claude/config/quality-gates.txt" \
+  "config/quality-gates.txt"; do
+  [ -n "$cand" ] && [ -f "$cand" ] && { GATES_FILE="$cand"; break; }
+done
+[ -n "$GATES_FILE" ] || { echo "error: quality-gates.txt not found" >&2; exit 1; }
+while IFS= read -r gate; do
+  [ -n "$gate" ] || continue
+  printf 'gate: %s\n' "$gate"
+done < "$GATES_FILE"
 ```
 
-Create PR:
+For each gate, auto-detect the project's command (typecheck, lint, test, build, secret scan) and run it. Lint includes `shellcheck` clean for any `.sh` change. Report each gate's result:
+
 ```
+Quality gates (from config/quality-gates.txt):
+  [✓/✗] Typecheck passes (zero errors)
+  [✓/✗] Lint passes (zero errors; shellcheck clean for any .sh change)
+  [✓/✗] All tests pass (existing + new)
+  [✓/✗] No hardcoded secrets in the diff
+  [✓/✗] No regressions in related functionality
+  [✓/✗] Changes match the original requirements
+```
+
+**BLOCK on any failure.** If a gate fails: stop, report **which** gate failed and the error, and do **not** push or open a PR. Never `--no-verify`, never bypass a gate.
+
+- Test / typecheck failures → use `/debug`.
+- Lint → auto-fix where available, otherwise fix manually.
+- Multi-file fixes → spawn `@writer`.
+
+Re-run all gates after any fix until every one passes.
+
+---
+
+## Step 2: Git readiness
+
+- Commit or stash any uncommitted changes — the working tree must be clean before pushing.
+- Confirm the branch is current with its base.
+- Review the commit history: atomic commits, clear messages. If messy, suggest a rebase (ask first; never rewrite without consent).
+
+**Force-push guard.** **Never force-push to `main` or `master`** (nor any protected base) without an **explicit user request**. A normal `/ship` uses a fast-forward `git push`; if a non-fast-forward push to a base branch is ever required, stop and ask the user to confirm in plain words before using `--force` / `--force-with-lease`.
+
+---
+
+## Step 3: Push and open the PR
+
+After confirmation (or immediately, in Auto Mode):
+
+```bash
+branch=$(git branch --show-current)
+# Guard: never ship FROM a base branch. If you're on main/master, you'd push
+# the base itself — stop and ask the user to switch to a feature branch.
+case "$branch" in
+  main|master) echo "On base branch '$branch' — switch to a feature branch before /ship." >&2; exit 1 ;;
+esac
+git push -u origin "$branch"
+```
+
+Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit`, then glob `.planning/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
+
+```bash
 gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
 ## Summary
-- What changed and why (2-3 bullets)
+- What this work unit delivers and why (2-3 bullets)
+
+## Brief
+- .planning/briefs/NN-name/BRIEF.md (the why + what + spec)
 
 ## Changes
-- Specific changes list
+- The concrete changes in this branch
 
-## Test Plan
+## Verification
+- Quality gates passed (config/quality-gates.txt)
 - How to verify
-- Tests added/modified
 EOF
 )"
 ```
 
-Return PR URL.
+If no brief exists (e.g. a standalone change), omit the **Brief** section and summarize the work directly.
+
+Return the PR URL.
 
 ---
 
-## Agent Routing
+## Step 4: Record workflow state
 
-| Phase | Agent | Purpose |
-|-------|-------|---------|
-| Step 1 (Gate failure) | Spawn @writer for complex fixes | Fix typecheck, lint, or test failures that need multi-file changes |
-| Step 2 (Requirements) | MUST spawn @reviewer for deep code review | Validate all changes match acceptance criteria before pushing |
-| Step 3 (Security) | MUST spawn @security-auditor for comprehensive audit | Scan for vulnerabilities, secrets, injection risks before shipping |
-
-**Rule:** Never perform code review or security audit inline — always spawn the designated agent.
-
----
-
-## Pipeline Context
-
-<!-- canonical: skills/_shared/pipeline-context.md -->
-
-On activation, detect the current pipeline phase:
-
-| # | Condition | Phase |
-|---|-----------|-------|
-| 1 | `.claude-pipeline/` does not exist | **no-pipeline** |
-| 2 | PRD exists but no `stories.json` | **prd-only** |
-| 3 | `stories.json` exists but `branchName` does not match current git branch | **no-pipeline** |
-| 4 | All stories have `passes: false` | **planning** |
-| 5 | Some `passes: true`, some `passes: false` | **executing** |
-| 6 | All stories have `passes: true` | **complete** |
-
-### Branch Check
+On success, point the workflow forward via the single state source — `bin/godmode-state`:
 
 ```bash
-current_branch=$(git branch --show-current)
-pipeline_branch=$(jq -r '.branchName' .claude-pipeline/stories.json)
+bin/godmode-state set status "shipped"
+bin/godmode-state set next_command "/mission"
 ```
 
-If branches differ, phase is **no-pipeline** — the pipeline belongs to a different feature.
+This lets `/godmode` tell the user the work unit shipped and what to do next.
 
-### Phase Behaviors
+---
 
-| Phase | Behavior |
-|-------|----------|
-| **no-pipeline** | Operate in standalone mode. Ship changes without pipeline context. Zero regression from pre-pipeline behavior. |
-| **prd-only** | Standalone mode — no stories to verify against. Ship normally. |
-| **planning** | Warn user: stories are planned but none are implemented. Confirm they want to ship without executing the pipeline. |
-| **executing** | Read `progress.md` for context on completed stories. Use `stories.json` to verify all stories pass before shipping. If incomplete stories remain, warn user and confirm intent. Use quality gate commands from `stories.json.qualityGates` instead of re-detecting. |
-| **complete** | All stories pass. Read `progress.md` for PR description context. Use `stories.json` for quality gate commands and story summaries to populate the PR body. Reference the PRD via `prdSource` for requirements verification (Step 2). |
+## Output
+
+After shipping, report:
+
+- The gate results (all ✓).
+- The pushed branch and the PR URL.
+- The brief that was linked (if any).
+- The workflow state recorded and the next step:
+
+> "Shipped. PR opened at [URL]. Run `/mission` to pick up the next work unit."
 
 ---
 
 ## Related
 
-- **/debug** — when quality gates fail
-- **@reviewer** — for deep code review before shipping
-- **@security-auditor** — for comprehensive security audit before shipping
-- **/execute** — preceding step: implement all stories before shipping
+- **/verify N** — preceding step: confirm the work unit meets its brief before shipping.
+- **/debug** — when a quality gate fails.
+- **/godmode** — reads the workflow state this skill records and tells the user the next command.
 
-**Pipeline:** consumes `stories.json` (for PR body generation), `prdSource` (for requirements verification), `progress.md` (for change summary). Produces pushed branch and PR. Preceding step: `/execute` (all stories must pass). Also usable standalone after any manual implementation.
+**Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Ship gates, pushes, and opens the PR — the last step before merge.

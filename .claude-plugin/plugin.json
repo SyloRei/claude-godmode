@@ -1,19 +1,20 @@
 {
   "name": "claude-godmode",
-  "description": "Production-grade engineering workflow for Claude Code: 8 specialized agents, 8 skills, rules-based configuration, quality gates, and a full feature pipeline. Language-agnostic.",
-  "version": "1.6.0",
+  "description": "Senior engineering team in a plugin: one clear workflow (mission → brief → plan → build → verify → ship), 12 specialized agents, quality-gate enforcement, and CI. Language-agnostic.",
+  "version": "2.0.0",
   "author": {
     "name": "sylorei",
-    "url": "https://github.com/sylorei"
+    "email": "sylorweb@gmail.com",
+    "url": "https://github.com/sylorei/claude-godmode"
   },
   "keywords": [
     "workflow",
     "agents",
     "skills",
     "hooks",
-    "pipeline",
-    "engineering",
+    "planning",
     "quality-gates",
+    "engineering",
     "code-review",
     "tdd",
     "refactoring",
@@ -22,5 +23,13 @@
   ],
   "repository": "https://github.com/sylorei/claude-godmode",
   "homepage": "https://github.com/sylorei/claude-godmode",
-  "license": "MIT"
+  "license": "MIT",
+  "userConfig": {
+    "model_profile": {
+      "type": "string",
+      "default": "balanced",
+      "options": ["quality", "balanced", "budget"],
+      "description": "Model/effort preset for all agents. 'quality' = opus + xhigh (code-writing agents stay capped at effort:high); 'balanced' = each agent's own frontmatter values; 'budget' = haiku + default effort. See README FAQ for the full preset table and feasibility caveat."
+    }
+  }
 }

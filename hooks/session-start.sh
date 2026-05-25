@@ -5,7 +5,7 @@
 set -euo pipefail
 
 # Read stdin (hook input JSON) — consume it
-cat > /dev/null
+cat > /dev/null || true
 
 # Detect project type
 PROJECT_INFO=""
@@ -50,67 +50,49 @@ if git rev-parse --is-inside-work-tree > /dev/null 2>&1; then
   GIT_RECENT="Branch: ${BRANCH} | Recent: ${GIT_RECENT}"
 fi
 
-# Detect pipeline state
-PIPELINE_HINT=""
-PIPELINE_DIR=".claude-pipeline"
-
-if [ -d "$PIPELINE_DIR" ]; then
-  if command -v jq > /dev/null 2>&1; then
-    STORIES_FILE="${PIPELINE_DIR}/stories.json"
-    if [ -f "$STORIES_FILE" ]; then
-      # Parse stories.json — fall back to generic message on malformed JSON
-      TOTAL=$(jq '.stories | length' "$STORIES_FILE" 2>/dev/null) || TOTAL=""
-      DONE=$(jq '[.stories[] | select(.passes == true)] | length' "$STORIES_FILE" 2>/dev/null) || DONE=""
-
-      if [ -n "$TOTAL" ] && [ -n "$DONE" ] && [ "$TOTAL" -gt 0 ] 2>/dev/null; then
-        if [ "$DONE" -eq 0 ]; then
-          PIPELINE_HINT="Pipeline: ${TOTAL} stories ready. Run /execute to start."
-        elif [ "$DONE" -eq "$TOTAL" ]; then
-          PIPELINE_HINT="Pipeline: All ${TOTAL} stories complete. Run /ship to push and create PR."
-        else
-          PIPELINE_HINT="Pipeline: ${DONE}/${TOTAL} stories done. Run /execute to continue."
-        fi
-      else
-        # jq succeeded but returned unexpected values — treat as malformed
-        PIPELINE_HINT="Pipeline: .claude-pipeline/ found."
-      fi
-    else
-      # No stories.json — check for PRD files
-      PRD_FOUND=false
-      for f in "${PIPELINE_DIR}"/prds/prd-*.md; do
-        if [ -f "$f" ]; then
-          PRD_FOUND=true
-          break
-        fi
-      done
-      if [ "$PRD_FOUND" = true ]; then
-        PIPELINE_HINT="Pipeline: PRD found. Run /plan-stories to convert."
-      else
-        PIPELINE_HINT="Pipeline: .claude-pipeline/ found."
-      fi
-    fi
-  else
-    # jq not available — generic fallback
-    PIPELINE_HINT="Pipeline: .claude-pipeline/ found (install jq for detailed status)."
+# Surface recorded workflow state from .planning/STATE.md via bin/godmode-state.
+# Resolve the helper from the plugin root, then ~/.claude, then the repo.
+STATE_HINT=""
+STATE_BIN=""
+for cand in "${CLAUDE_PLUGIN_ROOT:-}/bin/godmode-state" "$HOME/.claude/bin/godmode-state" "bin/godmode-state"; do
+  if [ -x "$cand" ]; then STATE_BIN="$cand"; break; fi
+done
+if [ -n "$STATE_BIN" ] && [ -f .planning/STATE.md ]; then
+  ACTIVE=$("$STATE_BIN" get active_unit 2>/dev/null || true)
+  STATUS=$("$STATE_BIN" get status 2>/dev/null || true)
+  NEXT=$("$STATE_BIN" get next_command 2>/dev/null || true)
+  if [ -n "$ACTIVE" ] || [ -n "$STATUS" ] || [ -n "$NEXT" ]; then
+    STATE_HINT="Workflow: unit ${ACTIVE:-?} (${STATUS:-unknown})"
+    [ -n "$NEXT" ] && STATE_HINT="${STATE_HINT}. Next: ${NEXT}"
   fi
 fi
 
-# Build context
+# Build context body (real newlines; jq -n encodes them safely below).
 CONTEXT=""
 [ -n "$PROJECT_INFO" ] && CONTEXT="Project: ${PROJECT_INFO}"
-[ -n "$GIT_RECENT" ] && CONTEXT="${CONTEXT}\\n${GIT_RECENT}"
-[ -n "$PIPELINE_HINT" ] && CONTEXT="${CONTEXT}\\n${PIPELINE_HINT}"
+if [ -n "$GIT_RECENT" ]; then
+  [ -n "$CONTEXT" ] && CONTEXT="${CONTEXT}
+"
+  CONTEXT="${CONTEXT}${GIT_RECENT}"
+fi
+if [ -n "$STATE_HINT" ]; then
+  [ -n "$CONTEXT" ] && CONTEXT="${CONTEXT}
+"
+  CONTEXT="${CONTEXT}${STATE_HINT}"
+fi
 
 # Only inject if we detected something
 if [ -n "$CONTEXT" ]; then
-  cat <<EOF
-{
-  "hookSpecificOutput": {
-    "hookEventName": "SessionStart",
-    "additionalContext": "${CONTEXT}\\n\\nPipeline: /prd → /plan-stories → /execute → /ship\\nUse CLAUDE.md 'When to Use What' section for skill/agent selection."
-  }
-}
-EOF
+  BODY="${CONTEXT}
+
+Workflow spine: /godmode → /mission → /brief N → /plan N → /build N → /verify N → /ship
+Run /godmode to orient. See rules/godmode-routing.md for skill/agent selection."
+  jq -n --arg ctx "$BODY" '{
+    hookSpecificOutput: {
+      hookEventName: "SessionStart",
+      additionalContext: $ctx
+    }
+  }'
 else
   echo '{}'
 fi

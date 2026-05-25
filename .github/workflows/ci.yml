@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# bash 3.2+ / jq-only project — NO Node, Python, or Ruby anywhere in CI.
+# Static checks (shellcheck, lint-json, lint-frontmatter, version-drift, parity,
+# vocab) plus the bats smoke suite, on both Linux and macOS.
+jobs:
+  ci:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # shellcheck pinned to v0.11.0 for a reproducible, documented rule set.
+      # Ubuntu's apt package floats to an older version whose rules differ, so
+      # on Linux we install the official release binary (no Node). macOS keeps
+      # Homebrew, which already provides 0.11.0.
+      - name: Install shellcheck v0.11.0 (Linux, pinned binary)
+        if: runner.os == 'Linux'
+        run: |
+          set -euo pipefail
+          url="https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+          curl -fsSL "$url" -o /tmp/sc.tar.xz
+          tar -xJf /tmp/sc.tar.xz -C /tmp
+          sudo install /tmp/shellcheck-v0.11.0/shellcheck /usr/local/bin/shellcheck
+          shellcheck --version | grep 'version:'
+
+      - name: Install shellcheck (macOS)
+        if: runner.os == 'macOS'
+        run: brew install shellcheck
+
+      # bats-core pinned to v1.13.0 (no Node): clone the tagged release and run
+      # its installer. The distro/brew packages float to older versions, so we
+      # pin explicitly for reproducible test runs on both OSes.
+      - name: Install bats v1.13.0
+        run: |
+          git clone --depth 1 --branch v1.13.0 https://github.com/bats-core/bats-core.git /tmp/bats-core
+          sudo /tmp/bats-core/install.sh /usr/local
+
+      - name: Tool versions
+        run: |
+          bash --version | head -1
+          jq --version
+          shellcheck --version | head -2
+          bats --version
+
+      # Static analysis — respects .shellcheckrc at the repo root.
+      # Covers *.sh under hooks/ and scripts/, plus the extensionless bash
+      # helpers in bin/ (shebang is /usr/bin/env bash).
+      - name: shellcheck
+        run: |
+          { find hooks scripts -type f -name '*.sh' -print0 2>/dev/null
+            find bin -type f -print0 2>/dev/null
+          } | xargs -0 shellcheck
+
+      - name: lint-json
+        run: ./scripts/lint-json.sh
+
+      - name: lint-frontmatter
+        run: ./scripts/lint-frontmatter.sh
+
+      - name: version-drift
+        run: ./scripts/check-version-drift.sh
+
+      # plugin-mode == manual-mode hook binding parity.
+      - name: parity gate
+        run: ./scripts/check-parity.sh
+
+      # v2 user-facing vocabulary gate.
+      - name: vocab gate
+        run: ./scripts/check-vocab.sh
+
+      # locked command surface: <= 12 user-facing commands (1 reserved).
+      - name: surface-count gate
+        run: ./scripts/check-surface-count.sh
+
+      # bats smoke suite.
+      - name: bats
+        run: bats tests/

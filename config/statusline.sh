@@ -13,22 +13,36 @@ YELLOW='\033[33m'
 RED='\033[31m'
 CYAN='\033[36m'
 WHITE='\033[37m'
-GRAY='\033[90m'
 
 # Read JSON from stdin
 INPUT=$(cat)
 
-# Parse fields (with fallbacks for null/missing)
-MODEL=$(echo "$INPUT" | jq -r '.model.display_name // "—"' 2>/dev/null || echo "—")
-COST=$(echo "$INPUT" | jq -r '.cost.total_cost_usd // 0' 2>/dev/null || echo "0")
-CTX_PCT=$(echo "$INPUT" | jq -r '.context_window.used_percentage // 0' 2>/dev/null || echo "0")
-CWD=$(echo "$INPUT" | jq -r '.cwd // ""' 2>/dev/null || echo "")
+# Parse ALL fields in one pass (TSV: model, cost, ctx%, cwd).
+# Use control-char-free defaults; tabs separate fields, so empty cwd is fine.
+TSV=$(printf '%s' "$INPUT" | jq -r '
+  [ (.model.display_name // "—"),
+    (.cost.total_cost_usd // 0 | tostring),
+    (.context_window.used_percentage // 0 | tostring),
+    (.cwd // "")
+  ] | @tsv' 2>/dev/null || printf '—\t0\t0\t')
 
-# Project name from directory
-PROJECT=$(basename "$CWD" 2>/dev/null || echo "—")
+# Split TSV into fields (bash 3.2 portable; tab-delimited).
+IFS=$'\t' read -r MODEL COST CTX_PCT CWD <<EOF
+$TSV
+EOF
+MODEL=${MODEL:-—}
+COST=${COST:-0}
+CTX_PCT=${CTX_PCT:-0}
 
-# Git branch (fast, no network)
-BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "")
+# Project name + git branch from CWD. Guard against an absent/empty cwd so we
+# never fall back to the hook process's own directory (which would show the
+# wrong project/branch).
+PROJECT="—"
+BRANCH=""
+if [ -n "$CWD" ]; then
+  PROJECT=$(basename "$CWD" 2>/dev/null || echo "—")
+  BRANCH=$(cd "$CWD" 2>/dev/null && git branch --show-current 2>/dev/null || echo "")
+fi
 
 # Format cost
 if command -v awk &>/dev/null; then

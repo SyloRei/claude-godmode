@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# godmode-hash-rules — emit a stable hash of the rules/ directory contents.
+# The installer uses this to detect whether a user has customized their
+# installed rules versus the shipped baseline.
+#
+# Usage: godmode-hash-rules [rules-dir]   (default: rules)
+#
+# Stable across machines: files are hashed in sorted path order and only
+# their contents (not paths or metadata) feed the digest. Uses shasum,
+# available on both macOS and Linux. Bash 3.2 compatible.
+
+set -euo pipefail
+
+RULES_DIR="${1:-rules}"
+
+if [ ! -d "$RULES_DIR" ]; then
+  echo "error: rules directory not found: $RULES_DIR" >&2
+  exit 1
+fi
+
+# Concatenate file contents in deterministic (sorted) path order, then hash.
+# find ... | sort gives a stable ordering independent of filesystem traversal.
+find "$RULES_DIR" -type f | LC_ALL=C sort | while IFS= read -r f; do
+  cat "$f"
+done | shasum -a 256 | awk '{ print $1 }'

@@ -1,167 +1,94 @@
 ---
 name: godmode
-description: Show all available agents, skills, and the feature pipeline workflow. Use "/godmode statusline" to configure the statusline.
-allowed-tools:
-  - Bash
-  - Read
-  - Write
-  - Edit
-  - AskUserQuestion
+description: "Orient in five lines: where you are, what's done, and the exact next command to run. Reads workflow state and the live skill/agent inventory."
 user-invocable: true
+allowed-tools: Bash, Read
 ---
 
-# Claude God-Mode v1.4.1
+# /godmode — orient
 
-Check if the user's message contains "statusline" (e.g., `/godmode statusline`). If yes, go to **StatusLine Setup** below. Otherwise, **run the Rules Check first**, then show the **Quick Reference**.
+Answer one question in **5 lines or fewer**: *where am I, what's done, and what is the single next command to run?* Derive everything below from the live filesystem and the recorded workflow state — never from a memorized list.
 
 ---
 
-## Rules Check (runs automatically)
+## 1. Resolve paths (plugin / manual / repo modes)
 
-Before showing the Quick Reference, silently check whether godmode rules are installed:
+The same logic runs whether God-Mode is installed as a plugin, installed manually into `~/.claude/`, or run from a repo checkout. Resolve the plugin root, then the manifest:
 
 ```bash
-ls ~/.claude/rules/godmode-identity.md 2>/dev/null && echo "rules_installed" || echo "rules_missing"
+# Plugin mode sets CLAUDE_PLUGIN_ROOT. Manual install lives under ~/.claude.
+# Repo checkout: the command file's own tree. Pick the first that has plugin.json.
+ROOT=""
+for cand in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" "$(pwd)"; do
+  [ -n "$cand" ] || continue
+  if [ -f "$cand/.claude-plugin/plugin.json" ] || [ -d "$cand/agents" ]; then
+    ROOT="$cand"
+    break
+  fi
+done
+[ -n "$ROOT" ] && echo "root: $ROOT" || echo "root: (unresolved — using repo-relative fallbacks)"
 ```
 
-**If rules are missing:**
+If `ROOT` stays empty, fall back to the repo-relative dirs `agents/`, `skills/`, `commands/` and `.claude-plugin/plugin.json` from the current working directory.
 
-1. Tell the user:
-   ```
-   God-Mode rules are not installed yet. Rules provide coding standards, quality gates,
-   workflow guidance, and agent routing that make the system work at full capacity.
+## 2. Read the canonical version
 
-   Without rules, agents and skills still work but won't follow godmode conventions.
-   ```
-
-2. Ask: "Install godmode rules to ~/.claude/rules/? [Y/n]"
-
-3. If user confirms (or presses Enter for default Y):
-   - Resolve the plugin root: `echo "${CLAUDE_PLUGIN_ROOT}"`
-   - If `CLAUDE_PLUGIN_ROOT` is set, copy from there:
-     ```bash
-     mkdir -p ~/.claude/rules && cp "${CLAUDE_PLUGIN_ROOT}/rules/godmode-"*.md ~/.claude/rules/
-     ```
-   - If `CLAUDE_PLUGIN_ROOT` is empty (manual install), check if the repo `rules/` dir exists relative to the command file and copy from there
-   - Report: "Installed N rule files to ~/.claude/rules/. They'll be active in your next session."
-
-4. If user declines: "Skipping. Run /godmode anytime to install rules later."
-
-**If rules are already installed:** Skip silently, proceed to Quick Reference.
-
----
-
-## Quick Reference
-
-### Feature Pipeline
-
-```
-/prd → /plan-stories → /execute → /ship
-```
-
-### Available Skills
-
-| Skill | Trigger | Purpose |
-|-------|---------|---------|
-| `/prd` | Plan a feature | Generate Product Requirements Document |
-| `/plan-stories` | Break down PRD | Convert PRD to executable stories.json |
-| `/execute` | Implement stories | Run executor + reviewer agents on stories |
-| `/ship` | Push & create PR | Quality gates, git cleanup, PR creation |
-| `/debug` | Fix a bug | Structured debugging protocol |
-| `/tdd` | Test-first dev | Red-green-refactor cycle |
-| `/refactor` | Clean up code | Safe refactoring with test verification |
-| `/explore-repo` | Understand codebase | Deep codebase exploration |
-
-### Available Agents
-
-| Agent | Model | Memory | Effort | Purpose |
-|-------|-------|--------|--------|---------|
-| `@writer` | opus | project | default | Implementation (isolated worktree, maxTurns: 100) |
-| `@executor` | opus | project | default | Story execution from stories.json (maxTurns: 100) |
-| `@architect` | opus | project | high | System design (advisory, read-only enforced) |
-| `@security-auditor` | opus | project | high | Security audit (read-only enforced, +WebSearch) |
-| `@reviewer` | sonnet | project | high | Code review (read-only enforced) |
-| `@test-writer` | sonnet | project | high | Test generation (isolated worktree, maxTurns: 80) |
-| `@doc-writer` | sonnet | project | high | Documentation (+Bash) |
-| `@researcher` | sonnet | project | default | Codebase & web research (background, read-only enforced) |
-
-### Quality Gates
-
-All tasks must pass before completion:
-1. Typecheck (zero errors)
-2. Lint (zero errors)
-3. All tests pass
-4. No hardcoded secrets
-5. No regressions
-6. Changes match requirements
-
-### Configuration
-
-God-Mode uses rules-based configuration. Rule files live in `~/.claude/rules/godmode-*.md` and are loaded automatically by Claude Code. To customize behavior, edit the relevant rule file directly.
-
-**Tip:** Run `/godmode statusline` to set up the context-aware status bar.
-
----
-
-## StatusLine Setup
-
-Configure the God-Mode statusline that shows project name, git branch, model, context usage %, and session cost.
-
-Follow these steps in order:
-
-### Step 1: Check current status
-
-Read `~/.claude/settings.json` and check if a `statusLine` key already exists.
-
-- If `statusLine` **already exists**, tell the user what it's currently set to and ask:
-  - "Replace with God-Mode statusline?" → Continue to Step 2
-  - "Keep current statusline" → Exit, tell the user their statusline is unchanged
-
-- If `statusLine` **does not exist**, tell the user you'll configure it now and continue to Step 2.
-
-- If `~/.claude/settings.json` **does not exist**, create it in Step 2.
-
-### Step 2: Resolve the statusline script path
-
-Determine the path to the statusline script. Run:
+`.claude-plugin/plugin.json:.version` is the single source of truth — read it at runtime, never hardcode:
 
 ```bash
-echo "${CLAUDE_PLUGIN_ROOT}/config/statusline.sh"
+MANIFEST="$ROOT/.claude-plugin/plugin.json"
+[ -f "$MANIFEST" ] || MANIFEST=".claude-plugin/plugin.json"
+VERSION=$(jq -r '.version // "unknown"' "$MANIFEST" 2>/dev/null || echo "unknown")
+echo "version: $VERSION"
 ```
 
-If `CLAUDE_PLUGIN_ROOT` is empty or unset (manual install), use `~/.claude/hooks/statusline.sh` as the fallback path.
+## 3. Read the workflow state
 
-Verify the script exists at the resolved path:
+`/mission` records three keys via `bin/godmode-state`. Read them to derive the next action. Resolve the helper from the plugin root, then `~/.claude`, then the repo:
 
 ```bash
-test -f "<resolved_path>" && echo "found" || echo "not_found"
+STATE_BIN=""
+for cand in "$ROOT/bin/godmode-state" "$HOME/.claude/bin/godmode-state" "bin/godmode-state"; do
+  if [ -x "$cand" ]; then STATE_BIN="$cand"; break; fi
+done
+if [ -n "$STATE_BIN" ] && [ -f .planning/STATE.md ]; then
+  ACTIVE=$("$STATE_BIN" get active_unit)
+  STATUS=$("$STATE_BIN" get status)
+  NEXT=$("$STATE_BIN" get next_command)
+  echo "active_unit: $ACTIVE"
+  echo "status: $STATUS"
+  echo "next_command: $NEXT"
+else
+  echo "cold_start: true"   # no .planning/STATE.md yet
+fi
 ```
 
-If not found, tell the user the statusline script is missing and exit.
+**Cold start** (no `.planning/STATE.md`, or no state recorded): the project has no recorded direction. The next command is `/mission`; after that, `/brief 1`.
 
-### Step 3: Update settings.json
+**Warm start**: `next_command` from state *is* the answer. If it is empty but `active_unit` is set, infer from `status` along the spine `/mission → /brief N → /plan N → /build N → /verify N → /ship`.
 
-Read `~/.claude/settings.json` (or start with `{}`). Add or replace the `statusLine` key:
+## 4. Scan the live inventory
 
-```json
-{
-  "statusLine": {
-    "type": "command",
-    "command": "bash <resolved_path>"
-  }
-}
+Generate the available-command inventory by scanning the filesystem — **never** print a memorized list (it would drift as the repo evolves). Each skill directory under `skills/` and each `commands/*.md` is a slash command; each `agents/*.md` is an agent:
+
+```bash
+echo "skills:   $(ls -1 "$ROOT/skills" 2>/dev/null | grep -v '^_' | tr '\n' ' ')"
+echo "commands: $(ls -1 "$ROOT/commands" 2>/dev/null | sed 's/\.md$//' | tr '\n' ' ')"
+echo "agents:   $(ls -1 "$ROOT/agents" 2>/dev/null | sed 's/\.md$//' | tr '\n' ' ')"
 ```
 
-**Important:** Preserve all existing settings. Only add/update the `statusLine` key. Use the Edit tool on the existing file, or Write if creating from scratch.
+If `$ROOT` is unresolved, run the same scan against the repo-relative `skills/`, `commands/`, `agents/` directories. The `grep -v '^_'` skips any internal `_`-prefixed skill directories.
 
-### Step 4: Verify
+## 5. Print the orientation (≤ 5 lines)
 
-Tell the user:
+Compose at most five lines. Lead with the next command — it is the one thing the user came for. A good shape:
 
 ```
-StatusLine configured! Restart Claude Code to see it.
-
-Your statusline shows: project | branch | model | context usage % | cost
-
-To reconfigure later, run /godmode statusline
+God-Mode v<VERSION> · <available-skill-count> skills, <agent-count> agents
+Where: work unit <active_unit> — <status>     (or: "uninitialized — no roadmap yet")
+Next:  <next_command>                         (cold start: /mission, then /brief 1)
+Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
+Helpers: <helper skills from the scan above — i.e. scanned skills minus the spine commands; never a memorized list>
 ```
+
+Keep the whole output well under 10,000 characters — five short lines is the target. Do not dump the full inventory tables; the scan counts and the next command are what matter. If the user wants the full list, point them at `/<command> --help` or the inventory scan above.

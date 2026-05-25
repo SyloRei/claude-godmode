@@ -1,0 +1,6 @@
+Typecheck passes (zero errors)
+Lint passes (zero errors; shellcheck clean for any .sh change)
+All tests pass (existing + new)
+No hardcoded secrets in the diff
+No regressions in related functionality
+Changes match the original requirements

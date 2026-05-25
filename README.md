@@ -17,7 +17,7 @@
 
 Claude God-Mode is a Claude Code plugin that installs rules (focused config files loaded at session start), agents (specialized Claude instances with dedicated prompts, models, and memory), skills (slash-command workflows), and hooks (shell scripts on session events). Rules are individual files in `~/.claude/rules/` rather than a monolithic config, so you can customize, disable, or extend any aspect independently. Your personal `CLAUDE.md` is never modified.
 
-- **End-to-end pipeline** -- go from idea to merged PR with `/prd`, `/plan-stories`, `/execute`, `/ship`
+- **Single clear workflow** -- go from idea to merged PR with `/mission → /brief N → /plan N → /build N → /verify N → /ship`
 - **Quality gates enforcement** -- typecheck, lint, test, and security checks run automatically before anything ships
 - **Isolated worktrees** -- agents write code in separate git worktrees so your main branch stays clean
 - **Language-agnostic** -- auto-detects your toolchain (package manager, test runner, linter, formatter, build system)
@@ -31,7 +31,7 @@ Claude God-Mode is a Claude Code plugin that installs rules (focused config file
 - [Who It's For](#who-its-for)
 - [Why Claude God-Mode?](#why-claude-god-mode)
 - [Getting Started](#getting-started)
-- [Pipeline](#pipeline)
+- [Workflow](#workflow)
 - [Agents](#agents)
 - [Skills](#skills)
 - [Standalone Workflows](#standalone-workflows)
@@ -50,7 +50,7 @@ Claude God-Mode is a Claude Code plugin that installs rules (focused config file
 
 Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Claude Code workflow instead of ad-hoc prompting. Whether you're a solo developer or part of an engineering team, it brings code quality automation and AI engineering best practices to every session.
 
-**Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/prd` to define the feature, `/plan-stories` to break it into tasks, `/execute` to implement with automated review, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
+**Solo developer shipping a feature.** You have an idea, but turning it into a merged PR means juggling prompts, remembering to run tests, and hoping nothing slipped through. With God-Mode, you run `/mission` to set the goal, `/brief N` to define what to build, `/plan N` to break it into dependency-ordered steps, `/build N` to implement with automated review, `/verify N` to confirm every goal is covered, and `/ship` to push a clean PR -- all with quality gates enforced at every step.
 
 **Team standardizing their AI workflow.** Your team uses Claude Code, but everyone prompts differently and quality varies. God-Mode's rules-based config gives every team member the same coding standards, testing protocols, and review process. Rules live in `~/.claude/rules/` as individual files, so teams can share a baseline while individuals customize their setup.
 
@@ -60,7 +60,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
 
-Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get an end-to-end pipeline (`/prd` through `/ship`), 8 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, build) run on every change automatically -- not when you remember to ask.
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 12 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
 
 The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
@@ -87,17 +87,16 @@ cd claude-godmode
 
 The install script copies rules, agents, skills, and hooks to `~/.claude/` and merges `settings.json` additively -- your existing config is preserved.
 
-### Step 2: Install Rules
+### Step 2: Orient
 
-> **Important:** God-Mode's behavior comes from **rule files** in `~/.claude/rules/`. Without them, agents and skills won't follow the engineering workflow. This step is required for both install methods.
-
-Start a Claude Code session and run `/godmode`:
+The installer (Step 1) already copied the rule files into `~/.claude/rules/` — that's where God-Mode's behavior comes from; without them agents and skills won't follow the engineering workflow. Start a Claude Code session and run `/godmode` to confirm you're set up and see your next step:
 
 ```
 You:    /godmode
-Claude: Detected 8 rule files not yet installed. Install now? [Y/n]
-You:    Y
-Claude: Installed 8 rules to ~/.claude/rules/. God-Mode is active.
+Claude: God-Mode v2.0.0 · 10 skills, 12 agents
+        Where: uninitialized — no roadmap yet
+        Next:  /mission   (then /brief 1)
+        Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
 ```
 
 Then enable the status bar:
@@ -111,24 +110,30 @@ Claude: Statusline enabled. Context %, model, and cost now visible in status bar
 
 ### Step 3: First Feature
 
-Ship a feature end-to-end with four steps:
+Ship a feature end-to-end:
 
 ```
-You:    create a prd for adding full-text search to the API
-Claude: [asks clarifying questions, generates PRD]
+You:    /mission
+Claude: [sets project goal, writes PROJECT.md and ROADMAP.md]
 
-You:    /plan-stories
-Claude: Created stories.json with quality gates.
+You:    /brief 1
+Claude: [asks clarifying questions, writes BRIEF.md for brief 1]
 
-You:    /execute
-Claude: [spawns @executor per story, @reviewer validates each]
-        All stories complete! Run /ship to push and create PR.
+You:    /plan 1
+Claude: [breaks brief into dependency-ordered steps, writes PLAN.md]
+
+You:    /build 1
+Claude: [spawns @executor per step, @reviewer validates each, atomic commits]
+        Brief 1 complete! Run /verify 1 to confirm goals, then /ship.
+
+You:    /verify 1
+Claude: [goal-backward check: COVERED/PARTIAL/MISSING per criterion]
 
 You:    /ship
 Claude: Quality gates passed. PR #42 created: github.com/you/repo/pull/42
 ```
 
-See [Pipeline](#pipeline) for the full reference.
+See [Workflow](#workflow) for the full reference.
 
 ### Uninstall
 
@@ -146,32 +151,37 @@ See [Prerequisites](#prerequisites) for the full checklist.
 
 Re-run the install command for your method (plugin: `claude plugin install`, manual: `git pull && ./install.sh`). The installer creates a backup before updating.
 
-## Pipeline
+## Workflow
 
 ```
-/prd  -->  /plan-stories  -->  /execute  -->  /ship
-  |              |                 |             |
-  PRD       stories.json      @executor      Quality
-                               @reviewer    gates --> PR
+/godmode  -->  /mission  -->  /brief N  -->  /plan N  -->  /build N  -->  /verify N  -->  /ship
+  |               |              |              |              |               |             |
+orient         PROJECT.md     BRIEF.md       PLAN.md       @executor       COVERED/       gates
+               ROADMAP.md     (why+what)    (dep waves)    @reviewer      PARTIAL/        PR
+                                                           per step       MISSING
 ```
+
+Run `/godmode` at any time to see your current position and the next command.
 
 ### Example Workflow
 
 ```
-You:    create a prd for adding user authentication
-Claude: [asks 3-5 clarifying questions with lettered options]
-You:    1A, 2C, 3B
-Claude: [generates PRD, saves to .claude-pipeline/prds/prd-user-auth.md]
+You:    /mission
+Claude: [sets project goal, writes PROJECT.md and ROADMAP.md]
 
-You:    /plan-stories
-Claude: [converts PRD -> stories.json with 6 stories + quality gates]
+You:    /brief 1
+Claude: [Socratic questions to clarify scope, writes BRIEF.md]
 
-You:    /execute
-Claude: [picks US-001, spawns @executor, implements, @reviewer validates]
-        Story US-001: Add users table
-        Story US-002: Create auth middleware
-        ...
-        All stories complete! Run /ship to push and create PR.
+You:    /plan 1
+Claude: [breaks brief into dependency-ordered waves, writes PLAN.md]
+
+You:    /build 1
+Claude: [wave-based parallel execution — @executor implements,
+        @reviewer validates, atomic commit per step]
+        Brief 1 complete! Run /verify 1 to confirm goals.
+
+You:    /verify 1
+Claude: [goal-backward check — each criterion: COVERED / PARTIAL / MISSING]
 
 You:    /ship
 Claude: [runs quality gates, pushes, creates PR, returns URL]
@@ -181,18 +191,23 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 
 | Agent | Model | Memory | Effort | Purpose |
 |-------|-------|--------|--------|---------|
-| `@writer` | opus | project | default | Implementation in isolated worktree |
-| `@executor` | opus | project | default | Story execution from stories.json |
-| `@architect` | opus | project | high | System design (advisory, read-only enforced) |
-| `@security-auditor` | opus | project | high | Security audit (read-only, enforced) |
+| `@writer` | opus | project | high | General implementation in isolated worktree |
+| `@executor` | opus | project | high | Step execution during `/build N` |
+| `@planner` | opus | project | xhigh | Tactical planning for `/plan N` (read-only) |
+| `@verifier` | opus | project | xhigh | Goal-backward verification for `/verify N` (read-only) |
+| `@architect` | opus | project | xhigh | System design (advisory, read-only enforced) |
+| `@security-auditor` | opus | project | xhigh | Security audit (read-only, enforced) |
 | `@reviewer` | sonnet | project | high | Code review (read-only, enforced) |
+| `@spec-reviewer` | sonnet | project | high | Brief/plan spec review (read-only) |
+| `@code-reviewer` | sonnet | project | high | Deep code review (read-only) |
 | `@test-writer` | sonnet | project | high | Test generation in isolated worktree |
 | `@doc-writer` | sonnet | project | high | Documentation |
-| `@researcher` | sonnet | project | default | Codebase and web research (background) |
+| `@researcher` | sonnet | project | high | Codebase and web research (background) |
 
 **Safety features:**
-- Read-only agents (`@architect`, `@reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
-- Write agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
+- Read-only agents (`@architect`, `@planner`, `@verifier`, `@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@researcher`, `@security-auditor`) have `disallowedTools: Write, Edit` enforced mechanically
+- Code-writing agents (`@executor`, `@writer`, `@test-writer`) have `maxTurns` limits (80-100) to prevent runaway token burn
+- Code-writing agents cap at `effort: high` even under the `quality` model profile — `effort: xhigh` is documented to skip rules on Opus 4.7
 - `@researcher` runs in background mode by default for non-blocking parallel research
 - `@security-auditor` has WebSearch for CVE and vulnerability lookups
 - Agents run in parallel -- spawn `@researcher` + `@security-auditor` simultaneously for independent tasks
@@ -201,11 +216,14 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 
 | Skill | Purpose |
 |-------|---------|
-| `/prd` | Generate Product Requirements Document |
-| `/plan-stories` | Convert PRD to executable stories.json |
-| `/execute` | Run executor + reviewer agents on stories |
+| `/godmode` | Orient: show current position and next command (reads STATE.md) |
+| `/mission` | Initialize/update PROJECT.md and numbered ROADMAP.md |
+| `/brief N` | Socratic brief: why + what + spec → BRIEF.md |
+| `/plan N` | Tactical breakdown into dependency-ordered waves → PLAN.md |
+| `/build N` | Wave-based parallel execution, atomic commit per step |
+| `/verify N` | Goal-backward verification: COVERED / PARTIAL / MISSING per criterion |
 | `/ship` | Quality gates, git cleanup, PR creation |
-| `/debug` | Structured debugging protocol |
+| `/debug` | Structured debugging protocol (reproduce → hypothesize → isolate → fix) |
 | `/tdd` | Test-driven development (red-green-refactor) |
 | `/refactor` | Safe refactoring with test verification |
 | `/explore-repo` | Deep codebase exploration |
@@ -214,9 +232,10 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 
 | Situation | Use |
 |-----------|-----|
-| Planning a feature | `/prd` -> `/plan-stories` -> `/execute` -> `/ship` |
-| Implementing a one-off task | `@writer` (general-purpose, worktree) |
-| Implementing pipeline stories | `@executor` (stories.json-aware, worktree) |
+| Shipping a feature | `/mission → /brief N → /plan N → /build N → /verify N → /ship` |
+| "What do I do next?" | `/godmode` |
+| Implementing a one-off change | `@writer` (general-purpose, worktree) |
+| Executing a build step | `@executor` (spawned by `/build N`) |
 | Code review | `@reviewer` |
 | Bug fixing | `/debug` |
 | Adding tests to existing code | `@test-writer` |
@@ -284,6 +303,10 @@ Claude: [analyzes requirements, proposes design, evaluates tradeoffs]
 |------|---------|---------|
 | **SessionStart** | Conversation begins | Injects project context (language, package manager, test runner, git state) |
 | **PostCompact** | After `/compact` | Restores quality gates and available skills after context compaction |
+| **PreToolUse** | Before every tool call | Quality-gate enforcement on `git commit` — blocks commits that fail typecheck, lint, or tests |
+| **PostToolUse** | After tool call | Surfaces failed exit codes; triggers secret scan on staged diffs |
+| **UserPromptSubmit** | Each user message | Injects session context on first message |
+| **SessionEnd** | Conversation ends | Writes install marker and last-version-seen to plugin data directory |
 | **StatusLine** | Continuous | Shows context %, model, cost, project, branch (run `/godmode statusline` to enable) |
 
 ## Rules-Based Configuration
@@ -301,7 +324,7 @@ Claude God-Mode uses individual rule files instead of a monolithic config. Rule 
 | Rule File | Concern |
 |-----------|---------|
 | `godmode-identity.md` | Engineering persona and response style |
-| `godmode-workflow.md` | Feature pipeline phases and entry points |
+| `godmode-workflow.md` | Workflow phases and entry points |
 | `godmode-coding.md` | Auto-detection, coding standards, security |
 | `godmode-quality.md` | Quality gates (typecheck, lint, test, build) |
 | `godmode-git.md` | Git discipline and commit conventions |
@@ -349,6 +372,7 @@ Before installing, make sure you have:
 - [ ] **git** >= 2.20 -- required for worktree agents. Verify: `git --version`
 - [ ] **jq** -- used by install script to merge `settings.json`. Verify: `jq --version`
 - [ ] **macOS or Linux** -- Windows is not supported (Claude Code limitation)
+- [ ] **Claude Code >= v2.1.33** -- required for the `@researcher` agent's persistent memory (`memory: project`)
 
 ### Common Issues
 
@@ -401,7 +425,21 @@ The bar turns yellow at 60% and red at 80%. Compact proactively at ~70% with `/c
 
 ### Does this work with Sonnet/Haiku?
 
-Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Four agents use Sonnet (`@reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and four use Opus (`@writer`, `@executor`, `@architect`, `@security-auditor`).
+Agents specify their target models in their configuration, but you can edit any agent file to use a different model. Six agents use Sonnet (`@reviewer`, `@spec-reviewer`, `@code-reviewer`, `@test-writer`, `@doc-writer`, `@researcher`) and six use Opus (`@writer`, `@executor`, `@planner`, `@verifier`, `@architect`, `@security-auditor`).
+
+### What is the `model_profile` config knob?
+
+`model_profile` is the single user-tunable config knob (defined under `userConfig` in `.claude-plugin/plugin.json`). It selects a model/effort **preset** applied across agents:
+
+| `model_profile` | Model | Effort |
+|-----------------|-------|--------|
+| `quality`       | `opus`  | `xhigh` |
+| `balanced` (default) | each agent's own frontmatter values | each agent's own frontmatter values |
+| `budget`        | `haiku` | default |
+
+**Hard carve-out (locked in PROJECT.md):** code-writing agents — `@executor`, `@writer`, `@test-writer` — **cap at `effort: high`** even under `quality`, and are **never** raised to `xhigh`. On Opus 4.7, `effort: xhigh` is documented to skip rules, which is unacceptable for agents that produce code. Only read-only / design agents (`@architect`, `@security-auditor`, and any planner/verifier) receive `xhigh` under `quality`.
+
+**Current state (be honest):** the preset table describes the **intended** model/effort per profile, encoded in each agent's frontmatter. In v2, switching `model_profile` does **not** dynamically change models or effort at runtime — nothing in the plugin yet consumes the value to re-spawn agents. The knob is *exposed* to hook/subprocess machinery as `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE}` (env) and `${user_config.model_profile}` (hook substitution) so future versions can wire it up. For now, to apply a different profile you edit agent frontmatter (and an agent's `effort` is frontmatter-only — not runtime-overridable by the platform in any case). Treat the table as the target you encode, not a flag flipped at spawn.
 
 ### Will this overwrite my config?
 

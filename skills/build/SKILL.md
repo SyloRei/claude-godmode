@@ -1,0 +1,266 @@
+---
+name: build
+description: "Execute a plan in dependency-ordered waves — run independent steps concurrently in isolated worktrees, one atomic, quality-gated commit per step. Use when: build N, execute the plan for N, run the build for roadmap unit N."
+user-invocable: true
+disable-model-invocation: true
+argument-hint: [N]
+arguments: [N]
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+---
+
+# Build
+
+Execute the plan for roadmap unit **$N** wave by wave: group the plan's steps by their declared dependencies, run independent steps **concurrently**, and land **one atomic, quality-gated commit per step**. This is the fifth step of the spine: `/mission` → `/brief N` → `/plan N` → **`/build N`** → `/verify N` → `/ship`.
+
+`/build` is side-effecting (it writes code, runs gates, and commits), so it is **user-triggered only** (`disable-model-invocation: true`). It is never auto-invoked.
+
+The git log **is** the execution log. There is no third artifact file — `BRIEF.md` and `PLAN.md` are the only files per unit. Each completed step becomes one commit; the commit history is the record of what was built.
+
+---
+
+## Confirm by default (OQ-5)
+
+`/build` **confirms with the user before dispatching each wave** and before any other side-effecting change (committing, writing to the worktree). Before a wave runs, show: the wave number, the steps in it, the files each step touches, and the agent each step dispatches to. Wait for explicit confirmation, then proceed.
+
+**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompts: dispatch each wave on the default choices and treat any user course-correction as normal input. The per-step quality-gate block (below) is **never** skipped, in either mode.
+
+---
+
+## Step 1: Read the plan and reconcile state
+
+Find the brief directory for unit **$N** and read its `PLAN.md`. `NN` is `$N` zero-padded to two digits (unit `3` → `03`), matching the directory `/brief N` and `/plan N` created. The glob is guarded so an empty match can't abort under `set -euo pipefail`:
+
+```bash
+NN=$(printf '%02d' "$N")
+brief_dir=$(ls -d .planning/briefs/${NN}-* 2>/dev/null | head -1 || true)
+[ -n "$brief_dir" ] || { echo "No brief dir for unit $N — run /plan $N first." >&2; exit 1; }
+```
+
+If no `${brief_dir}/PLAN.md` exists, stop and tell the user to run `/plan $N` first — do not invent a plan.
+
+Read the plan's **Steps**, its **Waves** section, and its **Verification plan**. Read the linked `BRIEF.md` for the acceptance-criterion (AC) IDs each step references — the commit messages cite them.
+
+Read the current workflow state — both the active unit and the status (which carries any partial progress from a prior `/build` run, see resumability below):
+
+```bash
+active=$(bin/godmode-state get active_unit)
+status=$(bin/godmode-state get status)
+```
+
+**Reconcile `active_unit` with `$N` before doing anything else.** If `active` is non-empty and differs from `$N`, the state points at a different unit. Set `active_unit` to `$N` so the recorded state stays coherent, and warn the user that the active unit changed:
+
+```bash
+if [ -n "$active" ] && [ "$active" != "$N" ]; then
+  echo "warning: active_unit was '$active', building '$N' — updating active_unit to $N." >&2
+  bin/godmode-state set active_unit "$N"
+  status=""   # prior status belongs to a different unit; ignore its done-set
+fi
+```
+
+Do **not** silently proceed with mismatched state, and do **not** treat a different unit's done-set as this unit's progress.
+
+**Re-entry contract.** Inspect `status` (the done-set schema is defined in Step 6):
+
+- If `status` begins with `build complete` **for this unit** (it reads `build complete | unit: $N` and `active` matched `$N`, see Step 7), there is nothing to build — report it and offer `/verify $N`.
+- If `status` contains a `done:` list for this unit, **skip** those step IDs (their commits already exist) and run only the remaining steps plus any failed subtree from the prior run.
+- Otherwise, this is a fresh build of unit `$N` — the done-set starts empty.
+
+---
+
+## Step 2: Derive the waves
+
+A **wave** is a set of steps that can run concurrently because none depends on another in the same wave.
+
+The authoritative source is each step's **`dependsOn`** field. Derive waves from it:
+
+- **Wave 1** = every step with `dependsOn: none`.
+- **Wave k** = every not-yet-placed step whose `dependsOn` IDs are all in waves `1..k-1`.
+- Repeat until all steps are placed. A cycle (no step is placeable) is a plan error — stop and report it.
+
+**On the plan's `## Waves` section.** `/plan N` writes a pre-computed `## Waves` grouping (e.g. `Wave 1: S1`, `Wave 2: S2, S3`) as a convenience. It is **derived from `dependsOn`**, so when both are present they must agree:
+
+- If `## Waves` **agrees** with the `dependsOn`-derived grouping, use it as written.
+- If `## Waves` **contradicts** `dependsOn` (a stale hand-edit drifted from the structured field), **prefer `dependsOn`** — it is the more precisely structured source — OR, if the contradiction looks intentional, **flag the conflict and stop** rather than guessing. Do not silently follow a stale `## Waves`.
+- If `## Waves` is **absent**, derive the grouping from `dependsOn`. This is normal for older plans written before the section existed — it is not an error.
+
+Run **steps within a wave concurrently**; run **waves strictly in order** — a wave starts only after the previous wave's steps have all committed and merged back (Step 5). Because the plan makes the steps in a wave file-disjoint, this ordering keeps every step's worktree branching off an up-to-date build-branch HEAD.
+
+---
+
+## Step 3: Dispatch each step to an isolated worktree
+
+For each step in the current wave, dispatch the implementation to a **code-writing agent running in its own git worktree** so concurrent steps never collide on files:
+
+- **`@executor`** — for a step that maps to a discrete, spec-shaped unit of work (the default for plan-driven steps).
+- **`@writer`** — for a general implementation step that is not story-shaped.
+
+Both agents declare `isolation: worktree` in their frontmatter. **Each agent's worktree is created off the current build-branch HEAD** — the branch you are building on. Because waves run strictly in order (Step 2) and each wave merges back before the next begins (Step 5), every worktree in a wave branches off the same, up-to-date HEAD. Spawn one agent **per step**, in parallel within the wave. Give each agent:
+
+- the step's **ID**, the **files it touches**, the **change it makes**, and the brief **AC IDs** it satisfies;
+- the instruction to, inside its own worktree: implement the step, **run the per-step quality gates** (Step 4), and on green make **exactly one atomic commit** for the step — **never `--no-verify`** (Step 5). The agent does **not** push and does **not** merge; it returns its worktree branch name and commit hash.
+
+Do **not** implement steps inline in this orchestrating context — always dispatch to `@executor`/`@writer`. This skill orchestrates; the agents write the code, run the gates, and commit in their worktrees.
+
+---
+
+## Step 4: Per-step quality gates (run by the agent, in its worktree)
+
+Before a step's changes are committed, they **must pass every canonical quality gate**. **The dispatched `@executor`/`@writer` agent runs these gates inside its own worktree, before it commits** — not this orchestrating skill. That is deliberate: the agents have broad `Bash` access (they write code and run `typecheck`/`lint`/`test`/`build`), so the gate commands execute where the changes live. This skill's narrow `allowed-tools` (no `npm`/`cargo`/`shellcheck`/etc.) is therefore **intentional, not a blocker** — the orchestrator never needs to run a project toolchain itself; it reads the plan, dispatches, and merges.
+
+The gates are defined in **`config/quality-gates.txt`** — one gate per line. **Read that file; do not hardcode the gate list here.** It is the single source of truth. Pass the resolved gate list to each agent so every step is held to the same bar.
+
+Resolve the file across install modes exactly as `/ship` does — plugin mode exposes `${CLAUDE_PLUGIN_ROOT}`; manual mode installs it under `~/.claude/config/`; fall back to a repo-relative path when developing the plugin itself:
+
+```bash
+# Locate the canonical gate list — read it, don't assume it.
+GATES_FILE=""
+for cand in \
+  "${CLAUDE_PLUGIN_ROOT:-}/config/quality-gates.txt" \
+  "$HOME/.claude/config/quality-gates.txt" \
+  "config/quality-gates.txt"; do
+  [ -n "$cand" ] && [ -f "$cand" ] && { GATES_FILE="$cand"; break; }
+done
+[ -n "$GATES_FILE" ] || { echo "error: quality-gates.txt not found" >&2; exit 1; }
+while IFS= read -r gate; do
+  [ -n "$gate" ] || continue
+  printf 'gate: %s\n' "$gate"
+done < "$GATES_FILE"
+```
+
+For each gate, the agent auto-detects the project's command (typecheck, lint, test, build, secret scan) and runs it against the step's changes inside its worktree. Lint includes `shellcheck` clean for any `.sh` change. Each agent reports its step's gate results back to the orchestrator:
+
+```
+Step S2 — quality gates (from config/quality-gates.txt):
+  [✓/✗] Typecheck passes (zero errors)
+  [✓/✗] Lint passes (zero errors; shellcheck clean for any .sh change)
+  [✓/✗] All tests pass (existing + new)
+  [✓/✗] No hardcoded secrets in the diff
+  [✓/✗] No regressions in related functionality
+  [✓/✗] Changes match the original requirements
+```
+
+A step **commits only when every gate passes** (the agent makes that commit in its worktree, below). If a gate fails, the step has failed — see failure isolation below.
+
+---
+
+## Step 5: Atomic commit in the worktree, then sequential merge-back
+
+This is where one atomic, gated commit per step lands on the build branch. The work splits cleanly between the agent and the orchestrator — **the orchestrator never re-commits work it did not write; it merges.**
+
+**5a — The agent commits, in its own worktree.** When a step's gates pass, the dispatched agent makes **exactly one atomic commit** of *its* changes on its worktree branch. The commit message references the unit, the step ID, and the brief AC IDs the step satisfies:
+
+```
+feat: unit $N S2 — <step summary> (AC-2, AC-3)
+```
+
+The agent does this with `git commit` inside its worktree. **Never `--no-verify`. Never bypass a quality gate.** The commit lands only after Step 4 is green. The agent then returns its **worktree branch name** and **commit hash** to the orchestrator. The orchestrator does **not** stage or commit these files — they are already committed.
+
+**5b — The orchestrator merges each step's branch back, sequentially.** After every step in the wave has returned (committed in its worktree, or failed), the orchestrator merges the wave's step branches **one at a time** onto the build branch, in step order:
+
+```bash
+build_branch=$(git branch --show-current)
+# For each successfully-committed step branch in the wave, in order:
+for step_branch in "${WAVE_STEP_BRANCHES[@]}"; do
+  # Fast-forward when the build branch hasn't moved; otherwise a normal merge.
+  if ! git merge --ff-only "$step_branch" 2>/dev/null; then
+    if ! git merge --no-edit "$step_branch"; then
+      git merge --abort
+      echo "merge conflict on $step_branch — halting that step's subtree; reporting." >&2
+      # Record the step as failed (its descendants are skipped — see Step 6).
+      continue
+    fi
+  fi
+done
+```
+
+Because the plan makes the steps in a wave **file-disjoint**, these sequential merges are clean in the normal case — a fast-forward when the build branch hasn't advanced, a trivial merge otherwise. **On conflict**, the orchestrator aborts that single merge, **halts that step's dependency subtree** (Step 6), and reports it — other steps and waves are unaffected.
+
+**5c — Record and advance.** The orchestrator records each merged step's commit hash, marks the step done (resumability, Step 6), and only then advances to the next wave. The next wave's worktrees branch off the **now-updated** build-branch HEAD, so no wave ever builds on a stale base.
+
+---
+
+## Step 6: Failure isolation and resumability
+
+A failed step (gates won't pass, or its agent reports it cannot complete) **halts only its dependency subtree** — the steps that transitively declare `dependsOn` on the failed step — **not** unrelated waves or steps:
+
+- Skip the failed step's descendants (any step that depends on it, directly or transitively, via `dependsOn`).
+- **Continue** running every other independent step and wave. Steps with no dependency on the failure proceed and commit normally.
+- Report which step failed, why, and which descendant steps were skipped as a result.
+
+Record **partial progress** so `/build` is **resumable** — a re-run picks up where it left off rather than redoing committed steps. The state file has exactly three keys (`active_unit`, `status`, `next_command`); the done-set is encoded **into `status`** using a fixed, parseable convention so no fourth key is needed:
+
+```
+status = "building <N> | done: <S-id>,<S-id>,..."
+```
+
+`building <N>` is the human-readable label; everything after ` | done: ` is the machine done-set — a comma-separated list of completed step IDs. The completion state uses `build complete` (Step 7).
+
+**Append a just-merged step to the done-set** by reading the current `status`, parsing out the existing list, appending the new step, and writing it back. Never hardcode the list — always read-parse-append-write (bash 3.2, parameter expansion + `sed`):
+
+```bash
+# $step is the step ID that just merged (e.g. "S2").
+status=$(bin/godmode-state get status)
+
+# Parse the existing done-set: text after " | done: ", else empty.
+case "$status" in
+  *" | done: "*) existing=${status#*" | done: "} ;;
+  *)             existing="" ;;
+esac
+
+# Append $step (no leading comma when the list was empty), then write back.
+if [ -n "$existing" ]; then
+  newlist="${existing},${step}"
+else
+  newlist="$step"
+fi
+bin/godmode-state set status "building $N | done: $newlist"
+```
+
+To **test membership** when deciding whether to skip a step on re-entry, wrap both sides in commas so `S2` never matches `S20`:
+
+```bash
+case ",${existing}," in
+  *",${step},"*) echo "skip $step — already done" ;;
+  *)             echo "run $step" ;;
+esac
+```
+
+On a fresh `/build $N` (Step 1 re-entry contract), parse the done-set from `status` the same way, **skip** every step already listed (their commits already exist and are merged), and resume with the first wave that still has incomplete steps. A re-run after a failure retries the failed subtree without touching the steps that already committed.
+
+---
+
+## Step 7: Record workflow state on completion
+
+When every step has committed and merged back (or only a contained failed subtree remains, reported to the user), point the workflow forward via `bin/godmode-state`. The completion status records the unit so the Step 1 re-entry check can recognize an already-built unit:
+
+```bash
+bin/godmode-state set active_unit "$N"
+bin/godmode-state set status "build complete | unit: $N"
+bin/godmode-state set next_command "/verify $N"
+```
+
+This lets `/godmode` tell the user the build is done and what to do next. On a later `/build $N`, Step 1 sees `build complete | unit: $N` (with `active_unit` matching `$N`) and reports there is nothing to build, offering `/verify $N`.
+
+---
+
+## Output
+
+After building, report:
+
+- The waves derived from `dependsOn` (and whether the plan's `## Waves` section agreed, was absent, or conflicted) and the steps in each.
+- For each step: the agent dispatched (`@executor`/`@writer`), its gate results, the worktree commit hash, and how it merged back (fast-forward / merge / conflict).
+- Any failed step (gate failure or merge conflict), the descendant steps skipped, and the resumable done-set recorded in `status`.
+- The workflow state set and the next step:
+
+> "Build complete for unit N. Run `/verify N` to check it against the plan."
+
+---
+
+## Related
+
+- **/plan N** — preceding step: writes the `PLAN.md` (steps, `dependsOn`, `## Waves`) this skill executes.
+- **/verify N** — next step: checks the built change against the plan's verification plan.
+- **/debug** — when a step's quality gate fails and the cause isn't obvious.
+- **/godmode** — reads the workflow state this skill records and tells the user the next command.
+
+**Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Build runs the plan wave by wave in isolated worktrees, one atomic, gated commit per step.

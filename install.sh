@@ -5,12 +5,21 @@ set -euo pipefail
 # Installs rules/ files to ~/.claude/rules/ (never touches CLAUDE.md)
 # Supports plugin-mode (CLAUDE_PLUGIN_ROOT) and manual-mode (backward compat)
 
-VERSION="1.4.1"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="$HOME/.claude"
 TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
 BACKUP_DIR="$CLAUDE_DIR/backups/godmode-$TIMESTAMP"
-VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
+
+# --- Persistent install data (survives plugin updates) ---
+# CLAUDE_PLUGIN_DATA (~/.claude/plugins/data/<id>/) persists across plugin
+# updates, unlike CLAUDE_PLUGIN_ROOT which resets on every bump. The install
+# marker and last-version-seen live here so they outlive upgrades. In manual
+# mode the env var is unset, so we derive the canonical per-installation path.
+PLUGIN_DATA_DIR="${CLAUDE_PLUGIN_DATA:-$CLAUDE_DIR/plugins/data/claude-godmode}"
+VERSION_FILE="$PLUGIN_DATA_DIR/version"
+INSTALL_MARKER="$PLUGIN_DATA_DIR/installed"
+# Prior (pre-v2) version-marker location to migrate from, if present.
+LEGACY_VERSION_FILE="$CLAUDE_DIR/.claude-godmode-version"
 
 # Colors
 GREEN='\033[0;32m'
@@ -24,7 +33,26 @@ error() { echo -e "${RED}[x]${NC} $1"; exit 1; }
 
 # --- Preflight ---
 command -v jq >/dev/null 2>&1 || error "jq is required but not installed. See: https://jqlang.github.io/jq/download/"
-[ -d "$CLAUDE_DIR" ] || error "~/.claude/ directory not found. Is Claude Code installed?"
+[ -d "$CLAUDE_DIR" ] || error "$HOME/.claude/ directory not found. Is Claude Code installed?"
+
+# --- Version (single source of truth: .claude-plugin/plugin.json) ---
+PLUGIN_MANIFEST="$SCRIPT_DIR/.claude-plugin/plugin.json"
+[ -f "$PLUGIN_MANIFEST" ] || error "Plugin manifest not found: $PLUGIN_MANIFEST"
+VERSION="$(jq -r '.version' "$PLUGIN_MANIFEST")"
+[ -n "$VERSION" ] && [ "$VERSION" != "null" ] || error "No version found in $PLUGIN_MANIFEST"
+
+# --- Persistent data dir + legacy marker migration ---
+mkdir -p "$PLUGIN_DATA_DIR"
+if [ -f "$LEGACY_VERSION_FILE" ] && [ ! -f "$VERSION_FILE" ]; then
+  mv "$LEGACY_VERSION_FILE" "$VERSION_FILE"
+  info "Migrated version marker to persistent data dir ($PLUGIN_DATA_DIR)"
+elif [ -f "$LEGACY_VERSION_FILE" ] && [ -f "$VERSION_FILE" ]; then
+  # Both present (e.g. legacy file reappeared from a checkout). The data-dir
+  # copy is canonical; remove the stale legacy marker so it cannot confuse
+  # future migrations.
+  rm -f "$LEGACY_VERSION_FILE"
+  info "Removed stale legacy version marker ($LEGACY_VERSION_FILE)"
+fi
 
 # --- Mode detection ---
 if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ]; then
@@ -141,10 +169,13 @@ if [ -f "$SETTINGS" ]; then
       $existing * {
         statusLine: $template.statusLine,
         hooks: (
-          $existing.hooks // {} |
-          to_entries + ($template.hooks | to_entries) |
+          (($existing.hooks // {}) | to_entries)
+            + (($template.hooks // {}) | to_entries) |
           group_by(.key) |
-          map({key: .[0].key, value: (.[0].value)}) |
+          map({
+            key: .[0].key,
+            value: ([.[].value] | add | unique)
+          }) |
           from_entries
         ),
         permissions: (($existing.permissions // {}) * {
@@ -190,17 +221,44 @@ if [ "$MODE" = "manual" ]; then
     cp -r "$skill_dir"* "$CLAUDE_DIR/skills/$skill_name/"
   done
 
-  # Hooks
-  info "Installing hooks (3)"
+  # Hooks — copy the full event-set scripts so manual mode matches plugin mode.
+  # 7 hook scripts + statusline.sh.
+  info "Installing hooks (7)"
   mkdir -p "$CLAUDE_DIR/hooks"
   cp "$SCRIPT_DIR/hooks/session-start.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/pre-tool-use.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/pre-tool-use-secrets.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/post-tool-use.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/user-prompt-submit.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/session-end.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/hooks/"
   chmod +x "$CLAUDE_DIR/hooks/"*.sh
+
+  # Canonical config the skills/hooks read at runtime (manual-mode path).
+  info "Installing config"
+  mkdir -p "$CLAUDE_DIR/config"
+  cp "$SCRIPT_DIR/config/quality-gates.txt" "$CLAUDE_DIR/config/"
+
+  # bin/ helpers — required by the workflow spine (skills + hooks call
+  # godmode-state). Without these, manual-mode state tracking is broken.
+  BIN_COUNT=$(find "$SCRIPT_DIR/bin" -maxdepth 1 -type f | wc -l | tr -d ' ')
+  info "Installing bin helpers (${BIN_COUNT})"
+  mkdir -p "$CLAUDE_DIR/bin"
+  cp "$SCRIPT_DIR/bin/"* "$CLAUDE_DIR/bin/"
+  chmod +x "$CLAUDE_DIR/bin/"*
+
+  # Commands — /godmode is a command file (not a skill); copy it so the
+  # orientation command is available in manual mode.
+  CMD_COUNT=$(find "$SCRIPT_DIR/commands" -maxdepth 1 -name "*.md" | wc -l | tr -d ' ')
+  info "Installing commands (${CMD_COUNT})"
+  mkdir -p "$CLAUDE_DIR/commands"
+  cp "$SCRIPT_DIR/commands/"*.md "$CLAUDE_DIR/commands/"
 fi
 
-# --- Version file ---
+# --- Persistent install marker + last-version-seen ---
 echo "$VERSION" > "$VERSION_FILE"
+echo "$TIMESTAMP" > "$INSTALL_MARKER"
 
 # --- Done ---
 echo ""
@@ -215,7 +273,7 @@ echo "    - Settings merged (permissions, hooks, statusline)"
 if [ "$MODE" = "manual" ]; then
   echo "    - ${AGENT_COUNT} agents"
   echo "    - ${SKILL_COUNT} skills"
-  echo "    - 3 hooks (session-start, post-compact, statusline)"
+  echo "    - 7 hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end) + statusline"
   echo ""
   echo "  Mode: manual (agents, skills, hooks copied to ~/.claude/)"
 else

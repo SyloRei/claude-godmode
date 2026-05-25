@@ -1,40 +1,82 @@
-## When to Use What
+## Lifecycle Routing — One Owner per Step
 
-```
-Plan a feature           → /prd → /plan-stories → /execute → /ship
-Implement a task         → @writer agent (isolated worktree, general purpose)
-Execute pipeline stories → @executor agent (stories.json-aware, used by /execute)
-Code review              → @reviewer agent
-Find/fix a bug           → /debug skill
-Write tests              → @test-writer (existing code) or /tdd (new feature)
-Refactor                 → /refactor skill
-Understand codebase      → /explore-repo or @researcher
-Architecture advice      → @architect agent
-Security audit           → @security-auditor agent
-Documentation            → @doc-writer agent
-Push & create PR         → /ship skill
-```
+Every developer step maps to exactly ONE owner: a user-facing skill (`/x`)
+or an agent (`@y`). No step is orphaned; no two owners overlap a step. This
+table is canonical — when you reach for a capability, look it up here.
 
-## Agent Routing
+| Developer step | Owner | Kind |
+|---|---|---|
+| Orient — "what now?" | `/godmode` | skill |
+| Initialize / update project + roadmap (mission) | `/mission` | skill |
+| Brief / spec — why + what + spec | `/brief N` | skill |
+| Plan — tactical breakdown | `/plan N` | skill |
+| Implement / build — wave-based execution | `/build N` | skill |
+| Verify — goal-backward COVERED/PARTIAL/MISSING | `/verify N` | skill |
+| Ship — gates, push, open PR | `/ship` | skill |
+| Debug — find/fix a defect | `/debug` | skill |
+| Refactor — restructure without behavior change | `/refactor` | skill |
+| TDD — red-green-refactor a new behavior | `/tdd` | skill |
+| Explore / understand a codebase | `/explore-repo` | skill |
 
-When a skill's Agent Routing section says to spawn an agent, always spawn it. Never perform the agent's job inline in the main context.
+Skills own the **workflow**. Agents own the **work** a skill delegates. When a
+skill's body says to spawn an agent, spawn it — never do the agent's job inline.
 
-### Agent Type Mapping
+| Developer step | Owning agent |
+|---|---|
+| Architecture advice / system design | `@architect` |
+| Plan authoring (deep tactical breakdown) | `@planner` |
+| Verification of goal coverage | `@verifier` |
+| Implement a brief's work (gated, brief-driven) | `@executor` |
+| Implement an isolated, general-purpose change | `@writer` |
+| Write tests for existing code | `@test-writer` |
+| Research / cited codebase & web findings | `@researcher` |
+| Code review (general, severity-scaled) | `@reviewer` |
+| Spec-level review (does the plan meet the brief) | `@spec-reviewer` |
+| Code-level review (does the diff meet the plan) | `@code-reviewer` |
+| Security audit | `@security-auditor` |
+| Documentation authoring | `@doc-writer` |
 
-When spawning godmode agents, use these exact `subagent_type` values. Never substitute a built-in agent:
+## Skill → Agent delegation map
+
+Which agent each workflow skill spawns for its heavy lifting:
+
+| Skill | Delegates to |
+|---|---|
+| `/brief N` | `@researcher` (context), `@spec-reviewer` (brief sanity) |
+| `/plan N` | `@planner` (authoring), `@spec-reviewer` (plan vs brief) |
+| `/build N` | `@executor` (implement), `@test-writer` (tests), `@code-reviewer` (diff vs plan) |
+| `/verify N` | `@verifier` (goal-backward coverage) |
+| `/ship` | `@reviewer` (final pass), `@security-auditor` (secret/vuln scan) |
+| `/debug` | `@researcher` (reproduce/isolate), `@writer` (minimal fix) |
+| `/refactor` | `@writer` (steps), `@reviewer` (no-behavior-change check) |
+| `/tdd` | `@test-writer` (red tests), `@writer` (green impl) |
+| `/explore-repo` | `@researcher` (cited findings) |
+| `/mission` | `@architect` (roadmap shaping) |
+
+## Agent Type Mapping
+
+When spawning godmode agents, use these exact `subagent_type` values. Never
+substitute a built-in agent:
 
 | @name | subagent_type | Never use instead |
 |-------|---------------|-------------------|
-| @researcher | `claude-godmode:researcher` | NOT `Explore` (built-in) |
-| @writer | `claude-godmode:writer` | NOT `general-purpose` (built-in) |
-| @executor | `claude-godmode:executor` | — |
-| @reviewer | `claude-godmode:reviewer` | — |
 | @architect | `claude-godmode:architect` | — |
+| @planner | `claude-godmode:planner` | NOT `Plan` (built-in) |
+| @verifier | `claude-godmode:verifier` | — |
+| @executor | `claude-godmode:executor` | — |
+| @writer | `claude-godmode:writer` | NOT `general-purpose` (built-in) |
 | @test-writer | `claude-godmode:test-writer` | — |
+| @researcher | `claude-godmode:researcher` | NOT `Explore` (built-in) |
+| @reviewer | `claude-godmode:reviewer` | — |
+| @spec-reviewer | `claude-godmode:spec-reviewer` | — |
+| @code-reviewer | `claude-godmode:code-reviewer` | — |
 | @security-auditor | `claude-godmode:security-auditor` | — |
 | @doc-writer | `claude-godmode:doc-writer` | — |
 
-Built-in agents (`Explore`, `general-purpose`, `Plan`) must never replace a godmode agent. The `@researcher` agent is NOT the same as the built-in `Explore` agent — @researcher provides structured, cited findings with `file:line` references and runs on the `sonnet` model with `WebFetch` and `WebSearch` access.
+Built-in agents (`Explore`, `general-purpose`, `Plan`) must never replace a
+godmode agent. `@researcher` is NOT the built-in `Explore` — it returns
+structured, cited findings with `file:line` references on the `sonnet` model
+with `WebFetch` and `WebSearch` access.
 
 ## Plan Mode
 
@@ -43,6 +85,6 @@ Built-in agents (`Explore`, `general-purpose`, `Plan`) must never replace a godm
 
 ## Severity Scales
 
-**Severity scales** (different domains, established conventions):
-- Code review (@reviewer): CRITICAL / WARNING / NIT
-- Security audit (@security-auditor): CRITICAL / HIGH / MEDIUM / LOW
+Different domains, established conventions:
+- Code review (`@reviewer`, `@code-reviewer`, `@spec-reviewer`): CRITICAL / WARNING / NIT
+- Security audit (`@security-auditor`): CRITICAL / HIGH / MEDIUM / LOW
