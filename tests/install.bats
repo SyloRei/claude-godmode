@@ -70,14 +70,16 @@ teardown() {
   [ -f "$TEST_HOME/.claude/config/quality-gates.txt" ]
 }
 
-@test "install installs bin helpers godmode-state and godmode-hash-rules (Wave-C completeness)" {
+@test "install installs bin helpers godmode-state, godmode-hash-rules and godmode-model (Wave-C completeness)" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$TEST_HOME/.claude/bin/godmode-state" ]
   [ -f "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
+  [ -f "$TEST_HOME/.claude/bin/godmode-model" ]
   # bin helpers must be executable.
   [ -x "$TEST_HOME/.claude/bin/godmode-state" ]
   [ -x "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
+  [ -x "$TEST_HOME/.claude/bin/godmode-model" ]
 }
 
 @test "install installs commands/godmode.md (Wave-C completeness)" {
