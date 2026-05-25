@@ -50,6 +50,21 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
+@test "install installs the 14-agent roster: 3 review lenses present, retired reviewer absent" {
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  # The generalist reviewer was split into three single-lens reviewers.
+  [ -f "$TEST_HOME/.claude/agents/perf-reviewer.md" ]
+  [ -f "$TEST_HOME/.claude/agents/convention-reviewer.md" ]
+  [ -f "$TEST_HOME/.claude/agents/test-reviewer.md" ]
+  # The retired generalist agent must not ship.
+  [ ! -f "$TEST_HOME/.claude/agents/reviewer.md" ]
+  # Roster size is exactly 14 agents.
+  run sh -c 'ls "$TEST_HOME"/.claude/agents/*.md | wc -l | tr -d " "'
+  [ "$status" -eq 0 ]
+  [ "$output" = "14" ]
+}
+
 @test "install installs all 7 hook scripts" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
@@ -70,14 +85,16 @@ teardown() {
   [ -f "$TEST_HOME/.claude/config/quality-gates.txt" ]
 }
 
-@test "install installs bin helpers godmode-state and godmode-hash-rules (Wave-C completeness)" {
+@test "install installs bin helpers godmode-state, godmode-hash-rules and godmode-model (Wave-C completeness)" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$TEST_HOME/.claude/bin/godmode-state" ]
   [ -f "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
+  [ -f "$TEST_HOME/.claude/bin/godmode-model" ]
   # bin helpers must be executable.
   [ -x "$TEST_HOME/.claude/bin/godmode-state" ]
   [ -x "$TEST_HOME/.claude/bin/godmode-hash-rules" ]
+  [ -x "$TEST_HOME/.claude/bin/godmode-model" ]
 }
 
 @test "install installs commands/godmode.md (Wave-C completeness)" {
