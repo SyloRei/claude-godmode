@@ -22,8 +22,20 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
   [ "$output" = "opus high" ]
 }
 
-@test "balanced should echo sonnet high when agent is reviewer" {
-  run "$MODEL" reviewer balanced
+@test "balanced should echo sonnet high when agent is perf-reviewer" {
+  run "$MODEL" perf-reviewer balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+@test "balanced should echo sonnet high when agent is convention-reviewer" {
+  run "$MODEL" convention-reviewer balanced
+  [ "$status" -eq 0 ]
+  [ "$output" = "sonnet high" ]
+}
+
+@test "balanced should echo sonnet high when agent is test-reviewer" {
+  run "$MODEL" test-reviewer balanced
   [ "$status" -eq 0 ]
   [ "$output" = "sonnet high" ]
 }
@@ -59,8 +71,8 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
   [ "$output" = "opus xhigh" ]
 }
 
-@test "quality should map reviewer to opus xhigh when agent is non-code-writer" {
-  run "$MODEL" reviewer quality
+@test "quality should map perf-reviewer to opus xhigh when agent is non-code-writer" {
+  run "$MODEL" perf-reviewer quality
   [ "$status" -eq 0 ]
   [ "$output" = "opus xhigh" ]
 }
@@ -121,8 +133,8 @@ MODEL="$PLUGIN_ROOT/bin/godmode-model"
   [ "$output" = "haiku default" ]
 }
 
-@test "budget should map reviewer to haiku default when profile is budget" {
-  run "$MODEL" reviewer budget
+@test "budget should map perf-reviewer to haiku default when profile is budget" {
+  run "$MODEL" perf-reviewer budget
   [ "$status" -eq 0 ]
   [ "$output" = "haiku default" ]
 }
