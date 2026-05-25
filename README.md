@@ -232,8 +232,13 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | `/triage` | Incident triage and response |
 | `/profile` | Performance analysis and profiling |
 | `/onboard` | Codebase orientation cheatsheet |
+| `/adr` | Draft an Architecture Decision Record (Status / Context / Decision / Consequences) |
+| `/changelog` | Draft a Keep-a-Changelog entry from recent commits (standalone -- does not replace `/ship`) |
+| `/pr-describe` | Draft a PR description from the branch's commits and diff vs the base |
 
 > **Note:** the old codebase-exploration command has been folded into `/onboard` -- use `/onboard` for codebase orientation.
+
+> **Note:** `/adr`, `/changelog`, and `/pr-describe` are off-spine plain commands -- one-shot helpers, not steps in the `/mission → /ship` spine.
 
 ### When to Use What
 
