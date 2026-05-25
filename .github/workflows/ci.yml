@@ -55,11 +55,11 @@ jobs:
           bats --version
 
       # Static analysis — respects .shellcheckrc at the repo root.
-      # Covers *.sh under hooks/ and scripts/, plus the extensionless bash
-      # helpers in bin/ (shebang is /usr/bin/env bash).
+      # Covers *.sh under hooks/, scripts/, and skills/**/scripts/, plus the
+      # extensionless bash helpers in bin/ (shebang is /usr/bin/env bash).
       - name: shellcheck
         run: |
-          { find hooks scripts -type f -name '*.sh' -print0 2>/dev/null
+          { find hooks scripts skills -type f -name '*.sh' -print0 2>/dev/null
             find bin -type f -print0 2>/dev/null
           } | xargs -0 shellcheck
 
