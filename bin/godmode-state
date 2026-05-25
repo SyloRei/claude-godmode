@@ -7,7 +7,7 @@
 #   godmode-state get <key>
 #   godmode-state set <key> <value>
 #
-# Keys: active_unit | status | next_command
+# Keys: active_unit | status | next_command | mission_id | mission_name
 #
 # Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
 # no associative arrays, no GNU-only flags. In-place edits use the
@@ -21,13 +21,13 @@ STATE_FILE="${STATE_DIR}/STATE.md"
 usage() {
   echo "usage: godmode-state get <key>" >&2
   echo "       godmode-state set <key> <value>" >&2
-  echo "keys:  active_unit | status | next_command" >&2
+  echo "keys:  active_unit | status | next_command | mission_id | mission_name" >&2
 }
 
 # Validate that a key is one of the supported state keys.
 valid_key() {
   case "$1" in
-    active_unit|status|next_command) return 0 ;;
+    active_unit|status|next_command|mission_id|mission_name) return 0 ;;
     *) return 1 ;;
   esac
 }
