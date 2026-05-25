@@ -116,3 +116,5 @@ hand off to `@debugger` or `@writer`.
 - **@debugger** — minimal targeted fix plus regression test for a confirmed defect
 - **@writer** — larger or isolated fix
 - **/debug** — once the fix is in hand, the debugging protocol verifies it
+
+**Spine:** off-spine helper — triage the incident and route the fix, then resume the spine at `/brief N` if the fix warrants a tracked work unit.

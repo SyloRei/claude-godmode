@@ -108,3 +108,5 @@ optimization, and hand off to `@writer` or `@executor`.
 - **@writer** — small, well-scoped optimization
 - **@executor** — multi-file or planned optimization
 - **@architect** — when the bottleneck is architectural (wrong data model, sync-where-async)
+
+**Spine:** off-spine helper — measure and route the optimization, then resume the spine at `/brief N` if the work warrants a tracked work unit.
