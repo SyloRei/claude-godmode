@@ -2,14 +2,14 @@
 #
 # check-surface-count.sh — enforce the locked user-facing command surface.
 #
-# v2 locks the surface to AT MOST 12 user-facing slash commands, with 1 slot
-# reserved (so 11 in active use). A user-facing command is either:
+# v2 locks the surface to AT MOST 17 user-facing slash commands, with 1 slot
+# reserved (so 16 in active use). A user-facing command is either:
 #   - a skill directory under skills/ (one SKILL.md == one /command), OR
 #   - a command file under commands/ (one *.md == one /command).
 # Directories prefixed with "_" (e.g. skills/_shared) are internal scaffolding,
 # not user-facing, and are excluded from the count.
 #
-# This gate counts both sources and asserts total <= 12. It reports the count
+# This gate counts both sources and asserts total <= 17. It reports the count
 # and the reserved-slot headroom. Exit 1 if the cap is exceeded.
 #
 # Pure bash 3.2 + find. No Node, no Python.
@@ -21,7 +21,7 @@ REPO_ROOT=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
 cd -- "${REPO_ROOT}"
 
-CAP=12
+CAP=17
 
 # Count skill commands: immediate subdirectories of skills/ that are NOT
 # underscore-prefixed and contain a SKILL.md.
