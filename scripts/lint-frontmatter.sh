@@ -2,11 +2,12 @@
 #
 # lint-frontmatter.sh — validate YAML frontmatter of plugin authoring files.
 #
-# Checks agents/*.md and skills/*/SKILL.md:
+# Checks agents/*.md, skills/*/SKILL.md, and commands/*.md:
 #   - a leading `---` ... `---` frontmatter block must exist
 #   - required top-level keys must be present:
-#       agents  -> name, description
-#       skills  -> description
+#       agents    -> name, description
+#       skills    -> description
+#       commands  -> name, description
 #
 # Pure bash 3.2 + awk + jq. No Node, no Python, no yaml binary.
 # Exits non-zero listing every offending file and its missing keys.
@@ -84,6 +85,12 @@ done
 for file in skills/*/SKILL.md; do
   [[ -e "${file}" ]] || continue
   check_file "${file}" "description"
+done
+
+# Commands: require name + description.
+for file in commands/*.md; do
+  [[ -e "${file}" ]] || continue
+  check_file "${file}" "name description"
 done
 
 if [[ ${#failures[@]} -gt 0 ]]; then
