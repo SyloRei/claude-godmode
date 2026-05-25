@@ -107,7 +107,7 @@ You:    /godmode statusline
 Claude: Statusline enabled. Context %, model, and cost now visible in status bar.
 ```
 
-> **Tip:** Run `/explore-repo` in unfamiliar codebases -- it maps your stack before you start changing things.
+> **Tip:** Run `/onboard` in unfamiliar codebases -- it maps your stack before you start changing things.
 
 ### Step 3: First Feature
 
@@ -229,7 +229,11 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | `/debug` | Structured debugging protocol (reproduce → hypothesize → isolate → fix) |
 | `/tdd` | Test-driven development (red-green-refactor) |
 | `/refactor` | Safe refactoring with test verification |
-| `/explore-repo` | Deep codebase exploration |
+| `/triage` | Incident triage and response |
+| `/profile` | Performance analysis and profiling |
+| `/onboard` | Codebase orientation cheatsheet |
+
+> **Note:** the old codebase-exploration command has been folded into `/onboard` -- use `/onboard` for codebase orientation.
 
 ### When to Use What
 
@@ -244,7 +248,7 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | Adding tests to existing code | `@test-writer` |
 | TDD for new feature | `/tdd` |
 | Refactoring | `/refactor` |
-| Understanding a codebase | `/explore-repo` or `@researcher` |
+| Understanding a codebase | `/onboard` or `@researcher` |
 | Architecture decisions | `@architect` |
 | Security analysis | `@security-auditor` |
 | Writing docs | `@doc-writer` |
@@ -290,7 +294,7 @@ Claude: [scans for OWASP Top 10, secrets, dependencies, reports findings]
 
 ### Understand a Codebase
 ```
-You:    /explore-repo
+You:    /onboard
 Claude: [detects stack, maps architecture, reports patterns and commands]
 ```
 
