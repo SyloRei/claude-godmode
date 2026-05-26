@@ -223,6 +223,12 @@ Planning artifacts live in the consumer repo's `.planning/` directory. Each miss
 
 When you later run `/mission <name>` for a feature whose slug matches an existing `.planning/ideas/<slug>/IDEAS.md`, `/mission` auto-reads that artifact as seed context for the charter and roadmap. The read is additive and best-effort: with no matching artifact, `/mission` behaves exactly as before. So the full spine reads `/ideate → /mission → /brief N → /plan N → /build N → /verify N → /ship`, with `/ideate` as the optional pre-mission front door.
 
+### The mid-mission complement: `/refine`
+
+Where [`/ideate`](#skills) is the pre-mission front door -- shaping the *next* mission before one exists -- **[`/refine`](#skills) works *within* the active mission.** It reads the current mission's roadmap and briefs, surfaces what's missing or underspecified, converges on one concrete gap, and appends a **new numbered roadmap unit plus its full brief** to that mission. The append is **strictly additive**: `/refine` never edits an existing brief or roadmap unit in place -- reworking an existing unit is `/brief N`'s job. The unit it adds is buildable straight away with `/plan N → /build N`.
+
+`/refine` is a spine skill, not a new mandatory spine stage: like `/brief`, you invoke it within a mission whenever a gap surfaces -- not as a fixed step every cycle. `/ideate` shapes what the next mission should be; `/refine` extends the mission you're already in.
+
 ### New mission vs. updating the current one
 
 `/mission <feature name>` is create-or-switch:
@@ -267,6 +273,7 @@ See [`/mission`](#skills) in the Skills table for the full skill behavior.
 |-------|---------|
 | `/godmode` | Orient: show current position and next command (reads STATE.md) |
 | `/ideate` | Pre-mission front door: discuss next-mission directions, converge on one proposal → `.planning/ideas/<slug>/IDEAS.md` (seed for `/mission`) |
+| `/refine` | Mid-mission gap analysis: surface gaps/improvements in the CURRENT mission's roadmap + briefs, converge on one, and append a NEW numbered roadmap unit plus its full brief to the current mission (strictly additive; does not edit existing briefs in place). Buildable by `/plan N` |
 | `/mission` | Initialize/update PROJECT.md and numbered ROADMAP.md |
 | `/brief N` | Socratic brief: why + what + spec → BRIEF.md |
 | `/plan N` | Tactical breakdown into dependency-ordered waves → PLAN.md |
