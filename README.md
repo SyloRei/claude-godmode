@@ -79,6 +79,13 @@ claude plugin marketplace add SyloRei/claude-marketplace
 claude plugin install claude-godmode@sylorei-plugins
 ```
 
+Or, once accepted into Anthropic's community directory:
+
+```bash
+/plugin marketplace add anthropics/claude-plugins-community
+/plugin install claude-godmode@claude-community
+```
+
 #### Option B: Manual Install
 
 ```bash
