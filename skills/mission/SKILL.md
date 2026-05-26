@@ -7,7 +7,7 @@ allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*), Bash(bin/godmo
 
 # Mission
 
-Establish the durable foundation for a **named feature cycle** — a *mission*: **why** it exists, the **constraints** it must respect, what **success** looks like, and a **numbered roadmap** of work units. Run `/mission <feature name>` to create-or-switch a mission; re-run any time to update its direction. Every later step (`/brief N`, `/plan N`, `/build N`, `/verify N`, `/ship`) reads this shared context for the active mission.
+Establish the durable foundation for a **named feature cycle** — a *mission*: **why** it exists, the **constraints** it must respect, what **success** looks like, and a **numbered roadmap** of work units. Run `/mission <feature name>` to create-or-switch a mission; re-run any time to update its direction. Every later step (`/brief N`, `/plan N`, `/build N`, `/verify N`, `/ship`) reads this shared context for the active mission. If `/ideate` already proposed this feature, `/mission` picks up that proposal as seed context (see step 2).
 
 A **mission** is a named feature cycle stored at `.planning/missions/<mission_id>/`, where `<mission_id>` is `NN-slug` (allocated by `bin/godmode-mission`). Each mission owns its own roadmap and briefs, and its work units number from 1 *within the mission*.
 
@@ -65,7 +65,15 @@ mission_id=$(bin/godmode-state get mission_id)
 
 If `/mission` was invoked without a feature name, ask the user for one before doing anything else — a mission must be named.
 
-### 2. Read before writing
+### 2. Seed from a prior `/ideate` artifact (additive, best-effort)
+
+`/ideate` (the pre-mission front door) may have written a durable proposal at `.planning/ideas/<slug>/IDEAS.md`, where `<slug>` is the kebab-case feature name. Because `bin/godmode-mission start <feature name>` derives the mission's `<slug>` from the **same** feature name with the **same** slugify rule, an `/ideate` proposal and the `/mission` of the same name share a slug — that slug match is the contract that connects them.
+
+The active `mission_id` is `NN-slug`; the seed slug is its `slug` portion (everything after the leading `NN-`). With that slug known, check for the artifact and, **if it exists**, Read it and use it as seed context for the charter (`PROJECT.md`) and this mission's `ROADMAP.md` — the proposed purpose, rough success criteria, known constraints, candidate directions, and rough work-unit list become starting material for the steps below (still subject to the consequential questions and merge behavior; the user can override anything).
+
+This read is **additive and best-effort**: if no matching `.planning/ideas/<slug>/IDEAS.md` exists, do nothing and continue — `/mission` behaves **exactly as it does today**, with no error and no change to any other behavior described here. The artifact only ever adds seed context; it never gates or alters the mission lifecycle.
+
+### 3. Read before writing
 
 Always Read existing state first — re-running `/mission` for the same mission is an **update**, not a fresh write:
 
@@ -79,7 +87,7 @@ Always Read existing state first — re-running `/mission` for the same mission 
 
 If `PROJECT.md` does not exist, this is a first-time project initialization. If it exists, preserve what is already decided (see Merge behavior below).
 
-### 3. Gather purpose, constraints, success criteria
+### 4. Gather purpose, constraints, success criteria
 
 Establish, from the repo and the user (or inferred defaults in Auto Mode):
 
@@ -89,7 +97,7 @@ Establish, from the repo and the user (or inferred defaults in Auto Mode):
 
 The charter (`PROJECT.md`) spans all missions. The current mission's roadmap captures only the work units that belong to *this* feature cycle.
 
-### 4. Establish the mission's numbered roadmap
+### 5. Establish the mission's numbered roadmap
 
 Break this mission's work into a **numbered** list of work units. Each entry:
 
@@ -99,11 +107,11 @@ Break this mission's work into a **numbered** list of work units. Each entry:
 
 Number entries sequentially. New work units append with the next free number; **never renumber existing entries** (their numbers are referenced elsewhere).
 
-### 5. Write the artifacts (merge, never clobber)
+### 6. Write the artifacts (merge, never clobber)
 
 Write the project-global `.planning/PROJECT.md` (at the root) and the mission-scoped `.planning/missions/${mission_id}/ROADMAP.md` using the formats below.
 
-### 6. Record workflow state
+### 7. Record workflow state
 
 Point the workflow at the first unstarted roadmap entry so `/godmode` can tell the user what to do next:
 
@@ -196,6 +204,7 @@ After writing, report:
 
 ## Related
 
+- **/ideate** — the pre-mission front door: discusses and proposes the next mission, writing `.planning/ideas/<slug>/IDEAS.md`. `/mission <name>` auto-reads a matching artifact as seed context (step 2).
 - **/brief N** — turns roadmap entry N of the active mission into a work unit with a why + what + spec.
 - **/godmode** — reads the workflow state this skill records (including the active `mission_id`) and tells the user the next command.
 - **/onboard** — run first on an unfamiliar codebase; its findings sharpen the purpose and constraints captured in `PROJECT.md`.
