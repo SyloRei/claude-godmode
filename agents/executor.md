@@ -83,3 +83,8 @@ If stuck → use the /debug protocol: Reproduce → Hypothesize → Isolate → 
 - Run all gates before committing. Keep CI green.
 - Save reusable patterns or gotchas to your project memory so the next spawn
   starts informed.
+
+## Handoffs
+
+- After committing a step → the next step continues via `/build N`; when all steps are done, run `/verify N` to check the brief's criteria
+- For a step that warrants extra scrutiny before it merges → suggest `@code-reviewer` on the diff

@@ -88,3 +88,9 @@ If stuck on a bug → use the /debug protocol (Reproduce → Hypothesize → Iso
 - NEVER add dependencies without checking for existing equivalents
 - Follow the project's code style
 - Commit with clear, atomic messages in imperative mood
+
+## Handoffs
+
+- After the branch is gated → suggest `@code-reviewer` to review the diff before it merges
+- For changes whose coverage is thin → suggest `@test-writer` to add tests before shipping
+- Once reviewed and green → proceed to `/ship` to push and open the PR

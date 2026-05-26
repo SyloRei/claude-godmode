@@ -88,3 +88,9 @@ Quality Gates:
 - Keep tests green at every step, not only at the end
 - Batch independent tool calls in a single message
 - NEVER return without passing ALL quality gates
+
+## Handoffs
+
+- Before a large or contentious migration → suggest `@architect` to validate the target shape and tradeoffs
+- After migrating → suggest `@test-writer` to add coverage for the new shape and the rollback path
+- When the migration belongs to a unit → run `/verify N` to confirm the brief's criteria are met

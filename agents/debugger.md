@@ -69,3 +69,9 @@ Quality Gates:
 - Always add a regression test that fails before and passes after
 - Batch independent tool calls in a single message
 - NEVER return without passing ALL quality gates
+
+## Handoffs
+
+- When a bug is too tangled for a quick fix → run the full `/debug` protocol to isolate the root cause systematically
+- After fixing → suggest `@test-writer` to harden coverage around the regression beyond the single locking test
+- For a fix touching risky or wide surface → suggest `@code-reviewer` before the branch merges

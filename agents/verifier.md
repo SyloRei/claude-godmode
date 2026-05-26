@@ -29,3 +29,9 @@ For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` (and `PLAN.md`'
 ## Output
 
 Report a per-criterion table (criterion · verdict · evidence), a verdict line (`N COVERED / N PARTIAL / N MISSING`), the workflow state you recorded, and the next step — `/ship` if every criterion is COVERED, otherwise `/build N` with the list of gaps.
+
+## Handoffs
+
+- When every criterion is COVERED → proceed to `/ship` to push and open the PR
+- When criteria are PARTIAL or MISSING → loop back via `/build N` with the named gaps
+- When verification surfaces a broader mid-mission gap than this unit's gaps → suggest `/refine` to re-analyze and reshape the remaining work
