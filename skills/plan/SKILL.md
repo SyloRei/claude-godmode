@@ -30,6 +30,19 @@ Auto Mode suppresses **confirmation prompts**, not the **clarifying questions** 
 - **Assume the trivial** — for low-stakes judgment calls, pick a sensible default and record it under an **Assumptions** heading rather than asking.
 - Don't re-ask what the brief already decided. Treat user course-corrections as normal input. A plan is a breakdown, not an interview — but the few questions that change the breakdown are worth asking in either mode.
 
+**Recommendation convention** (`godmode:recommend-convention`). When you do ask, follow the shared convention in `rules/godmode-recommend.md`: **lead with a Recommended option** carrying a visible one-line rationale, then let the user override — never a flat menu of equal choices:
+
+```
+How should the migration step be ordered relative to the API step?
+
+  a) Migration first, then API (Recommended — the API handler reads the new
+     column, so it can't compile until the migration lands)
+  b) API first — only viable if you stub the column, which adds throwaway work
+  c) Something else — tell me
+
+Pick a letter, or describe a different option.
+```
+
 ---
 
 ## Process

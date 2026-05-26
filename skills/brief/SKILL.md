@@ -31,13 +31,14 @@ Auto Mode suppresses **confirmation prompts**, not the **clarifying questions** 
 - **Assume the trivial** — for low-stakes gaps the context reasonably implies, pick a sensible default and record it under an **Assumptions** heading instead of asking.
 - Never ask what the repo already answers. Treat user course-corrections as normal input.
 
-Use a lettered/option style so the essential questions can be answered fast:
+Ask following the shared recommendation convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`: **lead with a Recommended option** carrying a visible one-line rationale, then let the user override. A flat menu of equal choices offloads the decision back onto the user — you did the analysis, so say what you'd pick and why:
 
 ```
 Scope of unit N — which of these is in scope?
-  a) ... (recommended)
-  b) ...
-  c) something else — tell me
+  a) Just the read path (Recommended — the brief's outcome only names querying;
+     writes are a separate roadmap unit)
+  b) Read + write — wider, but pulls in migration work this unit didn't ask for
+  c) Something else — tell me
 ```
 
 Keep it tight. A brief is a contract, not an interview.

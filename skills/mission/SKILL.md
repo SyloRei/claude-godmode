@@ -29,6 +29,19 @@ Auto Mode suppresses **confirmation prompts** ("proceed? / shall I write it?") �
 
 When Auto Mode is absent, same principle — ask the essential questions, keep it brief. This is a charter, not an interview, but the few questions that set direction are worth asking in either mode.
 
+**Recommendation convention** (`godmode:recommend-convention`). Every question you ask follows the shared convention in `rules/godmode-recommend.md`: lead with a **Recommended** option that carries a visible one-line rationale, then let the user override. Don't hand back a flat menu of equal choices — you did the analysis, so say what you'd pick and why:
+
+```
+What does "success" concretely mean for this project?
+
+  a) Ships a working CLI a new user can install and run (Recommended — the
+     repo is a tool, and the README frames adoption as the goal)
+  b) Reaches feature parity with the prior version — broader, slower to verify
+  c) Something else — tell me
+
+Pick a letter, or describe a different option.
+```
+
 ---
 
 ## Process
