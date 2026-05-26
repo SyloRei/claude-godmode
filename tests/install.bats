@@ -41,11 +41,11 @@ teardown() {
   run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
   [ "$status" -ne 0 ]
 
-  # They DO land in the pinned private path the hook reads, and all 8 ship.
+  # They DO land in the pinned private path the hook reads, and all 9 ship.
   [ -d "$TEST_HOME/.claude/godmode/rules" ]
   run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
-  [ "$output" = "8" ]
+  [ "$output" = "9" ]
 }
 
 @test "install installs agents and skills" {
@@ -57,19 +57,24 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "install installs the 14-agent roster: 3 review lenses present, retired reviewer absent" {
+@test "install installs the 18-agent roster: 3 review lenses present, retired reviewer absent" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   # The generalist reviewer was split into three single-lens reviewers.
   [ -f "$TEST_HOME/.claude/agents/perf-reviewer.md" ]
   [ -f "$TEST_HOME/.claude/agents/convention-reviewer.md" ]
   [ -f "$TEST_HOME/.claude/agents/test-reviewer.md" ]
+  # Unit 6 (P2.1) added four agents to the roster.
+  [ -f "$TEST_HOME/.claude/agents/debugger.md" ]
+  [ -f "$TEST_HOME/.claude/agents/migration-engineer.md" ]
+  [ -f "$TEST_HOME/.claude/agents/perf-engineer.md" ]
+  [ -f "$TEST_HOME/.claude/agents/incident-responder.md" ]
   # The retired generalist agent must not ship.
   [ ! -f "$TEST_HOME/.claude/agents/reviewer.md" ]
-  # Roster size is exactly 14 agents.
+  # Roster size is exactly 18 agents.
   run sh -c 'ls "$TEST_HOME"/.claude/agents/*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
-  [ "$output" = "14" ]
+  [ "$output" = "18" ]
 }
 
 @test "install installs all 7 hook scripts" {
@@ -106,6 +111,14 @@ teardown() {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$TEST_HOME/.claude/commands/godmode.md" ]
+}
+
+@test "install installs the off-spine command files adr/changelog/pr-describe (unit 8)" {
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+  [ -f "$TEST_HOME/.claude/commands/adr.md" ]
+  [ -f "$TEST_HOME/.claude/commands/changelog.md" ]
+  [ -f "$TEST_HOME/.claude/commands/pr-describe.md" ]
 }
 
 @test "install writes a valid settings.json with a hooks block" {

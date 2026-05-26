@@ -16,7 +16,15 @@ table is canonical — when you reach for a capability, look it up here.
 | Debug — find/fix a defect | `/debug` | skill |
 | Refactor — restructure without behavior change | `/refactor` | skill |
 | TDD — red-green-refactor a new behavior | `/tdd` | skill |
-| Explore / understand a codebase | `/explore-repo` | skill |
+| Explore / understand a codebase | `/onboard` | skill |
+| Write an Architecture Decision Record | `/adr` | command |
+| Draft a Keep-a-Changelog entry | `/changelog` | command |
+| Draft a PR description from the branch | `/pr-describe` | command |
+
+`/adr`, `/changelog`, and `/pr-describe` are **off-spine plain commands** —
+reactive, one-shot helpers like `/debug` and `/refactor`, not spine steps. Unlike
+those two, these three do the work inline and delegate to no agents; `/changelog`
+is a standalone helper and does **not** replace `/ship`'s release/changelog step.
 
 Skills own the **workflow**. Agents own the **work** a skill delegates. When a
 skill's body says to spawn an agent, spawn it — never do the agent's job inline.
@@ -38,6 +46,10 @@ skill's body says to spawn an agent, spawn it — never do the agent's job inlin
 | Test-quality review | `@test-reviewer` |
 | Security audit | `@security-auditor` |
 | Documentation authoring | `@doc-writer` |
+| Debugging / root-cause a failure (delegated; `/debug` skill still owns the workflow) | `@debugger` |
+| Performance analysis / profiling | `@perf-engineer` |
+| Incident response / timeline reconstruction | `@incident-responder` |
+| Schema / dependency / framework migration | `@migration-engineer` |
 
 ## Skill → Agent delegation map
 
@@ -53,7 +65,9 @@ Which agent each workflow skill spawns for its heavy lifting:
 | `/debug` | `@researcher` (reproduce/isolate), `@writer` (minimal fix) |
 | `/refactor` | `@writer` (steps), `/verify` (5-lens no-behavior-change check) |
 | `/tdd` | `@test-writer` (red tests), `@writer` (green impl) |
-| `/explore-repo` | `@researcher` (cited findings) |
+| `/onboard` | `@researcher` (cited findings) |
+| `/triage` | `@incident-responder` (timeline reconstruction) |
+| `/profile` | `@perf-engineer` (performance analysis) |
 | `/mission` | `@architect` (roadmap shaping) |
 
 ## Agent Type Mapping
@@ -77,6 +91,10 @@ substitute a built-in agent:
 | @test-reviewer | `claude-godmode:test-reviewer` | — |
 | @security-auditor | `claude-godmode:security-auditor` | — |
 | @doc-writer | `claude-godmode:doc-writer` | — |
+| @debugger | `claude-godmode:debugger` | — |
+| @perf-engineer | `claude-godmode:perf-engineer` | — |
+| @incident-responder | `claude-godmode:incident-responder` | — |
+| @migration-engineer | `claude-godmode:migration-engineer` | — |
 
 Built-in agents (`Explore`, `general-purpose`, `Plan`) must never replace a
 godmode agent. `@researcher` is NOT the built-in `Explore` — it returns

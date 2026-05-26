@@ -12,7 +12,8 @@
 #
 # Resolution:
 #   balanced — read model:/effort: from the agent's frontmatter as-is.
-#   quality  — code-writing agents {writer, executor, test-writer} are
+#   quality  — code-writing agents {writer, executor, test-writer,
+#              debugger, migration-engineer} are
 #              capped at "opus high" (locked carve-out, never xhigh);
 #              every other agent maps to "opus xhigh".
 #   budget   — every agent maps to "haiku default".
@@ -41,7 +42,7 @@ valid_profile() {
 # is_writer_agent <agent> — true for the locked code-writing carve-out.
 is_writer_agent() {
   case "$1" in
-    writer|executor|test-writer) return 0 ;;
+    writer|executor|test-writer|debugger|migration-engineer) return 0 ;;
     *) return 1 ;;
   esac
 }

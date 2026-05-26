@@ -32,7 +32,8 @@ Find the brief directory for unit **$N** and read its `PLAN.md`. `NN` is `$N` ze
 
 ```bash
 NN=$(printf '%02d' "$N")
-brief_dir=$(ls -d .planning/briefs/${NN}-* 2>/dev/null | head -1 || true)
+mission_id=$(bin/godmode-state get mission_id)
+brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1 || true)
 [ -n "$brief_dir" ] || { echo "No brief dir for unit $N — run /plan $N first." >&2; exit 1; }
 ```
 

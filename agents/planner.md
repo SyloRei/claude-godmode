@@ -34,3 +34,9 @@ For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` and write a sin
 ## Output
 
 After writing, report the plan path, the wave grouping implied by `dependsOn`, confirmation that every brief criterion has a verification entry, the workflow state you recorded, and the next step (`/build N`).
+
+## Handoffs
+
+- After the plan is written → proceed to `/build N` to implement the steps wave by wave
+- If a step's design is genuinely uncertain → suggest `@architect` to settle the approach before building
+- If the brief itself proves underspecified while planning → return to `/plan N` after the brief is tightened, rather than inventing scope

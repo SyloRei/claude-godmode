@@ -3,7 +3,7 @@ name: ship
 description: "Run every canonical quality gate, push the branch, and open a pull request — release in one command. Use when: ship it, ready to ship, create the PR, push and open a PR."
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(bin/godmode-state*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(bin/godmode-state*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
 ---
 
 # Ship
@@ -34,25 +34,32 @@ When `--no-push` is set the confirmation prompt is moot — there is nothing sid
 
 The gates are defined in **`config/quality-gates.txt`** — one gate per line. **Read that file; do not hardcode the gate list here.** It is the single source of truth, so the gates stay in sync with the rest of the plugin.
 
-Resolve the file across install modes — plugin mode exposes `${CLAUDE_PLUGIN_ROOT}`; manual mode installs it under `~/.claude/config/`; fall back to a repo-relative path when developing the plugin itself:
+Don't re-derive the gate-running loop: invoke the bundled **`skills/ship/scripts/gates.sh`**. It resolves `config/quality-gates.txt` across install modes (`${CLAUDE_PLUGIN_ROOT}/config` → `~/.claude/config` → repo-relative), reads the gate list, prints one labelled status line per gate, and exits non-zero if any gate fails. You supply the per-gate verdicts via `GATES_RUNNER`: a command `gates.sh` invokes once per gate as `$GATES_RUNNER "<gate text>"` — exit 0 = pass, non-zero = fail. Wire `GATES_RUNNER` to your auto-detected per-gate dispatcher: for each gate text, run the project's matching command (typecheck, lint, test, build, secret scan; lint includes `shellcheck` clean for any `.sh` change) and exit with its status.
+
+Resolve the script the same way across install modes, then run it:
 
 ```bash
-# Locate the canonical gate list — read it, don't assume it.
-GATES_FILE=""
+# Locate the bundled gate runner — plugin mode, manual install, then repo-relative.
+GATES_SH=""
 for cand in \
-  "${CLAUDE_PLUGIN_ROOT:-}/config/quality-gates.txt" \
-  "$HOME/.claude/config/quality-gates.txt" \
-  "config/quality-gates.txt"; do
-  [ -n "$cand" ] && [ -f "$cand" ] && { GATES_FILE="$cand"; break; }
+  "${CLAUDE_PLUGIN_ROOT:-}/skills/ship/scripts/gates.sh" \
+  "$HOME/.claude/skills/ship/scripts/gates.sh" \
+  "skills/ship/scripts/gates.sh"; do
+  [ -n "$cand" ] && [ -f "$cand" ] && { GATES_SH="$cand"; break; }
 done
-[ -n "$GATES_FILE" ] || { echo "error: quality-gates.txt not found" >&2; exit 1; }
-while IFS= read -r gate; do
-  [ -n "$gate" ] || continue
-  printf 'gate: %s\n' "$gate"
-done < "$GATES_FILE"
+[ -n "$GATES_SH" ] || { echo "error: gates.sh not found" >&2; exit 1; }
+
+# GATES_RUNNER is your auto-detected per-gate dispatcher: it receives one gate's
+# text as $1, runs the project command that gate maps to, and exits 0 (pass) or
+# non-zero (fail). gates.sh reads config/quality-gates.txt and calls it per gate.
+# GATES_RUNNER must resolve to a single executable — a script path or a command
+# name on PATH — NOT a shell function (invisible to the child process) and NOT a
+# space-separated string like "bash runner.sh" (invoked as one token, so it
+# would fail to find that file). Point it at an executable runner script.
+GATES_RUNNER="$run_one_gate" bash "$GATES_SH"
 ```
 
-For each gate, auto-detect the project's command (typecheck, lint, test, build, secret scan) and run it. Lint includes `shellcheck` clean for any `.sh` change. Report each gate's result:
+`gates.sh` prints the report below; map each gate text to its detected command in your `GATES_RUNNER` dispatcher:
 
 ```
 Quality gates (from config/quality-gates.txt):
@@ -102,7 +109,7 @@ esac
 git push -u origin "$branch"
 ```
 
-Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit`, then glob `.planning/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
+Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/missions/<mission_id>/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit` and `mission_id=$(bin/godmode-state get mission_id)`, then glob `.planning/missions/${mission_id}/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
 
 ```bash
 gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
@@ -110,7 +117,7 @@ gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
 - What this work unit delivers and why (2-3 bullets)
 
 ## Brief
-- .planning/briefs/NN-name/BRIEF.md (the why + what + spec)
+- .planning/missions/<mission_id>/briefs/NN-name/BRIEF.md (the why + what + spec)
 
 ## Changes
 - The concrete changes in this branch

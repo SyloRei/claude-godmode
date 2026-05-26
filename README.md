@@ -32,6 +32,7 @@ Claude God-Mode is a Claude Code plugin that ships rules (focused config files i
 - [Why Claude God-Mode?](#why-claude-god-mode)
 - [Getting Started](#getting-started)
 - [Workflow](#workflow)
+- [Missions](#missions)
 - [Agents](#agents)
 - [Skills](#skills)
 - [Standalone Workflows](#standalone-workflows)
@@ -61,7 +62,7 @@ Claude God-Mode is a Claude Code plugin for engineers who want a repeatable Clau
 
 Claude Code is powerful out of the box. God-Mode adds **structure** -- the difference between a capable tool and a reliable workflow.
 
-Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 14 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
+Without it, you write one-off prompts, manually enforce quality, and lose context between sessions. With it, you get a single clear workflow (`/godmode` through `/ship`), 18 specialized agents that handle implementation, review, testing, security, and architecture, and persistent memory that carries project knowledge across sessions. Quality gates (typecheck, lint, test, secrets scan) run on every change automatically -- not when you remember to ask.
 
 The value isn't replacing Claude Code; it's removing the manual overhead that sits between "Claude can do this" and "this is actually production-ready." Rules are additive, components are modular, and your existing config is never touched.
 
@@ -94,7 +95,7 @@ The rules that drive God-Mode's behavior are injected automatically by the Sessi
 
 ```
 You:    /godmode
-Claude: God-Mode v2.0.0 · 10 skills, 14 agents
+Claude: God-Mode v2.1.0 · 10 skills, 18 agents
         Where: uninitialized — no roadmap yet
         Next:  /mission   (then /brief 1)
         Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship
@@ -107,7 +108,7 @@ You:    /godmode statusline
 Claude: Statusline enabled. Context %, model, and cost now visible in status bar.
 ```
 
-> **Tip:** Run `/explore-repo` in unfamiliar codebases -- it maps your stack before you start changing things.
+> **Tip:** Run `/onboard` in unfamiliar codebases -- it maps your stack before you start changing things.
 
 ### Step 3: First Feature
 
@@ -188,6 +189,57 @@ You:    /ship
 Claude: [runs quality gates, pushes, creates PR, returns URL]
 ```
 
+## Missions
+
+A **mission** is a named episodic feature cycle -- one initiative, from charter to merged PR. You finish one mission, then start the next under a fresh name. Running [`/mission`](#skills) with a feature name create-or-switches to that mission and makes it the active context for the rest of the spine (`/brief N → /plan N → /build N → /verify N → /ship`).
+
+Crucially, **unit and brief numbers reset to 1 per mission** -- "brief 1" always means the first brief of the *current* mission, not the first brief you ever wrote. This keeps each initiative self-contained instead of accumulating an ever-growing global counter.
+
+### On-disk layout
+
+Planning artifacts live in the consumer repo's `.planning/` directory. Each mission gets its own subdirectory; two files stay project-global at the root:
+
+```
+.planning/
+├── PROJECT.md                       # project-global charter (purpose, constraints, decisions) — spans all missions
+├── STATE.md                         # project-global workflow state (active mission, brief/plan/wave)
+├── ideas/
+│   └── <slug>/                      # one per proposed feature, BEFORE any mission is allocated
+│       └── IDEAS.md                 # /ideate's durable proposal — /mission auto-reads it as seed
+└── missions/
+    └── NN-slug/                     # one directory per mission, NN numbered in creation order
+        ├── ROADMAP.md               # this mission's numbered work units
+        └── briefs/
+            └── NN-name/             # one per unit, numbered from 1 WITHIN the mission
+                ├── BRIEF.md         # why + what + spec
+                └── PLAN.md          # dependency-ordered steps
+```
+
+`PROJECT.md` (the durable charter) and `STATE.md` are **not** per-mission -- they live at the `.planning/` root and apply across every mission. `.planning/ideas/` is project-global scratch space too: it sits outside `missions/` because an `/ideate` proposal has no `mission_id` yet -- it captures the *next* mission before one exists.
+
+### The pre-mission front door: `/ideate`
+
+`/mission` already demands a decision -- a feature name, a purpose, success criteria, constraints. **[`/ideate`](#skills) is the front door *before* that:** the generative, exploratory step that decides what the next mission should even be. It discusses candidate directions, thinks each through, converges on one concrete proposal, and writes it to `.planning/ideas/<slug>/IDEAS.md` (where `<slug>` is the kebab-case proposed feature name). It does **not** start, switch, or mutate any mission -- it stops at the proposal.
+
+When you later run `/mission <name>` for a feature whose slug matches an existing `.planning/ideas/<slug>/IDEAS.md`, `/mission` auto-reads that artifact as seed context for the charter and roadmap. The read is additive and best-effort: with no matching artifact, `/mission` behaves exactly as before. So the full spine reads `/ideate → /mission → /brief N → /plan N → /build N → /verify N → /ship`, with `/ideate` as the optional pre-mission front door.
+
+### The mid-mission complement: `/refine`
+
+Where [`/ideate`](#skills) is the pre-mission front door -- shaping the *next* mission before one exists -- **[`/refine`](#skills) works *within* the active mission.** It reads the current mission's roadmap and briefs, surfaces what's missing or underspecified, converges on one concrete gap, and appends a **new numbered roadmap unit plus its full brief** to that mission. The append is **strictly additive**: `/refine` never edits an existing brief or roadmap unit in place -- reworking an existing unit is `/brief N`'s job. The unit it adds is buildable straight away with `/plan N → /build N`.
+
+`/refine` is a spine skill, not a new mandatory spine stage: like `/brief`, you invoke it within a mission whenever a gap surfaces -- not as a fixed step every cycle. `/ideate` shapes what the next mission should be; `/refine` extends the mission you're already in.
+
+### New mission vs. updating the current one
+
+`/mission <feature name>` is create-or-switch:
+
+- **A new feature name** starts a new mission -- a fresh `missions/NN-slug/` directory with its unit counter reset to 1.
+- **An existing mission name** updates that mission in place and **preserves its counter** -- you pick up where you left off rather than renumbering.
+
+The active mission is tracked in workflow state, exposed as `mission_id` (e.g. `01-v3`) and `mission_name`; the spine resolves all briefs and roadmaps under whichever mission is active. The whole `.planning/` directory is **local-only and gitignored** -- it is your planning scratch space, not committed alongside the code.
+
+See [`/mission`](#skills) in the Skills table for the full skill behavior.
+
 ## Agents
 
 | Agent | Model | Memory | Effort | Purpose |
@@ -220,6 +272,8 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | Skill | Purpose |
 |-------|---------|
 | `/godmode` | Orient: show current position and next command (reads STATE.md) |
+| `/ideate` | Pre-mission front door: discuss next-mission directions, converge on one proposal → `.planning/ideas/<slug>/IDEAS.md` (seed for `/mission`) |
+| `/refine` | Mid-mission gap analysis: surface gaps/improvements in the CURRENT mission's roadmap + briefs, converge on one, and append a NEW numbered roadmap unit plus its full brief to the current mission (strictly additive; does not edit existing briefs in place). Buildable by `/plan N` |
 | `/mission` | Initialize/update PROJECT.md and numbered ROADMAP.md |
 | `/brief N` | Socratic brief: why + what + spec → BRIEF.md |
 | `/plan N` | Tactical breakdown into dependency-ordered waves → PLAN.md |
@@ -229,7 +283,16 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | `/debug` | Structured debugging protocol (reproduce → hypothesize → isolate → fix) |
 | `/tdd` | Test-driven development (red-green-refactor) |
 | `/refactor` | Safe refactoring with test verification |
-| `/explore-repo` | Deep codebase exploration |
+| `/triage` | Incident triage and response |
+| `/profile` | Performance analysis and profiling |
+| `/onboard` | Codebase orientation cheatsheet |
+| `/adr` | Draft an Architecture Decision Record (Status / Context / Decision / Consequences) |
+| `/changelog` | Draft a Keep-a-Changelog entry from recent commits (standalone -- does not replace `/ship`) |
+| `/pr-describe` | Draft a PR description from the branch's commits and diff vs the base |
+
+> **Note:** the old codebase-exploration command has been folded into `/onboard` -- use `/onboard` for codebase orientation.
+
+> **Note:** `/adr`, `/changelog`, and `/pr-describe` are off-spine plain commands -- one-shot helpers, not steps in the `/mission → /ship` spine.
 
 ### When to Use What
 
@@ -244,7 +307,7 @@ Claude: [runs quality gates, pushes, creates PR, returns URL]
 | Adding tests to existing code | `@test-writer` |
 | TDD for new feature | `/tdd` |
 | Refactoring | `/refactor` |
-| Understanding a codebase | `/explore-repo` or `@researcher` |
+| Understanding a codebase | `/onboard` or `@researcher` |
 | Architecture decisions | `@architect` |
 | Security analysis | `@security-auditor` |
 | Writing docs | `@doc-writer` |
@@ -290,7 +353,7 @@ Claude: [scans for OWASP Top 10, secrets, dependencies, reports findings]
 
 ### Understand a Codebase
 ```
-You:    /explore-repo
+You:    /onboard
 Claude: [detects stack, maps architecture, reports patterns and commands]
 ```
 

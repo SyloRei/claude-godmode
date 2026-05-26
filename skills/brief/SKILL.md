@@ -13,9 +13,11 @@ Capture everything implementation needs for roadmap unit **$N** in one artifact:
 
 Run after `/mission` has produced a numbered roadmap. The brief is the contract `/plan N` and `/build N` read from. This is the second step of the spine: `/mission` → **`/brief N`** → `/plan N` → `/build N` → `/verify N` → `/ship`.
 
-The artifact lives in the **consumer's** repo, never in the plugin source:
+The artifact lives in the **consumer's** repo, never in the plugin source, scoped to the **active mission**:
 
-- `.planning/briefs/NN-name/BRIEF.md` — the single brief for roadmap unit `$N`.
+- `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the single brief for roadmap unit `$N`.
+
+`<mission_id>` is the active mission's `NN-slug`, resolved from workflow state (`bin/godmode-state get mission_id`), so `/brief` always operates on whatever mission is currently active. `.planning/PROJECT.md` and `.planning/STATE.md` stay at the `.planning/` root (project-global).
 
 **One brief artifact per unit.** No second file at this step — `/plan N` adds `PLAN.md` later. Write `BRIEF.md` and nothing else.
 
@@ -29,13 +31,14 @@ Auto Mode suppresses **confirmation prompts**, not the **clarifying questions** 
 - **Assume the trivial** — for low-stakes gaps the context reasonably implies, pick a sensible default and record it under an **Assumptions** heading instead of asking.
 - Never ask what the repo already answers. Treat user course-corrections as normal input.
 
-Use a lettered/option style so the essential questions can be answered fast:
+Ask following the shared recommendation convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`: **lead with a Recommended option** carrying a visible one-line rationale, then let the user override. A flat menu of equal choices offloads the decision back onto the user — you did the analysis, so say what you'd pick and why:
 
 ```
 Scope of unit N — which of these is in scope?
-  a) ... (recommended)
-  b) ...
-  c) something else — tell me
+  a) Just the read path (Recommended — the brief's outcome only names querying;
+     writes are a separate roadmap unit)
+  b) Read + write — wider, but pulls in migration work this unit didn't ask for
+  c) Something else — tell me
 ```
 
 Keep it tight. A brief is a contract, not an interview.
@@ -44,32 +47,40 @@ Keep it tight. A brief is a contract, not an interview.
 
 ## Process
 
-### 1. Read the roadmap unit
+### 1. Resolve the active mission, then read the roadmap unit
 
-Read `.planning/ROADMAP.md` and find the numbered entry **$N**. That entry's title and one-line outcome are the seed for this brief. If `$N` does not exist in the roadmap, stop and tell the user to run `/mission` to add or renumber it — do not invent a unit.
+First resolve which mission is active — every path below is scoped to it:
+
+```bash
+mission_id=$(bin/godmode-state get mission_id)
+```
+
+Read the active mission's roadmap at `.planning/missions/${mission_id}/ROADMAP.md` and find the numbered entry **$N**. That entry's title and one-line outcome are the seed for this brief. If `$N` does not exist in the roadmap, stop and tell the user to run `/mission` to add or renumber it — do not invent a unit.
 
 Also read for context:
 
-- `.planning/PROJECT.md` — purpose, constraints, decisions the brief must respect.
+- `.planning/PROJECT.md` — purpose, constraints, decisions the brief must respect (project-global, at the `.planning/` root).
 - The current workflow state, so you know where the user is:
   ```bash
+  bin/godmode-state get mission_id
   bin/godmode-state get active_unit
   bin/godmode-state get status
   ```
-- Any existing `.planning/briefs/` directory — if a brief for `$N` already exists, this is an **update**: read it and preserve prior decisions, editing rather than clobbering.
+- Any existing `.planning/missions/${mission_id}/briefs/` directory — if a brief for `$N` already exists, this is an **update**: read it and preserve prior decisions, editing rather than clobbering.
 
 ### 2. Derive the directory name
 
 `NN` is `$N` **zero-padded to two digits** (the project convention: unit `3` → `03`, unit `12` → `12`), matching `printf '%02d'` below. Derive a kebab-case `name` from the unit title: lowercase, spaces and punctuation → single hyphens, trim leading/trailing hyphens.
 
 ```bash
-# N comes from the roadmap unit number ($N).
+# N comes from the roadmap unit number ($N); mission_id from state (step 1).
+mission_id=$(bin/godmode-state get mission_id)
 NN=$(printf '%02d' "$N")
 name=$(printf '%s' "$UNIT_TITLE" \
   | tr '[:upper:]' '[:lower:]' \
   | tr -cs 'a-z0-9' '-' \
   | sed -e 's/^-//' -e 's/-$//')
-brief_dir=".planning/briefs/${NN}-${name}"
+brief_dir=".planning/missions/${mission_id}/briefs/${NN}-${name}"
 ```
 
 The brief path is `${brief_dir}/BRIEF.md`.
@@ -89,7 +100,7 @@ Every criterion must be **checkable** — a reader can run it or observe it and 
 **Good (verifiable):**
 
 - "Returns HTTP 404 with `{"error":"not found"}` when the id does not exist."
-- "`brief N` writes exactly one file at `.planning/briefs/NN-name/BRIEF.md`."
+- "`brief N` writes exactly one file at `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md`."
 - "Lint passes with zero shellcheck warnings on changed `.sh` files."
 - "An empty input list renders the 'No items yet' placeholder."
 
@@ -122,7 +133,7 @@ bin/godmode-state set next_command "/plan $N"
 
 ## Artifact format
 
-### `.planning/briefs/NN-name/BRIEF.md`
+### `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md`
 
 ```markdown
 # Brief NN: [unit title]
@@ -157,7 +168,7 @@ Each criterion is verifiable (a clear trigger and observable result) and carries
 
 After writing, report:
 
-- Whether the brief was created or updated, and its path `.planning/briefs/NN-name/BRIEF.md`.
+- Whether the brief was created or updated, and its path `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md`.
 - A one-line summary of the why + the in/out scope split.
 - The acceptance criteria, confirming each is verifiable.
 - In Auto Mode, the **Assumptions** that were made.
