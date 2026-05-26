@@ -203,6 +203,9 @@ Planning artifacts live in the consumer repo's `.planning/` directory. Each miss
 .planning/
 ├── PROJECT.md                       # project-global charter (purpose, constraints, decisions) — spans all missions
 ├── STATE.md                         # project-global workflow state (active mission, brief/plan/wave)
+├── ideas/
+│   └── <slug>/                      # one per proposed feature, BEFORE any mission is allocated
+│       └── IDEAS.md                 # /ideate's durable proposal — /mission auto-reads it as seed
 └── missions/
     └── NN-slug/                     # one directory per mission, NN numbered in creation order
         ├── ROADMAP.md               # this mission's numbered work units
@@ -212,7 +215,13 @@ Planning artifacts live in the consumer repo's `.planning/` directory. Each miss
                 └── PLAN.md          # dependency-ordered steps
 ```
 
-`PROJECT.md` (the durable charter) and `STATE.md` are **not** per-mission -- they live at the `.planning/` root and apply across every mission.
+`PROJECT.md` (the durable charter) and `STATE.md` are **not** per-mission -- they live at the `.planning/` root and apply across every mission. `.planning/ideas/` is project-global scratch space too: it sits outside `missions/` because an `/ideate` proposal has no `mission_id` yet -- it captures the *next* mission before one exists.
+
+### The pre-mission front door: `/ideate`
+
+`/mission` already demands a decision -- a feature name, a purpose, success criteria, constraints. **[`/ideate`](#skills) is the front door *before* that:** the generative, exploratory step that decides what the next mission should even be. It discusses candidate directions, thinks each through, converges on one concrete proposal, and writes it to `.planning/ideas/<slug>/IDEAS.md` (where `<slug>` is the kebab-case proposed feature name). It does **not** start, switch, or mutate any mission -- it stops at the proposal.
+
+When you later run `/mission <name>` for a feature whose slug matches an existing `.planning/ideas/<slug>/IDEAS.md`, `/mission` auto-reads that artifact as seed context for the charter and roadmap. The read is additive and best-effort: with no matching artifact, `/mission` behaves exactly as before. So the full spine reads `/ideate → /mission → /brief N → /plan N → /build N → /verify N → /ship`, with `/ideate` as the optional pre-mission front door.
 
 ### New mission vs. updating the current one
 
@@ -257,6 +266,7 @@ See [`/mission`](#skills) in the Skills table for the full skill behavior.
 | Skill | Purpose |
 |-------|---------|
 | `/godmode` | Orient: show current position and next command (reads STATE.md) |
+| `/ideate` | Pre-mission front door: discuss next-mission directions, converge on one proposal → `.planning/ideas/<slug>/IDEAS.md` (seed for `/mission`) |
 | `/mission` | Initialize/update PROJECT.md and numbered ROADMAP.md |
 | `/brief N` | Socratic brief: why + what + spec → BRIEF.md |
 | `/plan N` | Tactical breakdown into dependency-ordered waves → PLAN.md |

@@ -42,8 +42,8 @@ load test_helper
 
 # Pin the cap value itself: the count test above stays green if someone raises
 # the cap to fit a new command, so assert the boundary separately.
-@test "surface cap is pinned at 17 when off-spine commands are added" {
-  run grep -Eq '^CAP=17$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
+@test "surface cap is pinned at 18 when the /ideate spine skill is added" {
+  run grep -Eq '^CAP=18$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
   [ "$status" -eq 0 ]
 }
 
