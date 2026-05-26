@@ -89,6 +89,11 @@ jobs:
       - name: recommend gate
         run: ./scripts/check-recommend.sh
 
+      # workflow cohesion gate: every skill/agent/command must carry an
+      # onward-pointer section (## Related or ## Handoffs).
+      - name: cohesion gate
+        run: ./scripts/check-cohesion.sh
+
       # bats smoke suite.
       - name: bats
         run: bats tests/
