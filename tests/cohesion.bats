@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# Workflow-cohesion gate (unit 24, S5 — advances AC-5 and AC-7).
+# Workflow-cohesion gate (unit 24, S5 — advances AC-5, AC-6, AC-7).
 #
 # Exercises scripts/check-cohesion.sh, which enforces that every user-facing
 # surface (skills/*/SKILL.md, agents/*.md, commands/*.md) carries an onward-
@@ -91,9 +91,44 @@ make_fixture() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"cohesion: ok agents/y.md"* ]]
   [[ "$output" == *"cohesion: ok skills/x/SKILL.md"* ]]
+  # Prove the commands surface type is scanned too (## Related on a command).
+  [[ "$output" == *"cohesion: ok commands/z.md"* ]]
 }
 
-# --- case 4: zero surfaces is a misconfiguration, not a clean pass ---------
+# --- case 4: multiple missing surfaces are ALL named (AC-5) ----------------
+
+# The gate continues after the first miss and names every violator — guards
+# against a regression to "exit 1 on first miss" that would still pass case 2.
+@test "check-cohesion should exit 1 and name every surface missing a section" {
+  make_fixture
+  printf '# y\n\n(no section)\n' > "$FIXTURE/agents/y.md"
+  printf '# z\n\n(no section)\n' > "$FIXTURE/commands/z.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"commands/z.md"* ]]
+}
+
+# --- case 5: near-miss headings are rejected (AC-6 boundary) ---------------
+
+# The heading regex is anchored and exact: `## Relatedness`, a trailing-text
+# variant, and a wrong-case `## handoffs` must all fail — so a future relaxation
+# (grep -i, or dropping the `$` anchor) is caught.
+@test "check-cohesion should exit 1 when a surface carries only a near-miss heading" {
+  make_fixture
+  printf '# x\n\n## Relatedness\n\n- /y\n' > "$FIXTURE/skills/x/SKILL.md"
+  printf '# y\n\n## Related stuff\n\n- @z\n' > "$FIXTURE/agents/y.md"
+  printf '# z\n\n## handoffs\n\n- /x\n' > "$FIXTURE/commands/z.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"skills/x/SKILL.md"* ]]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"commands/z.md"* ]]
+}
+
+# --- case 6: zero surfaces is a misconfiguration, not a clean pass ---------
 
 # A run that matches no surfaces (wrong working dir / renamed tree) must fail
 # loudly rather than report "all 0 surface(s)" — guards against a silent green.
