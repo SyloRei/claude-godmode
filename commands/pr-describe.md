@@ -58,3 +58,10 @@ One or two sentences: what this PR does and why it exists.
 Keep it terse and factual. Do not invent test steps that were not run — if you
 cannot tell how it was tested, say so and ask. Print the description for the user
 to paste when opening the PR.
+
+---
+
+## Related
+
+- **/ship** — owns pushing the branch and opening the PR; this command only drafts the body for it to carry.
+- **/changelog** — draft a Keep a Changelog entry from the same commit range to accompany the PR.

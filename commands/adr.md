@@ -67,3 +67,11 @@ above the highest existing ADR. Write the file only if the user confirms the
 path; otherwise print the ADR for them to place.
 
 Keep it terse. One decision, four sections, no filler.
+
+---
+
+## Related
+
+- **@architect** — produces the design analysis and trade-offs an ADR records; spawn it first when the decision still needs working out, then capture the outcome here.
+- **/plan N** — the recorded decision shapes the tactical plan for the unit it affects; run it once the ADR is accepted.
+- **/changelog** — surface a decision that changes user-visible behavior in the release notes too.

@@ -76,3 +76,10 @@ user-visible effect).
 Omit any category with no entries. Phrase each line from the user's point of
 view, present tense, terse. Print the entry for the user to paste into
 `CHANGELOG.md`.
+
+---
+
+## Related
+
+- **/ship** — owns the release-time changelog step when you are actually cutting a version; this command is only for ad-hoc drafting between releases.
+- **/pr-describe** — draws on the same commit range to draft a PR body; useful alongside a changelog entry when opening the release PR.

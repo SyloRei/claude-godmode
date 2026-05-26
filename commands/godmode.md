@@ -99,3 +99,15 @@ Helpers: <helper skills from the scan above — i.e. scanned skills minus the sp
 The **Mission** line names the active mission from state (`mission_id` + `mission_name`) and the mission-scoped next command. On **cold start** there is no active mission, so omit the Mission line entirely and let the Next line point at `/mission`.
 
 Keep the whole output well under 10,000 characters — five short lines is the target. Do not dump the full inventory tables; the scan counts and the next command are what matter. If the user wants the full list, point them at `/<command> --help` or the inventory scan above.
+
+---
+
+## Related
+
+`/godmode` points users *into* the workflow — every pointer here is a next step it recommends.
+
+- **/mission** — start the spine: name the mission and lay down the roadmap. The cold-start recommendation.
+- **/brief N** — capture the why + what for the active work unit; the warm-start next step after a mission exists.
+- **/ship** — the spine's final step, once a unit is built and verified.
+
+**Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. `/godmode` reads the recorded state and tells the user which step is next.
