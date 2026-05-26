@@ -1,13 +1,14 @@
 #!/usr/bin/env bats
 #
-# Surface/skills tests (units 7–8, 22): verify the consolidated command surface.
-# Unit 7: the triage/profile/onboard skills must exist and explore-repo must be
-# gone (folded into /onboard). Unit 8 adds three flat command files — /adr,
-# /changelog, /pr-describe. Unit 22 adds the /ideate spine skill, bringing the
-# surface to 17 (cap 18). The total must stay within the cap enforced by
-# check-surface-count.sh. Guards AC-1–AC-4 (new skills exist, explore-repo
-# gone), the unit 8 command additions, /ideate's presence, and AC-8 (surface
-# within cap, exact count pinned).
+# Surface/skills tests (units 7–8, 22–23): verify the consolidated command
+# surface. Unit 7: the triage/profile/onboard skills must exist and explore-repo
+# must be gone (folded into /onboard). Unit 8 adds three flat command files —
+# /adr, /changelog, /pr-describe. Unit 22 adds the /ideate spine skill (cap →
+# 18); unit 23 adds the /refine spine skill, bringing the surface to 18 (cap
+# 19). The total must stay within the cap enforced by check-surface-count.sh.
+# Guards AC-1–AC-4 (new skills exist, explore-repo gone), the unit 8 command
+# additions, /ideate's and /refine's presence, and the surface within cap with
+# the exact count pinned.
 
 load test_helper
 
@@ -25,6 +26,10 @@ load test_helper
 
 @test "skills/ideate/SKILL.md exists when surface is consolidated" {
   [ -f "$PLUGIN_ROOT/skills/ideate/SKILL.md" ]
+}
+
+@test "skills/refine/SKILL.md exists when surface is consolidated" {
+  [ -f "$PLUGIN_ROOT/skills/refine/SKILL.md" ]
 }
 
 @test "skills/explore-repo does not exist when folded into onboard" {

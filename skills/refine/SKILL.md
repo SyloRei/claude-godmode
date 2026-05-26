@@ -90,10 +90,18 @@ With the whole mission in view, surface the **candidate gaps and improvements**:
 The new unit takes the **next free number**: the maximum existing roadmap unit number **plus one**, zero-padded to two digits via `printf '%02d'` (the project convention: unit `3` → `03`, unit `12` → `12`). Derive a kebab-case `name` from the new unit's title — the same rule `/brief` uses: lowercase, spaces and punctuation → single hyphens, trim leading/trailing hyphens.
 
 ```bash
-# mission_id from state (step 1). MAX_UNIT is the highest existing roadmap
-# unit number in this mission's ROADMAP.md (0 if the roadmap is empty).
+# mission_id from state (step 1).
 mission_id=$(bin/godmode-state get mission_id)
-N=$((MAX_UNIT + 1))
+roadmap=".planning/missions/${mission_id}/ROADMAP.md"
+
+# MAX_UNIT = highest existing roadmap unit number (0 if the roadmap is empty).
+# Roadmap units are numbered table rows ("| 23 | ... |") or "## N" headings;
+# pull every leading unit number, take the largest. Default 0 when none exist.
+max_unit=$(grep -Eo '^(\| *|#+ *)[0-9]+' "$roadmap" 2>/dev/null \
+  | grep -Eo '[0-9]+' | sort -rn | head -1)
+max_unit=${max_unit:-0}
+
+N=$((max_unit + 1))
 NN=$(printf '%02d' "$N")
 name=$(printf '%s' "$UNIT_TITLE" \
   | tr '[:upper:]' '[:lower:]' \
