@@ -84,6 +84,10 @@ jobs:
       - name: surface-count gate
         run: ./scripts/check-surface-count.sh
 
+      # recommend-from-memory verification gate.
+      - name: recommend gate
+        run: ./scripts/check-recommend.sh
+
       # bats smoke suite.
       - name: bats
         run: bats tests/
