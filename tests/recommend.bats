@@ -76,6 +76,18 @@ make_fixture() {
   [[ "$output" == *"skills/plan/SKILL.md"* ]]
 }
 
+# AC-6: a suffix-extended superset (e.g. ...-convention-v2) is NOT the literal
+# token the rule mandates, so it must fail and name the file — guards against
+# substring matching silently accepting a versioned variant.
+@test "check-recommend should exit 1 when a spine skill carries only a superset marker" {
+  make_fixture mission brief plan
+  printf '# plan\n\n<!-- %s-v2 -->\n' "$MARKER" > "$FIXTURE/skills/plan/SKILL.md"
+
+  run "$FIXTURE/scripts/check-recommend.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"skills/plan/SKILL.md"* ]]
+}
+
 # --- case 3: skip absent spine skills (AC-7) ------------------------------
 
 # AC-7: ideate and refine are absent in the repo as built, yet the gate exits 0

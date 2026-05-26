@@ -84,7 +84,8 @@ jobs:
       - name: surface-count gate
         run: ./scripts/check-surface-count.sh
 
-      # recommend-from-memory verification gate.
+      # recommendation-backed-question convention gate: every planning-spine
+      # skill must carry the marker token.
       - name: recommend gate
         run: ./scripts/check-recommend.sh
 

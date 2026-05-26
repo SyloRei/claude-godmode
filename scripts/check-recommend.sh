@@ -43,8 +43,11 @@ for name in "${SPINE[@]}"; do
 
   checked=$((checked + 1))
 
-  if grep -F "$MARKER" "$f" >/dev/null 2>&1; then
-    echo "recommend: ✓ ${name}"
+  # Match the exact token, allowing surrounding prose/backticks but rejecting
+  # suffix-extended supersets (e.g. ...-convention-v2) — the rule mandates the
+  # token be literal and fixed, so a versioned variant must NOT satisfy the gate.
+  if grep -E "${MARKER}([^[:alnum:]-]|$)" "$f" >/dev/null 2>&1; then
+    echo "recommend: ok ${name}"
   else
     if [ "$failures" -eq 0 ]; then
       echo "recommend FAILURE: spine skill(s) missing the marker '${MARKER}':" >&2
