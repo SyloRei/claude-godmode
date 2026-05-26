@@ -39,16 +39,16 @@ load test_helper
 # Pin the exact surface count so a single accidental skill/command addition
 # (which would still be <= cap, exit 0) trips this test instead of slipping
 # through the gate's `-gt` check. Bump deliberately when the surface changes.
-@test "surface count is exactly 17 when the surface is consolidated" {
+@test "surface count is exactly 18 when the surface is consolidated" {
   run bash "$PLUGIN_ROOT/scripts/check-surface-count.sh"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"= 17 user-facing command(s)"* ]]
+  [[ "$output" == *"= 18 user-facing command(s)"* ]]
 }
 
 # Pin the cap value itself: the count test above stays green if someone raises
 # the cap to fit a new command, so assert the boundary separately.
-@test "surface cap is pinned at 18 when the surface is consolidated" {
-  run grep -Eq '^CAP=18$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
+@test "surface cap is pinned at 19 when the surface is consolidated" {
+  run grep -Eq '^CAP=19$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
   [ "$status" -eq 0 ]
 }
 
