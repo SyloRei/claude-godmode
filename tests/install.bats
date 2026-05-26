@@ -41,11 +41,11 @@ teardown() {
   run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
   [ "$status" -ne 0 ]
 
-  # They DO land in the pinned private path the hook reads, and all 8 ship.
+  # They DO land in the pinned private path the hook reads, and all 9 ship.
   [ -d "$TEST_HOME/.claude/godmode/rules" ]
   run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
-  [ "$output" = "8" ]
+  [ "$output" = "9" ]
 }
 
 @test "install installs agents and skills" {
