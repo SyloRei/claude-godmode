@@ -1,12 +1,13 @@
 #!/usr/bin/env bats
 #
-# Surface/skills tests (units 7–8): verify the consolidated command surface.
+# Surface/skills tests (units 7–8, 22): verify the consolidated command surface.
 # Unit 7: the triage/profile/onboard skills must exist and explore-repo must be
 # gone (folded into /onboard). Unit 8 adds three flat command files — /adr,
-# /changelog, /pr-describe — bringing the surface to 16. The total must stay
-# within the cap enforced by check-surface-count.sh. Guards AC-1–AC-4 (new
-# skills exist, explore-repo gone), the unit 8 command additions, and AC-8
-# (surface within cap, exact count pinned).
+# /changelog, /pr-describe. Unit 22 adds the /ideate spine skill, bringing the
+# surface to 17 (cap 18). The total must stay within the cap enforced by
+# check-surface-count.sh. Guards AC-1–AC-4 (new skills exist, explore-repo
+# gone), the unit 8 command additions, /ideate's presence, and AC-8 (surface
+# within cap, exact count pinned).
 
 load test_helper
 
@@ -20,6 +21,10 @@ load test_helper
 
 @test "skills/onboard/SKILL.md exists when surface is consolidated" {
   [ -f "$PLUGIN_ROOT/skills/onboard/SKILL.md" ]
+}
+
+@test "skills/ideate/SKILL.md exists when surface is consolidated" {
+  [ -f "$PLUGIN_ROOT/skills/ideate/SKILL.md" ]
 }
 
 @test "skills/explore-repo does not exist when folded into onboard" {
@@ -42,7 +47,7 @@ load test_helper
 
 # Pin the cap value itself: the count test above stays green if someone raises
 # the cap to fit a new command, so assert the boundary separately.
-@test "surface cap is pinned at 18 when the /ideate spine skill is added" {
+@test "surface cap is pinned at 18 when the surface is consolidated" {
   run grep -Eq '^CAP=18$' "$PLUGIN_ROOT/scripts/check-surface-count.sh"
   [ "$status" -eq 0 ]
 }

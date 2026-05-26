@@ -2,7 +2,7 @@
 name: ideate
 description: "Pre-mission discovery: discuss and think out candidate directions for the next feature mission, converge on one concrete proposal, and capture the reasoning as a durable artifact that /mission later reads as its seed. Use when: ideate, what should the next mission be, explore options before committing to a charter. Does not start or mutate any mission — it stops at a proposal."
 user-invocable: true
-allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
 ---
 
 # Ideate
@@ -83,8 +83,7 @@ Derive a kebab-case `<slug>` from the **proposed feature name**, using the **sam
 # FEATURE_NAME is the proposed feature name converged on in step 2.
 slug=$(printf '%s' "$FEATURE_NAME" \
   | tr '[:upper:]' '[:lower:]' \
-  | tr -cs 'a-z0-9' '-' \
-  | sed -e 's/^-//' -e 's/-$//')
+  | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-*//' -e 's/-*$//')
 ideas_dir=".planning/ideas/${slug}"
 ```
 

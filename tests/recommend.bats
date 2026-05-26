@@ -50,6 +50,8 @@ make_fixture() {
   [[ "$output" == *"mission"* ]]
   [[ "$output" == *"brief"* ]]
   [[ "$output" == *"plan"* ]]
+  # /ideate is built (unit 22), so it must be reported as ok, not skipped.
+  [[ "$output" == *"ok ideate"* ]]
 }
 
 # --- case 2: fail when a present spine skill loses its marker (AC-6) -------
@@ -90,12 +92,11 @@ make_fixture() {
 
 # --- case 3: skip absent spine skills (AC-7) ------------------------------
 
-# AC-7: ideate and refine are absent in the repo as built, yet the gate exits 0
-# and reports them as skipped rather than failing.
+# AC-7: refine is absent in the repo as built (ideate landed in unit 22), yet
+# the gate exits 0 and reports the absent skill as skipped rather than failing.
 @test "check-recommend should skip absent spine skills and still exit 0" {
   run "$SCRIPT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"ideate"* ]]
   [[ "$output" == *"refine"* ]]
   [[ "$output" == *"skipped"* ]]
 }
