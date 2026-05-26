@@ -95,7 +95,7 @@ The rules that drive God-Mode's behavior are injected automatically by the Sessi
 
 ```
 You:    /godmode
-Claude: God-Mode v2.1.0 · 10 skills, 18 agents
+Claude: God-Mode v2.3.0 · 14 skills, 18 agents
         Where: uninitialized — no roadmap yet
         Next:  /mission   (then /brief 1)
         Spine: /mission → /brief N → /plan N → /build N → /verify N → /ship

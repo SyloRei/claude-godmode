@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.3.0] - 2026-05-26
+
+v3 Phases 2 & 5: the agent roster and spine grow to cover the gaps (debugging,
+performance, incidents, migrations; triage/profile/onboard), missions become
+episodic and named, planning questions lead with a reasoned recommendation,
+two new spine skills shape work before and during a mission, and every surface
+now points the reader onward so the toolkit reads as one workflow.
+
+### Added
+
+- **Four new agents** (Phase 2) — `@debugger`, `@perf-engineer`, `@incident-responder`, `@migration-engineer` (sonnet by default; opus under the `quality` profile), bringing the roster to 18.
+- **Three new spine skills** (Phase 2) — `/triage`, `/profile`, and `/onboard` (which folds in the former `/explore-repo`), staying within the surface cap.
+- **Three off-spine commands** (Phase 2) — `/adr`, `/changelog`, `/pr-describe` as plain reactive helpers.
+- **Bundled deterministic scripts** (Phase 2) — each spine skill gains a `scripts/` directory (e.g. `verify/coverage-diff.py`, `ship/gates.sh`).
+- **`/ideate` skill** (Phase 5) — pre-mission discovery: discuss and think through next-mission ideas, feeding `/mission`.
+- **`/refine` skill** (Phase 5) — mid-mission gap analysis: surface what's missing in the current mission and append a new numbered unit + brief, strictly additively.
+- **Recommendation-backed planning questions** (Phase 5) — every planning-spine question (`/mission`, `/brief`, `/plan`, `/ideate`, `/refine`) leads with a reasoned **Recommended** option; enforced by `scripts/check-recommend.sh` + `tests/recommend.bats`.
+- **Workflow cohesion** (Phase 5, unit 24) — every agent gains a `## Handoffs` and every command a `## Related` section, so no surface is a dead end. New `scripts/check-cohesion.sh` gate (bash + grep) asserts the onward-pointer section on every skill/agent/command and fails on a missing section or empty tree; covered by `tests/cohesion.bats` and wired into CI.
+
+### Changed
+
+- **Missions are now episodic and named** (Phase 5) — each `/mission` cycle is a named mission scoping its own briefs from 1; the brief counter resets and prior missions are archived under `.planning/missions/`. State gains `mission_id`/`mission_name`, and the spine skills + `/godmode` are mission-aware.
+- **Surface cap raised 17 → 19** (Phase 5) — to admit `/ideate` (→ 18) and `/refine` (→ 19); `scripts/check-surface-count.sh` updated. The ≤12-spine opinionated stance is preserved.
+
 ## [2.1.0] - 2026-05-25
 
 v3 Phase 1: the `model_profile` knob now does something, code review fans out
