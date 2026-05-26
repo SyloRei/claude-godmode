@@ -54,7 +54,10 @@ make_fixture() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"cohesion: ok"* ]]
   [[ "$output" == *"surface(s)"* ]]
-  [[ "$output" == *"all 36 surface(s)"* ]]
+  # Assert the summary names the actual surface count, derived live rather than
+  # hardcoded — so adding/removing a surface never breaks this for the wrong reason.
+  count=$(ls "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/agents/*.md "$PLUGIN_ROOT"/commands/*.md 2>/dev/null | wc -l | tr -d ' ')
+  [[ "$output" == *"all ${count} surface(s)"* ]]
   # Sample one agent and one skill to prove both surface kinds are scanned.
   [[ "$output" == *"cohesion: ok agents/writer.md"* ]]
   [[ "$output" == *"cohesion: ok skills/ship/SKILL.md"* ]]
@@ -88,4 +91,19 @@ make_fixture() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"cohesion: ok agents/y.md"* ]]
   [[ "$output" == *"cohesion: ok skills/x/SKILL.md"* ]]
+}
+
+# --- case 4: zero surfaces is a misconfiguration, not a clean pass ---------
+
+# A run that matches no surfaces (wrong working dir / renamed tree) must fail
+# loudly rather than report "all 0 surface(s)" — guards against a silent green.
+@test "check-cohesion should exit 1 when no surfaces are found" {
+  mkdir -p "$FIXTURE/scripts"
+  cp "$SCRIPT" "$FIXTURE/scripts/check-cohesion.sh"
+  chmod +x "$FIXTURE/scripts/check-cohesion.sh"
+  # No skills/agents/commands trees created — every glob matches nothing.
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no surfaces found"* ]]
 }

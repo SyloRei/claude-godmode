@@ -54,5 +54,13 @@ if [ "$failures" -ne 0 ]; then
   exit 1
 fi
 
+# A run that matched zero surfaces is a misconfiguration (wrong working dir, or
+# a renamed surface tree), not a clean pass — fail loudly rather than report
+# "all 0 surface(s)".
+if [ "$checked" -eq 0 ]; then
+  echo "cohesion ERROR: no surfaces found under skills/, agents/, commands/." >&2
+  exit 1
+fi
+
 echo "cohesion: onward-pointer section present on all ${checked} surface(s)."
 exit 0
