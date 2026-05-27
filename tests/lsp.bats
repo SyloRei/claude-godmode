@@ -29,13 +29,25 @@ load test_helper
   [ "$output" = "pyright-langserver" ]
 }
 
-@test ".lsp.json typescript has a non-empty extensionToLanguage map" {
-  run jq -e '.typescript.extensionToLanguage | length > 0' "$PLUGIN_ROOT/.lsp.json"
+@test ".lsp.json typescript maps the required extensions to LSP language ids" {
+  run jq -r '.typescript.extensionToLanguage | "\(.[".ts"]),\(.[".tsx"]),\(.[".js"]),\(.[".jsx"])"' "$PLUGIN_ROOT/.lsp.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "typescript,typescriptreact,javascript,javascriptreact" ]
+}
+
+@test ".lsp.json pyright maps Python extensions to the python language id" {
+  run jq -r '.pyright.extensionToLanguage | "\(.[".py"]),\(.[".pyi"])"' "$PLUGIN_ROOT/.lsp.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "python,python" ]
+}
+
+@test ".lsp.json typescript args contain --stdio" {
+  run jq -e '.typescript.args | index("--stdio")' "$PLUGIN_ROOT/.lsp.json"
   [ "$status" -eq 0 ]
 }
 
-@test ".lsp.json pyright has a non-empty extensionToLanguage map" {
-  run jq -e '.pyright.extensionToLanguage | length > 0' "$PLUGIN_ROOT/.lsp.json"
+@test ".lsp.json pyright args contain --stdio" {
+  run jq -e '.pyright.args | index("--stdio")' "$PLUGIN_ROOT/.lsp.json"
   [ "$status" -eq 0 ]
 }
 

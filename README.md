@@ -421,16 +421,16 @@ The `mcpServers` manifest field applies in plugin mode. If you install manually,
 
 Claude God-Mode bundles a `.lsp.json` referenced from `.claude-plugin/plugin.json`, giving Claude live code intelligence -- instant diagnostics, go-to-definition, and type info -- inside `@writer` and `@executor` worktrees. Two language servers are wired up:
 
-| Server | Language | Enables |
-|--------|----------|---------|
-| **typescript** (TypeScript Language Server) | TypeScript/JavaScript | diagnostics + navigation for `.ts`/`.tsx`/`.js`/`.jsx` |
-| **pyright** (Pyright) | Python | type-checking diagnostics + navigation for `.py` |
+| Server | Enables |
+|--------|---------|
+| **typescript** (TypeScript Language Server) | TypeScript/JavaScript diagnostics + navigation for `.ts`/`.tsx`/`.js`/`.jsx` |
+| **pyright** (Pyright) | Python type-checking diagnostics + navigation for `.py` |
 
 ### Requirements
 
-- The language-server **binaries must be installed separately** -- the plugin only configures the connection, it does not bundle the binary. Install them with:
-  - `npm install -g typescript-language-server typescript`
-  - `npm install -g pyright`  (or `pip install pyright`)
+- The language-server **binaries must be installed separately** -- the plugin only configures the connection, it does not bundle the binary.
+- Install the TypeScript server with `npm install -g typescript-language-server typescript`.
+- Install Pyright with `npm install -g pyright` (the npm path is canonical; `pip install pyright` also provides `pyright-langserver`).
 - A server only spawns when matching files are present in the workspace **and** its binary is installed, so it is zero-cost otherwise.
 
 ### Disabling servers
