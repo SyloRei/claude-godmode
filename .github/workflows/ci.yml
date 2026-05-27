@@ -94,6 +94,11 @@ jobs:
       - name: cohesion gate
         run: ./scripts/check-cohesion.sh
 
+      # AGENTS.md is a generated, committed artifact; this gate fails if the
+      # tracked file drifts from what bin/godmode-agents would regenerate.
+      - name: agents-drift gate
+        run: ./scripts/check-agents-drift.sh
+
       # bats smoke suite.
       - name: bats
         run: bats tests/
