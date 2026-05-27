@@ -38,6 +38,7 @@ Claude God-Mode is a Claude Code plugin that ships rules (focused config files i
 - [Standalone Workflows](#standalone-workflows)
 - [Hooks](#hooks)
 - [Bundled MCP Servers](#bundled-mcp-servers)
+- [Bundled LSP Servers](#bundled-lsp-servers)
 - [Rules-Based Configuration](#rules-based-configuration)
 - [Agent Memory](#agent-memory)
 - [Customization](#customization)
@@ -408,6 +409,31 @@ Claude God-Mode bundles a `.mcp.json` referenced from `.claude-plugin/plugin.jso
 ### Manual installs
 
 The `mcpServers` manifest field applies in plugin mode. If you install manually, copy or merge `.mcp.json` into your own project or user MCP config to opt in to the same servers.
+
+## Bundled LSP Servers
+
+Claude God-Mode bundles a `.lsp.json` referenced from `.claude-plugin/plugin.json`, giving Claude live code intelligence -- instant diagnostics, go-to-definition, and type info -- inside `@writer` and `@executor` worktrees. Two language servers are wired up:
+
+| Server | Language | Enables |
+|--------|----------|---------|
+| **typescript** (TypeScript Language Server) | TypeScript/JavaScript | diagnostics + navigation for `.ts`/`.tsx`/`.js`/`.jsx` |
+| **pyright** (Pyright) | Python | type-checking diagnostics + navigation for `.py` |
+
+### Requirements
+
+- The language-server **binaries must be installed separately** -- the plugin only configures the connection, it does not bundle the binary. Install them with:
+  - `npm install -g typescript-language-server typescript`
+  - `npm install -g pyright`  (or `pip install pyright`)
+- A server only spawns when matching files are present in the workspace **and** its binary is installed, so it is zero-cost otherwise.
+
+### Disabling servers
+
+- **One server:** remove its entry from `.lsp.json`.
+- **All servers:** remove the `"lspServers": "./.lsp.json"` line from `.claude-plugin/plugin.json`.
+
+### Manual installs
+
+The `lspServers` manifest field applies in plugin mode. If you install manually, copy or merge `.lsp.json` into your own LSP config to opt in to the same servers.
 
 ## Rules-Based Configuration
 
