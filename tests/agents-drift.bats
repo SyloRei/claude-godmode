@@ -31,15 +31,18 @@ teardown() {
   fi
 }
 
-@test "check-agents-drift.sh should exit 0 when AGENTS.md matches the generator" {
-  run "$SCRIPT"
+@test "check-agents-drift should exit 0 when AGENTS.md matches the generator" {
+  run bash -c '"$0" 2>&1' "$SCRIPT"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"up to date"* ]]
+  [[ "$output" == *"AGENTS.md up to date"* ]]
 }
 
-@test "check-agents-drift.sh should exit non-zero when AGENTS.md is tampered" {
+@test "check-agents-drift should exit non-zero with a drift message when AGENTS.md is tampered" {
   printf '\n%s\n' "drift-sentinel: this line is not produced by the generator" >> "$AGENTS"
-  run "$SCRIPT"
+  # Capture stderr too: the drift diagnostic is emitted on stderr. Assert on the
+  # "drift:" prefix, which appears only in the gate's failure message and never
+  # in AGENTS.md body — so this passes for the right reason, not on diff context.
+  run bash -c '"$0" 2>&1' "$SCRIPT"
   [ "$status" -ne 0 ]
-  [[ "$output" == *"bin/godmode-agents"* ]]
+  [[ "$output" == *"drift:"* ]]
 }
