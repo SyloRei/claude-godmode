@@ -28,6 +28,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ${CLAUDE_PLUGIN_ROOT}/hooks/post-tool-use-cost.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "SessionStart": [
