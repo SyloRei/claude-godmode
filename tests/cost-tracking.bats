@@ -17,7 +17,7 @@
 
 load test_helper
 
-COST="$PLUGIN_ROOT/hooks/post-tool-use-cost.sh"
+POST_COST="$PLUGIN_ROOT/hooks/post-tool-use-cost.sh"
 
 setup() {
   make_temp_home
@@ -73,13 +73,26 @@ count_session_rows() {
   grep -c "^| ${sid} |" "$file" || true
 }
 
+# Count non-header data rows in COSTS.md (lines starting with "| " that are
+# neither the header nor the separator row). Used to catch a regression where
+# the hook emits header+sep but no data row.
+count_data_rows() {
+  local file="$1"
+  awk '
+    /^\| --- / { next }
+    /^\| session \| timestamp \|/ { next }
+    /^\| / { n++ }
+    END { print n + 0 }
+  ' "$file"
+}
+
 # --- AC-2: create COSTS.md on first event --------------------------------
 
 @test "create: writes COSTS.md with header on first event (AC-2)" {
   local cwd; cwd="$(make_cwd with-planning)"
   local event; event="$(make_event "sess-a" "$cwd" "claude-opus" 100 50 20 10)"
 
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
   [ -f "$cwd/.planning/COSTS.md" ]
 
@@ -96,8 +109,10 @@ count_session_rows() {
   e1="$(make_event "sess-acc" "$cwd" "claude-opus" 100 50 20 10)"
   e2="$(make_event "sess-acc" "$cwd" "claude-opus"   7  3  1  4)"
 
-  run bash "$COST" <<<"$e1"; [ "$status" -eq 0 ]
-  run bash "$COST" <<<"$e2"; [ "$status" -eq 0 ]
+  run bash "$POST_COST" <<<"$e1"
+  [ "$status" -eq 0 ]
+  run bash "$POST_COST" <<<"$e2"
+  [ "$status" -eq 0 ]
 
   local file="$cwd/.planning/COSTS.md"
   [ -f "$file" ]
@@ -111,7 +126,6 @@ count_session_rows() {
   # awk splits on "|", fields 5..9 are the five integers (with surrounding spaces).
   local row
   row="$(grep "^| sess-acc |" "$file")"
-  # shellcheck disable=SC2016
   local nums
   nums="$(printf '%s\n' "$row" | awk -F'|' '{
     for (i = 5; i <= 9; i++) { gsub(/ /, "", $i); printf "%s ", $i }
@@ -131,8 +145,10 @@ count_session_rows() {
   e1="$(make_event "sess-aaa" "$cwd" "claude-opus" 10 20 0 0)"
   e2="$(make_event "sess-bbb" "$cwd" "claude-opus" 30 40 0 0)"
 
-  run bash "$COST" <<<"$e1"; [ "$status" -eq 0 ]
-  run bash "$COST" <<<"$e2"; [ "$status" -eq 0 ]
+  run bash "$POST_COST" <<<"$e1"
+  [ "$status" -eq 0 ]
+  run bash "$POST_COST" <<<"$e2"
+  [ "$status" -eq 0 ]
 
   local file="$cwd/.planning/COSTS.md"
   [ -f "$file" ]
@@ -155,7 +171,7 @@ count_session_rows() {
 @test "no-op: empty stdin exits 0 and creates nothing (AC-5a)" {
   local cwd; cwd="$(make_cwd with-planning)"
 
-  run bash "$COST" < /dev/null
+  run bash "$POST_COST" < /dev/null
   [ "$status" -eq 0 ]
   [ ! -f "$cwd/.planning/COSTS.md" ]
 }
@@ -170,7 +186,7 @@ count_session_rows() {
   event="$(jq -n --arg session "sess-noop" --arg cwd "$cwd" \
     '{session_id: $session, cwd: $cwd, tool_response: {usage: {}}}')"
 
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
   [ ! -f "$cwd/.planning/COSTS.md" ]
 
@@ -179,7 +195,7 @@ count_session_rows() {
   event2="$(jq -n --arg session "sess-noop2" --arg cwd "$cwd" \
     '{session_id: $session, cwd: $cwd, tool_response: {}}')"
 
-  run bash "$COST" <<<"$event2"
+  run bash "$POST_COST" <<<"$event2"
   [ "$status" -eq 0 ]
   [ ! -f "$cwd/.planning/COSTS.md" ]
 }
@@ -192,10 +208,50 @@ count_session_rows() {
   local event
   event="$(make_event "sess-bare" "$cwd" "claude-opus" 100 50 20 10)"
 
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
   [ ! -d "$cwd/.planning" ]
   [ ! -f "$cwd/.planning/COSTS.md" ]
+}
+
+# --- AC-5 extension: absent cwd key entirely -> no-op --------------------
+
+@test "no-op: missing cwd key exits 0 (AC-5 — defensive)" {
+  # Event with no `cwd` key at all. The hook should silently no-op rather
+  # than fail or write anywhere.
+  local event
+  event="$(jq -n --arg session "sess-nocwd" \
+    '{
+       session_id: $session,
+       tool_response: {usage: {input_tokens: 5}}
+     }')"
+
+  run bash "$POST_COST" <<<"$event"
+  [ "$status" -eq 0 ]
+}
+
+# --- AC-5 extension: missing session_id -> falls back to "unknown" -------
+
+@test "missing session_id: falls back to 'unknown' row" {
+  local cwd; cwd="$(make_cwd with-planning)"
+
+  # Event with no `session_id` key — hook substitutes "unknown".
+  local event
+  event="$(jq -n --arg cwd "$cwd" \
+    '{
+       cwd: $cwd,
+       tool_response: {usage: {input_tokens: 7, output_tokens: 3}}
+     }')"
+
+  run bash "$POST_COST" <<<"$event"
+  [ "$status" -eq 0 ]
+
+  local file="$cwd/.planning/COSTS.md"
+  [ -f "$file" ]
+
+  local rows
+  rows="$(count_session_rows "$file" "unknown")"
+  [ "$rows" -eq 1 ] || { echo "rows=$rows"; cat "$file"; false; }
 }
 
 # --- AC-6: adversarial session_id / model -------------------------------
@@ -220,7 +276,7 @@ count_session_rows() {
        tool_response: {usage: {input_tokens: 1, output_tokens: 2, cache_read_input_tokens: 3, cache_creation_input_tokens: 4}}
      }')"
 
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
 
   local file="$cwd/.planning/COSTS.md"
@@ -231,6 +287,12 @@ count_session_rows() {
   header="$(awk 'NF { print; exit }' "$file")"
   [ "$header" = '| session | timestamp | model | input | output | cache-read | cache-creation | total |' ]
 
+  # A data row was actually written — header+sep alone would also satisfy the
+  # pipe-count check below, so guard explicitly against that regression.
+  local data_rows
+  data_rows="$(count_data_rows "$file")"
+  [ "$data_rows" -ge 1 ] || { echo "no data rows"; cat "$file"; false; }
+
   # Every non-blank line has exactly 9 pipes (8 columns with outer pipes).
   # We do not assert specific sanitization output — only table shape.
   local bad
@@ -239,6 +301,16 @@ count_session_rows() {
     if (n != 9) { print NR ":" n ":" $0 }
   }' "$file")"
   [ -z "$bad" ] || { echo "malformed rows:"; echo "$bad"; echo "---"; cat "$file"; false; }
+
+  # Round-trip: feeding the same nasty session_id a second time must upsert
+  # into the existing row (sanitized form is deterministic), not append a new
+  # row that doubles the data-row count.
+  run bash "$POST_COST" <<<"$event"
+  [ "$status" -eq 0 ]
+  local data_rows_after
+  data_rows_after="$(count_data_rows "$file")"
+  [ "$data_rows_after" -eq "$data_rows" ] \
+    || { echo "row count changed: $data_rows -> $data_rows_after"; cat "$file"; false; }
 }
 
 # --- AC-7: header column names + integer cells --------------------------
@@ -246,21 +318,23 @@ count_session_rows() {
 @test "header: names all eight columns and cell counts are integers (AC-7)" {
   local cwd; cwd="$(make_cwd with-planning)"
   local event; event="$(make_event "sess-hdr" "$cwd" "claude-opus" 11 22 33 44)"
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
 
   local file="$cwd/.planning/COSTS.md"
   local header_lc
   header_lc="$(head -n 1 "$file" | tr '[:upper:]' '[:lower:]')"
 
-  printf '%s' "$header_lc" | grep -qF 'session'
-  printf '%s' "$header_lc" | grep -qF 'timestamp'
-  printf '%s' "$header_lc" | grep -qF 'model'
-  printf '%s' "$header_lc" | grep -qF 'input'
-  printf '%s' "$header_lc" | grep -qF 'output'
-  printf '%s' "$header_lc" | grep -qF 'cache-read'
-  printf '%s' "$header_lc" | grep -qF 'cache-creation'
-  printf '%s' "$header_lc" | grep -qF 'total'
+  # Anchor each column name with the surrounding "| ... |" so 'input' cannot
+  # be satisfied by a substring match on 'cache-read' / 'cache-creation'.
+  printf '%s' "$header_lc" | grep -qF '| session |'
+  printf '%s' "$header_lc" | grep -qF '| timestamp |'
+  printf '%s' "$header_lc" | grep -qF '| model |'
+  printf '%s' "$header_lc" | grep -qF '| input |'
+  printf '%s' "$header_lc" | grep -qF '| output |'
+  printf '%s' "$header_lc" | grep -qF '| cache-read |'
+  printf '%s' "$header_lc" | grep -qF '| cache-creation |'
+  printf '%s' "$header_lc" | grep -qF '| total |'
 
   # The four count columns + total cell are integers.
   local row
@@ -290,7 +364,7 @@ count_session_rows() {
        tool_response: {usage: {input_tokens: 50}}
      }')"
 
-  run bash "$COST" <<<"$event"
+  run bash "$POST_COST" <<<"$event"
   [ "$status" -eq 0 ]
 
   local file="$cwd/.planning/COSTS.md"
@@ -307,4 +381,34 @@ count_session_rows() {
     print ""
   }')"
   [ "$nums" = "50 0 0 0 50 " ] || { echo "row: $row"; echo "nums: $nums"; cat "$file"; false; }
+}
+
+# --- model-as-object: hook extracts .model.display_name ------------------
+
+@test "model object: uses .model.display_name when model is an object" {
+  local cwd; cwd="$(make_cwd with-planning)"
+
+  # `model` is an object — hook should pull display_name; the jq branch at
+  # post-tool-use-cost.sh handles `(.model | type) == "object"` explicitly.
+  local event
+  event="$(jq -n --arg session "sess-objmodel" --arg cwd "$cwd" \
+    '{
+       session_id: $session,
+       cwd: $cwd,
+       model: {id: "claude-opus-4-7", display_name: "Opus 4.7"},
+       tool_response: {usage: {input_tokens: 1, output_tokens: 1}}
+     }')"
+
+  run bash "$POST_COST" <<<"$event"
+  [ "$status" -eq 0 ]
+
+  local file="$cwd/.planning/COSTS.md"
+  local row
+  row="$(grep "^| sess-objmodel |" "$file")"
+  [ -n "$row" ] || { cat "$file"; false; }
+
+  # Column 4 is model; expect "Opus 4.7".
+  local model_cell
+  model_cell="$(printf '%s\n' "$row" | awk -F'|' '{ sub(/^ /,"",$4); sub(/ $/,"",$4); print $4 }')"
+  [ "$model_cell" = "Opus 4.7" ] || { echo "model cell: '$model_cell'"; echo "row: $row"; false; }
 }
