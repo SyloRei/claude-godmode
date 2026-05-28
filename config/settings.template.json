@@ -116,6 +116,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/post-tool-use-cost.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostCompact": [
