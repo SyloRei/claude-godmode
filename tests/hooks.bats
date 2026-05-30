@@ -26,12 +26,7 @@ teardown() {
   teardown_temp_home
 }
 
-# Assert: if $output is non-empty it must be valid JSON. Empty output is ok.
-assert_json_or_empty() {
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e . > /dev/null
-  fi
-}
+# assert_json_or_empty lives in test_helper.bash (shared across hook suites).
 
 # Build a temp git repo under TEST_HOME with one staged file; echo its path.
 # Usage: REPO="$(make_repo_with_staged 'file contents')"

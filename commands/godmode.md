@@ -109,5 +109,6 @@ Keep the whole output well under 10,000 characters — five short lines is the t
 - **/mission** — start the spine: name the mission and lay down the roadmap. The cold-start recommendation.
 - **/brief N** — capture the why + what for the active work unit; the warm-start next step after a mission exists.
 - **/ship** — the spine's final step, once a unit is built and verified.
+- **skill add `<name>`** — scaffold a new helper skill from your terminal; run `bin/godmode-skill new <name>` (the `/godmode` orientation is read-only, so this one runs in the shell, not as a slash command).
 
 **Spine:** `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. `/godmode` reads the recorded state and tells the user which step is next.

@@ -116,6 +116,15 @@
             "timeout": 10
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/post-tool-use-cost.sh",
+            "timeout": 10
+          }
+        ]
       }
     ],
     "PostCompact": [
@@ -157,6 +166,17 @@
           {
             "type": "command",
             "command": "bash ~/.claude/hooks/session-end.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/stop-ac-gate.sh",
             "timeout": 10
           }
         ]
