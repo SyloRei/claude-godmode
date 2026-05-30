@@ -4,7 +4,7 @@ description: "Turn a brief into an ordered, dependency-aware tactical plan plus 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(gm=*), Bash(*godmode-state*)
 ---
 
 # Plan
@@ -15,7 +15,7 @@ Run after `/brief N` has captured the why + what + spec. The plan is the contrac
 
 The artifact lives in the **consumer's** repo, alongside the brief it reads:
 
-- Reads `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the brief for roadmap unit `$N` (`mission_id=$(bin/godmode-state get mission_id)`).
+- Reads `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the brief for roadmap unit `$N` (`mission_id=$("$gm/godmode-state" get mission_id)`; see the helper-resolution note in Process).
 - Writes `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md` — the single tactical plan for that unit.
 
 **Exactly two artifact files per work unit: `BRIEF.md` + `PLAN.md`.** Do NOT introduce a third file — no `EXECUTE.md`, no separate execution-log file. The git log is the execution log. Write `PLAN.md` and nothing else.
@@ -47,13 +47,16 @@ Pick a letter, or describe a different option.
 
 ## Process
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
+
 ### 1. Read the brief
 
 Find the brief directory for unit **$N** and read its `BRIEF.md`. `NN` is `$N` zero-padded to two digits (unit `3` → `03`), matching the directory `/brief N` created.
 
 ```bash
 NN=$(printf '%02d' "$N")
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
 ```
 
@@ -64,8 +67,9 @@ Also read for context:
 - `.planning/PROJECT.md` — constraints and decisions the plan must respect.
 - The current workflow state, so you know where the user is:
   ```bash
-  bin/godmode-state get active_unit
-  bin/godmode-state get status
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  "$gm/godmode-state" get active_unit
+  "$gm/godmode-state" get status
   ```
 - Any existing `${brief_dir}/PLAN.md` — if a plan already exists, this is an **update**: read it and preserve prior decisions, editing rather than clobbering.
 
@@ -100,9 +104,10 @@ Write `${brief_dir}/PLAN.md` using the format below. Use Write for a first-time 
 Point the workflow at building this unit so `/godmode` knows the next command:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "plan ready"
-bin/godmode-state set next_command "/build $N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "plan ready"
+"$gm/godmode-state" set next_command "/build $N"
 ```
 
 ---

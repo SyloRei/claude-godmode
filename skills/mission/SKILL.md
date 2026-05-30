@@ -2,7 +2,7 @@
 name: mission
 description: "Start or switch to a named feature mission and capture its purpose, constraints, and numbered roadmap, so every later step shares the same context. Use this to begin a new feature cycle or update its direction — it drives bin/godmode-mission, maintains the project-global .planning/PROJECT.md, and writes the mission's .planning/missions/<mission_id>/ROADMAP.md."
 user-invocable: true
-allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*), Bash(bin/godmode-mission*)
+allowed-tools: Read, Write, Edit, Glob, Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-mission*)
 ---
 
 # Mission
@@ -48,10 +48,13 @@ Pick a letter, or describe a different option.
 
 ### 1. Start or switch the mission
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. The helpers still operate on the consumer repo's `.planning/` (your current working directory) — only the binary is resolved from the install dir. Keep the resolver line; never call a helper by a bare relative path.
+
 `/mission` always takes a **feature name** as its argument. Hand it to the lifecycle helper, which slugifies the name and decides create-vs-switch:
 
 ```bash
-bin/godmode-mission start <feature name>
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-mission" start <feature name>
 ```
 
 - **New name** (no `.planning/missions/NN-slug` for that slug yet) → the helper allocates the next `NN`, scaffolds `.planning/missions/NN-slug/` with a header-only `ROADMAP.md` and a `briefs/` directory, records `mission_id`/`mission_name` in state, and **resets `active_unit` to 1**. This is a fresh feature cycle: its roadmap and briefs number from 1.
@@ -60,7 +63,8 @@ bin/godmode-mission start <feature name>
 Then resolve the active mission so every later path is mission-scoped:
 
 ```bash
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 ```
 
 If `/mission` was invoked without a feature name, ask the user for one before doing anything else — a mission must be named.
@@ -81,8 +85,9 @@ Always Read existing state first — re-running `/mission` for the same mission 
 - `.planning/missions/${mission_id}/ROADMAP.md` — this mission's numbered work units and their status. For a freshly created mission the helper has already seeded a header-only file.
 - Read the current workflow state:
   ```bash
-  bin/godmode-state get active_unit
-  bin/godmode-state get status
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  "$gm/godmode-state" get active_unit
+  "$gm/godmode-state" get status
   ```
 
 If `PROJECT.md` does not exist, this is a first-time project initialization. If it exists, preserve what is already decided (see Merge behavior below).
@@ -117,9 +122,10 @@ Point the workflow at the first unstarted roadmap entry so `/godmode` can tell t
 
 ```bash
 # N = the lowest-numbered roadmap entry of this mission that is still pending
-bin/godmode-state set active_unit "N"
-bin/godmode-state set status "mission defined"
-bin/godmode-state set next_command "/brief N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "N"
+"$gm/godmode-state" set status "mission defined"
+"$gm/godmode-state" set next_command "/brief N"
 ```
 
 `mission_id`/`mission_name` are already set by `bin/godmode-mission start` (step 1) — do not set them by hand here.
@@ -170,7 +176,7 @@ Use Edit for surgical changes to existing files (the project-global `PROJECT.md`
 
 ### `.planning/missions/<mission_id>/ROADMAP.md` *(per-mission)*
 
-`bin/godmode-mission` seeds this header-only when the mission is created; `/mission` populates and updates it. `<mission_id>` is the active mission's `NN-slug` from `bin/godmode-state get mission_id`.
+`bin/godmode-mission` seeds this header-only when the mission is created; `/mission` populates and updates it. `<mission_id>` is the active mission's `NN-slug` from `"$gm/godmode-state" get mission_id` (see the helper-resolution note in step 1).
 
 ```markdown
 # Roadmap: [mission name]
