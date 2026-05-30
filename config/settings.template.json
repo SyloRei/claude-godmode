@@ -161,6 +161,17 @@
           }
         ]
       }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash ~/.claude/hooks/stop-ac-gate.sh",
+            "timeout": 10
+          }
+        ]
+      }
     ]
   }
 }
