@@ -64,12 +64,7 @@ make_event() {
   fi
 }
 
-# Assert a captured $output is empty or, if non-empty, valid JSON (AC-8).
-assert_json_or_empty() {
-  if [ -n "$1" ]; then
-    printf '%s' "$1" | jq -e . > /dev/null
-  fi
-}
+# assert_json_or_empty (AC-8) lives in test_helper.bash, shared across suites.
 
 # Build a stub PATH bindir under $TEST_HOME containing symlinks to every external
 # the hook needs EXCEPT jq, so `command -v jq` fails. Echoes the bindir path.
@@ -92,13 +87,15 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
+  assert_json_or_empty
 
   printf '%s' "$output" | jq -e '.decision == "block"'
 
   local reason
   reason="$(printf '%s' "$output" | jq -r '.reason')"
-  printf '%s' "$reason" | grep -qF '6'
+  # 'unit 6' (not bare '6') isolates the active_unit value from the '6' that
+  # also appears inside the next_command '/build 6'.
+  printf '%s' "$reason" | grep -qF 'unit 6'
   printf '%s' "$reason" | grep -qF '/build 6'
 }
 
@@ -110,11 +107,9 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # On any non-gaps status the hook emits nothing at all — assert empty rather
+  # than guarding on $output (which would pass vacuously if it were empty).
+  [ -z "$output" ]
 }
 
 # --- AC-5: GODMODE_AC_GATE override --------------------------------------
@@ -127,11 +122,9 @@ make_nojq_bindir() {
   for val in off 0 false no OFF; do
     GODMODE_AC_GATE="$val" run bash "$STOP_GATE" <<<"$event"
     [ "$status" -eq 0 ] || { echo "val=$val status=$status"; false; }
-    assert_json_or_empty "$output"
-    if [ -n "$output" ]; then
-      printf '%s' "$output" | jq -e '.decision != "block"' \
-        || { echo "val=$val blocked: $output"; false; }
-    fi
+    # The override must suppress the block entirely: empty stdout. Non-vacuous
+    # — gaps status without the override emits a block (covered by AC-3).
+    [ -z "$output" ] || { echo "val=$val not overridden: $output"; false; }
   done
 }
 
@@ -143,11 +136,8 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Re-entrant pass: the hook short-circuits with no output.
+  [ -z "$output" ]
 }
 
 # --- AC-7a: empty stdin --------------------------------------------------
@@ -172,10 +162,9 @@ make_nojq_bindir() {
 
   run env -i PATH="$bindir" bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
 }
 
 # --- AC-7c: missing / empty cwd ------------------------------------------
@@ -185,10 +174,9 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
 }
 
 @test "fail-open: empty cwd value exits 0, no block (AC-7)" {
@@ -196,10 +184,9 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
 }
 
 # --- AC-7d: cwd with no .planning/ — and none gets created ---------------
@@ -210,10 +197,9 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
   [ ! -d "$cwd/.planning" ]
 }
 
@@ -226,10 +212,9 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
   [ ! -f "$cwd/.planning/STATE.md" ]
 }
 
@@ -243,8 +228,7 @@ make_nojq_bindir() {
 
   run bash "$STOP_GATE" <<<"$event"
   [ "$status" -eq 0 ]
-  assert_json_or_empty "$output"
-  if [ -n "$output" ]; then
-    printf '%s' "$output" | jq -e '.decision != "block"'
-  fi
+  # Fail-open: exit 0 with no output at all (no block, nothing on stderr —
+  # bats folds stderr into $output, so empty proves both).
+  [ -z "$output" ]
 }

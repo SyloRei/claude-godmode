@@ -216,8 +216,10 @@ if [ "$MODE" = "manual" ]; then
   done
 
   # Hooks — copy the full event-set scripts so manual mode matches plugin mode.
-  # 8 hook scripts + statusline.sh.
-  info "Installing hooks (8)"
+  # Count is derived (not hardcoded) so it stays truthful as hooks are added.
+  # statusline.sh lives under config/, so it is not in this count.
+  HOOK_COUNT=$(find "$SCRIPT_DIR/hooks" -maxdepth 1 -name "*.sh" | wc -l | tr -d ' ')
+  info "Installing hooks (${HOOK_COUNT})"
   mkdir -p "$CLAUDE_DIR/hooks"
   cp "$SCRIPT_DIR/hooks/session-start.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
@@ -268,7 +270,7 @@ echo "    - Settings merged (permissions, hooks, statusline)"
 if [ "$MODE" = "manual" ]; then
   echo "    - ${AGENT_COUNT} agents"
   echo "    - ${SKILL_COUNT} skills"
-  echo "    - 8 hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end, stop-ac-gate) + statusline"
+  echo "    - ${HOOK_COUNT} hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end, stop-ac-gate) + statusline"
   echo ""
   echo "  Mode: manual (agents, skills, hooks copied to ~/.claude/)"
 else

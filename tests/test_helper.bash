@@ -54,3 +54,12 @@ teardown_temp_home() {
     rm -rf "$TEST_HOME"
   fi
 }
+
+# Assert the captured bats $output is empty or, if non-empty, valid JSON.
+# Canonical home for the helper every hook suite needs (was cloned per-suite).
+# `jq -e .` returns non-zero on malformed JSON, which fails the calling test.
+assert_json_or_empty() {
+  if [ -n "$output" ]; then
+    printf '%s' "$output" | jq -e . > /dev/null
+  fi
+}

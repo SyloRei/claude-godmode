@@ -5,7 +5,7 @@
 # Covers the install -> uninstall -> reinstall round trip in an isolated
 # mktemp -d $HOME (via the US-017a test_helper harness — never touches the
 # real ~/.claude). Asserts manual-mode install completeness (the Wave-C fix:
-# bin/ + commands/ + all 7 hooks + config/quality-gates.txt) and that the
+# bin/ + commands/ + all 8 hooks + config/quality-gates.txt) and that the
 # settings.json hook merge is idempotent across reinstalls (no duplicate
 # entries).
 #

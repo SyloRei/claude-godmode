@@ -38,12 +38,15 @@ fi
 # Override (AC-5): GODMODE_AC_GATE=off|0|false|no disables the gate. Trim and
 # lowercase via tr (not bash-4 case-folding) so this stays bash 3.2 / BSD safe.
 OVERRIDE="${GODMODE_AC_GATE:-}"
-OVERRIDE="$(printf '%s' "$OVERRIDE" \
-  | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
-  | tr '[:upper:]' '[:lower:]')"
-case "$OVERRIDE" in
-  off|0|false|no) exit 0 ;;
-esac
+# Skip the trim/lowercase subshells entirely on the common unset path.
+if [ -n "$OVERRIDE" ]; then
+  OVERRIDE="$(printf '%s' "$OVERRIDE" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    | tr '[:upper:]' '[:lower:]')"
+  case "$OVERRIDE" in
+    off|0|false|no) exit 0 ;;
+  esac
+fi
 
 # Read cwd from the event JSON (never from process pwd). Fail-open if absent.
 CWD="$(printf '%s' "$INPUT" | jq -r '.cwd // empty' 2>/dev/null || true)"
