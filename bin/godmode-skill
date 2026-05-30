@@ -99,6 +99,13 @@ current_surface() {
 
 # subst_placeholder <file> <placeholder> <value> — BSD-safe in-place
 # substitution using '|' as the delimiter (neither argument contains '|').
+#
+# SAFETY: <value> is a sed REPLACEMENT string, so '|', '&', and '\' would be
+# interpreted. This is injection-safe ONLY because both call sites pass values
+# free of those metacharacters: the skill name is gated to [a-z0-9-] by
+# validate_name BEFORE it reaches here, and DEFAULT_DESCRIPTION is a fixed
+# constant with no '|', '&', or '\'. A future caller passing unvalidated input
+# as <value> MUST escape those three characters first.
 subst_placeholder() {
   local file="$1" placeholder="$2" value="$3"
   sed -i.bak "s|${placeholder}|${value}|g" "$file" && rm -f "${file}.bak"

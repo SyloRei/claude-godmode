@@ -265,3 +265,79 @@ refuse_invalid() {
   run find "$root/skills" -mindepth 1
   [ -z "$output" ]
 }
+
+# --- accepted boundaries -------------------------------------------------
+#
+# The refusal classes are covered above; these pin the ACCEPTED edges so an
+# off-by-one in the regex bound or the cap comparison cannot pass silently.
+
+@test "should accept a name at exactly the 31-char maximum (AC-8 boundary)" {
+  local root; root="$(make_tree)"
+
+  # ^[a-z][a-z0-9-]{0,30}$ => 1 + 30 = 31 chars is the longest valid name.
+  local name="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"   # 31 chars
+  [ "${#name}" -eq 31 ]
+
+  run "$root/bin/godmode-skill" new "$name"
+  [ "$status" -eq 0 ]
+  [ -f "$root/skills/$name/SKILL.md" ]
+}
+
+@test "should accept scaffolding when total + 1 is exactly the cap (AC-7 boundary)" {
+  # CAP=3 with 2 seeded skills => 2 + 1 = 3 == cap, so this must be ACCEPTED
+  # (the guard refuses only when total + 1 > cap).
+  local root; root="$(make_tree 3 2 0)"
+
+  run "$root/bin/godmode-skill" new at-cap
+  [ "$status" -eq 0 ]
+  [ -f "$root/skills/at-cap/SKILL.md" ]
+}
+
+# --- --kind argument handling --------------------------------------------
+
+@test "should accept the --kind=spine equals form (AC-5)" {
+  local root; root="$(make_tree)"
+
+  run "$root/bin/godmode-skill" new eq-spine --kind=spine
+  [ "$status" -eq 0 ]
+
+  # Equals form must uncomment the marker just like the space form.
+  run grep -E 'godmode:recommend-convention([^[:alnum:]-]|$)' \
+    "$root/skills/eq-spine/SKILL.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "should reject an invalid --kind value and write nothing" {
+  local root; root="$(make_tree)"
+
+  run "$root/bin/godmode-skill" new bad-kind --kind bogus
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--kind must be"* ]]
+
+  run find "$root/skills" -mindepth 1
+  [ -z "$output" ]
+}
+
+@test "should reject a --kind flag with no value and write nothing" {
+  local root; root="$(make_tree)"
+
+  run "$root/bin/godmode-skill" new no-kind-value --kind
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--kind requires a value"* ]]
+
+  run find "$root/skills" -mindepth 1
+  [ -z "$output" ]
+}
+
+# --- subcommand dispatch -------------------------------------------------
+
+@test "should reject an unknown subcommand and write nothing" {
+  local root; root="$(make_tree)"
+
+  run "$root/bin/godmode-skill" frobnicate
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown subcommand"* ]]
+
+  run find "$root/skills" -mindepth 1
+  [ -z "$output" ]
+}
