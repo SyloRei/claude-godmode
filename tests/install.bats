@@ -77,7 +77,7 @@ teardown() {
   [ "$output" = "18" ]
 }
 
-@test "install installs all 7 hook scripts" {
+@test "install installs all 8 hook scripts" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   [ -f "$TEST_HOME/.claude/hooks/session-start.sh" ]
@@ -87,6 +87,7 @@ teardown() {
   [ -f "$TEST_HOME/.claude/hooks/post-tool-use.sh" ]
   [ -f "$TEST_HOME/.claude/hooks/user-prompt-submit.sh" ]
   [ -f "$TEST_HOME/.claude/hooks/session-end.sh" ]
+  [ -f "$TEST_HOME/.claude/hooks/stop-ac-gate.sh" ]
   # statusline ships alongside the hooks in manual mode.
   [ -f "$TEST_HOME/.claude/hooks/statusline.sh" ]
 }
