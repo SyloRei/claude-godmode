@@ -216,8 +216,8 @@ if [ "$MODE" = "manual" ]; then
   done
 
   # Hooks — copy the full event-set scripts so manual mode matches plugin mode.
-  # 7 hook scripts + statusline.sh.
-  info "Installing hooks (7)"
+  # 8 hook scripts + statusline.sh.
+  info "Installing hooks (8)"
   mkdir -p "$CLAUDE_DIR/hooks"
   cp "$SCRIPT_DIR/hooks/session-start.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/post-compact.sh" "$CLAUDE_DIR/hooks/"
@@ -226,6 +226,7 @@ if [ "$MODE" = "manual" ]; then
   cp "$SCRIPT_DIR/hooks/post-tool-use.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/user-prompt-submit.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/hooks/session-end.sh" "$CLAUDE_DIR/hooks/"
+  cp "$SCRIPT_DIR/hooks/stop-ac-gate.sh" "$CLAUDE_DIR/hooks/"
   cp "$SCRIPT_DIR/config/statusline.sh" "$CLAUDE_DIR/hooks/"
   chmod +x "$CLAUDE_DIR/hooks/"*.sh
 
@@ -267,7 +268,7 @@ echo "    - Settings merged (permissions, hooks, statusline)"
 if [ "$MODE" = "manual" ]; then
   echo "    - ${AGENT_COUNT} agents"
   echo "    - ${SKILL_COUNT} skills"
-  echo "    - 7 hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end) + statusline"
+  echo "    - 8 hooks (session-start, post-compact, pre-tool-use, pre-tool-use-secrets, post-tool-use, user-prompt-submit, session-end, stop-ac-gate) + statusline"
   echo ""
   echo "  Mode: manual (agents, skills, hooks copied to ~/.claude/)"
 else
