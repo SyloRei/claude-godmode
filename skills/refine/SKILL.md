@@ -2,7 +2,7 @@
 name: refine
 description: "Mid-mission gap analysis: read the active mission's roadmap and briefs, surface what's missing or underspecified, converge on one gap, and append a NEW numbered work unit plus its full brief — strictly additive. Use when: refine, what are we missing, find gaps in the current mission, add the next unit. Never edits an existing brief or roadmap unit in place — that is /brief N's job."
 user-invocable: true
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(gm=*), Bash(*godmode-state*)
 ---
 
 # Refine
@@ -16,7 +16,7 @@ The artifacts live in the **consumer's** repo, never in the plugin source, scope
 - `.planning/missions/<mission_id>/ROADMAP.md` — the new unit is appended here (existing entries untouched).
 - `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the new unit's complete brief, in the same format `/brief` produces.
 
-`<mission_id>` is the active mission's `NN-slug`, resolved from workflow state (`bin/godmode-state get mission_id`), so `/refine` always operates on whatever mission is currently active. `.planning/PROJECT.md` and `.planning/STATE.md` stay at the `.planning/` root (project-global).
+`<mission_id>` is the active mission's `NN-slug`, resolved from workflow state (`"$gm/godmode-state" get mission_id`; see the helper-resolution note in Process), so `/refine` always operates on whatever mission is currently active. `.planning/PROJECT.md` and `.planning/STATE.md` stay at the `.planning/` root (project-global).
 
 ---
 
@@ -59,12 +59,15 @@ The rationale is one line, concrete, and tied to the actual context (a specific 
 
 ## Process
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
+
 ### 1. Resolve the active mission
 
 First resolve which mission is active — every path below is scoped to it:
 
 ```bash
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 ```
 
 If `mission_id` is unset or empty, **stop**. Tell the user to run `/mission <name>` first — `/refine` analyzes an *existing* mission and never scaffolds or invents one.
@@ -78,9 +81,10 @@ Read, for the active mission:
 - `.planning/PROJECT.md` — the project-global purpose and constraints the mission must satisfy.
 - The current workflow state, so you know where the user is:
   ```bash
-  bin/godmode-state get mission_id
-  bin/godmode-state get active_unit
-  bin/godmode-state get status
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  "$gm/godmode-state" get mission_id
+  "$gm/godmode-state" get active_unit
+  "$gm/godmode-state" get status
   ```
 
 With the whole mission in view, surface the **candidate gaps and improvements**: outcomes the roadmap implies but no unit covers, briefs missing an error path or an edge case, constraints in `PROJECT.md` that nothing yet satisfies. Use the recommendation convention (above) to converge on the **one** gap most worth closing next. The rest stay noted but unbuilt.
@@ -91,7 +95,8 @@ The new unit takes the **next free number**: the maximum existing roadmap unit n
 
 ```bash
 # mission_id from state (step 1).
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 roadmap=".planning/missions/${mission_id}/ROADMAP.md"
 
 # MAX_UNIT = highest existing roadmap unit number (0 if the roadmap is empty).
@@ -125,9 +130,10 @@ Write the full brief at `${brief_dir}/BRIEF.md`, in the **same format `/brief` p
 Point the workflow at the new unit so `/godmode` knows the next command:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "unit appended — brief captured"
-bin/godmode-state set next_command "/plan $N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "unit appended — brief captured"
+"$gm/godmode-state" set next_command "/plan $N"
 ```
 
 `/refine` does **not** allocate a `mission_id` and does **not** reset the work-unit counter — only `/mission` does that. It sets the three pointers above and nothing more.
