@@ -5,7 +5,7 @@ user-invocable: true
 disable-model-invocation: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*godmode-worktree*)
 ---
 
 # Build
@@ -107,6 +107,7 @@ Both agents declare `isolation: worktree` in their frontmatter. **The SDK roots 
 
   ```bash
   build_branch=$(git branch --show-current)
+  [ -n "$build_branch" ] || { echo "error: HEAD is detached — cannot resolve the build branch to merge in." >&2; exit 1; }
   gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
   "$gm/godmode-worktree" create "$build_branch"
   ```

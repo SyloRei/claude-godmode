@@ -10,8 +10,9 @@
 # it merges the build-branch HEAD into the worktree before the agent builds.
 #
 # These tests encode that reproduction in an isolated scratch repo and prove
-# `create` is load-bearing: the "X absent before create" assertion is what makes
-# this suite turn red if the merge step is ever bypassed or regresses.
+# `create` is load-bearing: the "X absent before create, present after" pair
+# inside one test body is what makes this suite turn red if the merge step is
+# ever bypassed or regresses.
 
 load test_helper
 
@@ -64,21 +65,17 @@ teardown() {
   fi
 }
 
-@test "AC-7: stale worktree lacks the build-branch-only file before create" {
+@test "AC-3/AC-7: X is absent before create and present after (regression guard)" {
   # The audit's observed outcome: the SDK's main-based worktree does not contain
-  # the build branch's work. This is the load-bearing assertion — if `create`
-  # were a no-op or skipped, the AC-3 test below would still see X absent.
-  [ "$(pwd)" = "$WT_DIR" ]
+  # the build branch's work. Asserting absence and presence in ONE body is the
+  # load-bearing check — if `create` were a no-op, replaced with `touch X`, or
+  # bypassed, this single test turns red.
   [ ! -f X ]
-}
 
-@test "AC-3: create merges the build branch in, materializing its file" {
   run "$WT" create build/unit
   [ "$status" -eq 0 ]
-  [ -f X ]
-  # The file's content must be non-empty (the merge brought real work in).
+  # X is now materialized with real, non-empty content from the merge.
   [ -s X ]
-  [ -n "$(cat X)" ]
 }
 
 @test "AC-4: after create the build-branch HEAD is an ancestor of HEAD" {
@@ -87,22 +84,70 @@ teardown() {
   git merge-base --is-ancestor "$BUILD_HEAD" HEAD
 }
 
-@test "AC-1: create is idempotent once the build branch is already in" {
+@test "AC-3: create is idempotent — a second run is a no-op fast path" {
   run "$WT" create build/unit
   [ "$status" -eq 0 ]
-  # Second run is a no-op fast path, still exit 0.
+  # Second run takes the "already based on" fast path, still exit 0.
   run "$WT" create build/unit
   [ "$status" -eq 0 ]
+  [[ "$output" == *"already based"* ]]
   [ -f X ]
 }
 
-@test "AC-1: no subcommand exits non-zero and the usage mentions create" {
+@test "AC-1: no subcommand exits non-zero and the usage names create" {
   run "$WT"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"usage:"* ]]
   [[ "$output" == *create* ]]
 }
 
 @test "AC-1: an unknown subcommand exits non-zero" {
   run "$WT" bogus
   [ "$status" -ne 0 ]
+}
+
+@test "create: an unresolvable build-ref exits non-zero with a clear message" {
+  run "$WT" create no/such/ref
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"does not resolve"* ]]
+  # The stale worktree is left untouched (no merge attempted).
+  [ ! -f X ]
+}
+
+@test "create: run outside any git work tree exits non-zero" {
+  local notgit
+  notgit="$(mktemp -d "${TMPDIR:-/tmp}/godmode-notgit.XXXXXX")"
+  cd "$notgit" || return 1
+  run "$WT" create build/unit
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"git work tree"* ]]
+  cd "$WT_DIR" || return 1
+  rm -rf "$notgit"
+}
+
+@test "create: a merge conflict is aborted and exits non-zero, leaving a clean tree" {
+  # Diverge the worktree from the build branch on the same file X so the merge
+  # genuinely conflicts (worktree's X != build branch's X).
+  printf 'conflicting worktree content\n' > X
+  git add X
+  git commit -qm "worktree adds a conflicting X"
+
+  run "$WT" create build/unit
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"conflict"* ]]
+  # The abort must leave no merge in progress (a linked worktree's `.git` is a
+  # file, so ask git rather than stat .git/MERGE_HEAD).
+  run git rev-parse --verify --quiet MERGE_HEAD
+  [ "$status" -ne 0 ]
+  run git merge-base --is-ancestor "$BUILD_HEAD" HEAD
+  [ "$status" -ne 0 ]
+}
+
+@test "stubs: mergeback and cleanup exit non-zero (not yet implemented)" {
+  run "$WT" mergeback
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not yet implemented"* ]]
+  run "$WT" cleanup
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not yet implemented"* ]]
 }
