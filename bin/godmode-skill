@@ -134,6 +134,21 @@ cmd_new() {
         usage
         exit 0
         ;;
+      --)
+        # End of options (POSIX convention): every remaining arg is a
+        # positional, even one starting with '-'. This lets such a token be
+        # validated as a name rather than mistaken for an unknown flag.
+        shift
+        while [ "$#" -gt 0 ]; do
+          if [ -n "$name" ]; then
+            echo "error: unexpected extra argument '$1'" >&2
+            usage
+            exit 1
+          fi
+          name="$1"
+          shift
+        done
+        ;;
       -*)
         echo "error: unknown option '$1'" >&2
         usage
