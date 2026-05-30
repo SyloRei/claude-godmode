@@ -117,6 +117,35 @@ if [ -f "$CLAUDE_DIR/INSTRUCTIONS.md" ]; then
   fi
 fi
 
+# --- Legacy auto-loaded rules cleanup ---
+# Pre-unit-3 installs copied rules into $CLAUDE_DIR/rules/, which Claude Code
+# auto-loads as authoritative instructions. We now inject rules via the
+# SessionStart hook from the private path instead. Any leftover godmode-*.md in
+# the auto-loaded dir would override the hook copy with STALE content (e.g.
+# dead /plan-stories, /execute commands), so back them up and remove them. The
+# glob is guarded so an empty match is a no-op under `set -euo pipefail`.
+LEGACY_RULES_DIR="$CLAUDE_DIR/rules"
+if [ -d "$LEGACY_RULES_DIR" ]; then
+  legacy_found=""
+  for rule in "$LEGACY_RULES_DIR"/godmode-*.md; do
+    [ -f "$rule" ] || continue
+    if [ -z "$legacy_found" ]; then
+      mkdir -p "$BACKUP_DIR/rules"
+      legacy_found="yes"
+    fi
+    cp "$rule" "$BACKUP_DIR/rules/$(basename "$rule")"
+    rm "$rule"
+  done
+  if [ -n "$legacy_found" ]; then
+    info "Removed stale auto-loaded rules from $LEGACY_RULES_DIR (backed up to $BACKUP_DIR/rules)"
+  fi
+  # Remove the legacy rules/ dir if it is now empty.
+  if [ -z "$(ls -A "$LEGACY_RULES_DIR" 2>/dev/null)" ]; then
+    rmdir "$LEGACY_RULES_DIR"
+    info "Removed empty $LEGACY_RULES_DIR"
+  fi
+fi
+
 # --- Rules (PRIVATE copy for the SessionStart hook) ---
 # Rules are NOT copied to $CLAUDE_DIR/rules/ anymore (that path is auto-loaded
 # by Claude Code and would double-inject). Instead they live in the pinned

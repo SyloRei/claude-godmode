@@ -48,6 +48,41 @@ teardown() {
   [ "$output" = "9" ]
 }
 
+@test "install removes stale legacy godmode rules from the auto-loaded path and backs them up" {
+  # Simulate a pre-unit-3 install that copied rules into the auto-loaded dir.
+  mkdir -p "$TEST_HOME/.claude/rules"
+  printf 'stale /plan-stories /execute\n' > "$TEST_HOME/.claude/rules/godmode-routing.md"
+
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+
+  # The stale auto-loaded copy is gone (it would override the hook copy).
+  run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
+  [ "$status" -ne 0 ]
+
+  # It was backed up under the install backup dir before removal.
+  run sh -c 'ls "$TEST_HOME"/.claude/backups/godmode-*/rules/godmode-routing.md'
+  [ "$status" -eq 0 ]
+
+  # The now-empty legacy rules/ dir is removed.
+  [ ! -d "$TEST_HOME/.claude/rules" ]
+}
+
+@test "install preserves non-godmode files in the auto-loaded rules dir" {
+  # A user's own rule must survive; only godmode-*.md is reclaimed.
+  mkdir -p "$TEST_HOME/.claude/rules"
+  printf 'stale\n' > "$TEST_HOME/.claude/rules/godmode-routing.md"
+  printf 'mine\n' > "$TEST_HOME/.claude/rules/my-own-rule.md"
+
+  run "$PLUGIN_ROOT/install.sh"
+  [ "$status" -eq 0 ]
+
+  # godmode file removed, user file kept, dir retained (not empty).
+  [ ! -f "$TEST_HOME/.claude/rules/godmode-routing.md" ]
+  [ -f "$TEST_HOME/.claude/rules/my-own-rule.md" ]
+  [ -d "$TEST_HOME/.claude/rules" ]
+}
+
 @test "install installs agents and skills" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
