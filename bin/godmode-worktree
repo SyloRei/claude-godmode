@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# godmode-worktree — keep an isolation worktree based on the build branch.
+# The SDK auto-creates an `isolation: worktree` agent's tree off `main`, but
+# the active build branch is usually ahead of main. This helper, run as the
+# agent's first action from inside that tree, fast-forwards/merges the build
+# branch HEAD in so the agent builds on the up-to-date base.
+#
+# Usage:
+#   godmode-worktree create <build-ref>
+#
+# Subcommands:
+#   create <build-ref>  Guarantee the current worktree contains <build-ref>.
+#                       Idempotent: a no-op (exit 0) when <build-ref> is
+#                       already an ancestor of HEAD. Otherwise merges it in
+#                       with no editor; on conflict, aborts the merge and
+#                       exits non-zero (the conflict/merge-back ladder lives
+#                       in unit 5, not here).
+#   mergeback           Stub — not yet implemented (unit 4).
+#   cleanup             Stub — not yet implemented (unit 5).
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. Any in-place edits would use the
+# BSD-safe pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
+
+set -euo pipefail
+
+usage() {
+  echo "usage: godmode-worktree create <build-ref>" >&2
+  echo "       godmode-worktree mergeback   (not yet implemented, unit 4)" >&2
+  echo "       godmode-worktree cleanup     (not yet implemented, unit 5)" >&2
+}
+
+# create <build-ref> — ensure the current worktree is based on <build-ref>.
+cmd_create() {
+  if [ "$#" -ne 1 ]; then
+    usage
+    exit 1
+  fi
+  local build_ref="$1"
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  # 2. Resolve <build-ref> to a commit.
+  if ! git rev-parse --verify "${build_ref}^{commit}" >/dev/null 2>&1; then
+    echo "error: build-ref '${build_ref}' does not resolve to a commit" >&2
+    exit 1
+  fi
+
+  # 3. Idempotent fast path: already based on <build-ref>.
+  if git merge-base --is-ancestor "$build_ref" HEAD; then
+    echo "worktree already based on '${build_ref}'; nothing to do"
+    exit 0
+  fi
+
+  # 4. Merge the build-branch HEAD in.
+  if GIT_MERGE_AUTOEDIT=no git merge --no-edit "$build_ref"; then
+    echo "merged '${build_ref}' into worktree HEAD"
+    exit 0
+  fi
+
+  git merge --abort
+  echo "error: stale-base merge conflict bringing '${build_ref}' into this worktree;" >&2
+  echo "       aborted the merge. The conflict/merge-back ladder is unit 5." >&2
+  exit 1
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    create)
+      cmd_create "$@"
+      ;;
+    mergeback)
+      echo "error: 'mergeback' not yet implemented (unit 4)" >&2
+      exit 1
+      ;;
+    cleanup)
+      echo "error: 'cleanup' not yet implemented (unit 5)" >&2
+      exit 1
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
