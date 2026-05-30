@@ -5,7 +5,7 @@ user-invocable: true
 disable-model-invocation: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*)
 ---
 
 # Build
@@ -28,11 +28,14 @@ The git log **is** the execution log. There is no third artifact file — `BRIEF
 
 ## Step 1: Read the plan and reconcile state
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
+
 Find the brief directory for unit **$N** and read its `PLAN.md`. `NN` is `$N` zero-padded to two digits (unit `3` → `03`), matching the directory `/brief N` and `/plan N` created. The glob is guarded so an empty match can't abort under `set -euo pipefail`:
 
 ```bash
 NN=$(printf '%02d' "$N")
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1 || true)
 [ -n "$brief_dir" ] || { echo "No brief dir for unit $N — run /plan $N first." >&2; exit 1; }
 ```
@@ -44,16 +47,18 @@ Read the plan's **Steps**, its **Waves** section, and its **Verification plan**.
 Read the current workflow state — both the active unit and the status (which carries any partial progress from a prior `/build` run, see resumability below):
 
 ```bash
-active=$(bin/godmode-state get active_unit)
-status=$(bin/godmode-state get status)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+active=$("$gm/godmode-state" get active_unit)
+status=$("$gm/godmode-state" get status)
 ```
 
 **Reconcile `active_unit` with `$N` before doing anything else.** If `active` is non-empty and differs from `$N`, the state points at a different unit. Set `active_unit` to `$N` so the recorded state stays coherent, and warn the user that the active unit changed:
 
 ```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
 if [ -n "$active" ] && [ "$active" != "$N" ]; then
   echo "warning: active_unit was '$active', building '$N' — updating active_unit to $N." >&2
-  bin/godmode-state set active_unit "$N"
+  "$gm/godmode-state" set active_unit "$N"
   status=""   # prior status belongs to a different unit; ignore its done-set
 fi
 ```
@@ -104,7 +109,7 @@ Do **not** implement steps inline in this orchestrating context — always dispa
 
 ### Model profile
 
-Before spawning any agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
+Before spawning any agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note in Step 1 shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 ---
 
@@ -204,7 +209,8 @@ status = "building <N> | done: <S-id>,<S-id>,..."
 
 ```bash
 # $step is the step ID that just merged (e.g. "S2").
-status=$(bin/godmode-state get status)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+status=$("$gm/godmode-state" get status)
 
 # Parse the existing done-set: text after " | done: ", else empty.
 case "$status" in
@@ -218,7 +224,7 @@ if [ -n "$existing" ]; then
 else
   newlist="$step"
 fi
-bin/godmode-state set status "building $N | done: $newlist"
+"$gm/godmode-state" set status "building $N | done: $newlist"
 ```
 
 To **test membership** when deciding whether to skip a step on re-entry, wrap both sides in commas so `S2` never matches `S20`:
@@ -239,9 +245,10 @@ On a fresh `/build $N` (Step 1 re-entry contract), parse the done-set from `stat
 When every step has committed and merged back (or only a contained failed subtree remains, reported to the user), point the workflow forward via `bin/godmode-state`. The completion status records the unit so the Step 1 re-entry check can recognize an already-built unit:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "build complete | unit: $N"
-bin/godmode-state set next_command "/verify $N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "build complete | unit: $N"
+"$gm/godmode-state" set next_command "/verify $N"
 ```
 
 This lets `/godmode` tell the user the build is done and what to do next. On a later `/build $N`, Step 1 sees `build complete | unit: $N` (with `active_unit` matching `$N`) and reports there is nothing to build, offering `/verify $N`.

@@ -4,7 +4,7 @@ description: "Turn a numbered roadmap unit into a single brief — why + what + 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Write, Edit, Glob, Grep, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Grep, Bash(gm=*), Bash(*godmode-state*)
 ---
 
 # Brief
@@ -17,7 +17,7 @@ The artifact lives in the **consumer's** repo, never in the plugin source, scope
 
 - `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` — the single brief for roadmap unit `$N`.
 
-`<mission_id>` is the active mission's `NN-slug`, resolved from workflow state (`bin/godmode-state get mission_id`), so `/brief` always operates on whatever mission is currently active. `.planning/PROJECT.md` and `.planning/STATE.md` stay at the `.planning/` root (project-global).
+`<mission_id>` is the active mission's `NN-slug`, resolved from workflow state (`"$gm/godmode-state" get mission_id`; see the helper-resolution note in Process), so `/brief` always operates on whatever mission is currently active. `.planning/PROJECT.md` and `.planning/STATE.md` stay at the `.planning/` root (project-global).
 
 **One brief artifact per unit.** No second file at this step — `/plan N` adds `PLAN.md` later. Write `BRIEF.md` and nothing else.
 
@@ -47,12 +47,15 @@ Keep it tight. A brief is a contract, not an interview.
 
 ## Process
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
+
 ### 1. Resolve the active mission, then read the roadmap unit
 
 First resolve which mission is active — every path below is scoped to it:
 
 ```bash
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 ```
 
 Read the active mission's roadmap at `.planning/missions/${mission_id}/ROADMAP.md` and find the numbered entry **$N**. That entry's title and one-line outcome are the seed for this brief. If `$N` does not exist in the roadmap, stop and tell the user to run `/mission` to add or renumber it — do not invent a unit.
@@ -62,9 +65,10 @@ Also read for context:
 - `.planning/PROJECT.md` — purpose, constraints, decisions the brief must respect (project-global, at the `.planning/` root).
 - The current workflow state, so you know where the user is:
   ```bash
-  bin/godmode-state get mission_id
-  bin/godmode-state get active_unit
-  bin/godmode-state get status
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  "$gm/godmode-state" get mission_id
+  "$gm/godmode-state" get active_unit
+  "$gm/godmode-state" get status
   ```
 - Any existing `.planning/missions/${mission_id}/briefs/` directory — if a brief for `$N` already exists, this is an **update**: read it and preserve prior decisions, editing rather than clobbering.
 
@@ -74,7 +78,8 @@ Also read for context:
 
 ```bash
 # N comes from the roadmap unit number ($N); mission_id from state (step 1).
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 NN=$(printf '%02d' "$N")
 name=$(printf '%s' "$UNIT_TITLE" \
   | tr '[:upper:]' '[:lower:]' \
@@ -124,9 +129,10 @@ Create `${brief_dir}/` if needed and write `BRIEF.md` using the format below. Us
 Point the workflow at planning this unit so `/godmode` knows the next command:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "brief captured"
-bin/godmode-state set next_command "/plan $N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "brief captured"
+"$gm/godmode-state" set next_command "/plan $N"
 ```
 
 ---

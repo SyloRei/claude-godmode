@@ -3,7 +3,7 @@ name: ship
 description: "Run every canonical quality gate, push the branch, and open a pull request — release in one command. Use when: ship it, ready to ship, create the PR, push and open a PR."
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(bin/godmode-state*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
 ---
 
 # Ship
@@ -29,6 +29,8 @@ When `--no-push` is set the confirmation prompt is moot — there is nothing sid
 **Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (below) is never skipped, in either mode.
 
 ---
+
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below that calls one resolves its location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
 
 ## Step 1: Quality gates (read from the canonical source)
 
@@ -77,7 +79,7 @@ Quality gates (from config/quality-gates.txt):
 - Lint → auto-fix where available, otherwise fix manually.
 - Multi-file fixes → spawn `@writer`.
 
-**Model profile.** Before spawning `@writer` (or any agent), resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
+**Model profile.** Before spawning `@writer` (or any agent), resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note above shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 Re-run all gates after any fix until every one passes.
 
@@ -109,7 +111,7 @@ esac
 git push -u origin "$branch"
 ```
 
-Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/missions/<mission_id>/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `bin/godmode-state get active_unit` and `mission_id=$(bin/godmode-state get mission_id)`, then glob `.planning/missions/${mission_id}/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
+Draft the PR body from the work unit. When a brief is present, **link it**: `.planning/missions/<mission_id>/briefs/NN-*/BRIEF.md` describes the why + what + spec for the active work unit (find it via `"$gm/godmode-state" get active_unit` and `mission_id=$("$gm/godmode-state" get mission_id)` (resolve `$gm` per the helper-resolution note above), then glob `.planning/missions/${mission_id}/briefs/NN-*/BRIEF.md`). Summarize the work unit in the PR body and reference the brief path.
 
 ```bash
 gh pr create --title "<concise, <70 chars>" --body "$(cat <<'EOF'
@@ -140,8 +142,9 @@ Return the PR URL.
 On success, point the workflow forward via the single state source — `bin/godmode-state`:
 
 ```bash
-bin/godmode-state set status "shipped"
-bin/godmode-state set next_command "/mission"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set status "shipped"
+"$gm/godmode-state" set next_command "/mission"
 ```
 
 This lets `/godmode` tell the user the work unit shipped and what to do next.

@@ -4,7 +4,7 @@ description: "Check a built unit goal-backward: classify every brief acceptance 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Grep, Glob, Bash(bin/godmode-model*), Bash(*/bin/godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*), Bash(*/skills/verify/scripts/coverage-diff.sh*), Bash(skills/verify/scripts/coverage-diff.sh*)
+allowed-tools: Read, Grep, Glob, Bash(gm=*), Bash(*godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(*godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*), Bash(*/skills/verify/scripts/coverage-diff.sh*), Bash(skills/verify/scripts/coverage-diff.sh*)
 ---
 
 # Verify
@@ -39,13 +39,16 @@ When in doubt between COVERED and PARTIAL, choose **PARTIAL**. A code comment, a
 
 ## Process
 
+**Resolving the godmode helpers.** The `godmode-*` helpers live in the plugin install dir — **not** the consumer repo you're working in — so a bare `bin/godmode-*` path fails from another project's working directory. Every `bash` block below resolves their location into `$gm` first (plugin mode → `$CLAUDE_PLUGIN_ROOT/bin`, manual install → `~/.claude/bin`, in-repo → `./bin`) and calls `"$gm/godmode-<name>"`. Keep the resolver line; never call a helper by a bare relative path.
+
 ### 1. Read the goals
 
 Find the brief directory for unit **$N** and read its acceptance criteria. `NN` is `$N` zero-padded to two digits (unit `3` → `03`), matching the directory `/brief N` created.
 
 ```bash
 NN=$(printf '%02d' "$N")
-mission_id=$(bin/godmode-state get mission_id)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+mission_id=$("$gm/godmode-state" get mission_id)
 brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
 ```
 
@@ -67,11 +70,11 @@ For **each** acceptance criterion, go and find the proof — goal-backward:
 
 A criterion is only COVERED if the evidence you gathered demonstrates the brief's observable result — not merely that related code exists.
 
-**Model profile.** Before spawning any review/verifier agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `bin/godmode-model <agent>` to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
+**Model profile.** Before spawning any review/verifier agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note above shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 ### 3. Fan out the review lenses
 
-Verifying "done" has two halves. **`@verifier` owns AC-coverage** — does the unit meet the brief's goals? **Five code-quality lenses own the findings** — is the code that meets those goals sound? Run both halves **in parallel**: in a single message, dispatch **all six** agents concurrently (one Agent call per lens plus `@verifier`), each resolving its model via `bin/godmode-model <agent>` as the **Model profile** note above requires.
+Verifying "done" has two halves. **`@verifier` owns AC-coverage** — does the unit meet the brief's goals? **Five code-quality lenses own the findings** — is the code that meets those goals sound? Run both halves **in parallel**: in a single message, dispatch **all six** agents concurrently (one Agent call per lens plus `@verifier`), each resolving its model via `"$gm/godmode-model" <agent>` as the **Model profile** note above requires.
 
 Scope every lens to **unit $N's changes only** — the diff the unit produced, e.g. `git diff` for the unit's commits — not the whole codebase. The six agents:
 
@@ -133,17 +136,19 @@ Assign COVERED / PARTIAL / MISSING to each criterion under the strictness rule a
 If — and only if — **every** criterion is COVERED, point the workflow at shipping:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "verified"
-bin/godmode-state set next_command "/ship"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "verified"
+"$gm/godmode-state" set next_command "/ship"
 ```
 
 If any criterion is PARTIAL or MISSING, leave the next command pointed back at building:
 
 ```bash
-bin/godmode-state set active_unit "$N"
-bin/godmode-state set status "verify found gaps"
-bin/godmode-state set next_command "/build $N"
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "verify found gaps"
+"$gm/godmode-state" set next_command "/build $N"
 ```
 
 ---
