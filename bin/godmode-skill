@@ -1,0 +1,234 @@
+#!/usr/bin/env bash
+# godmode-skill — scaffold a new skill directory from templates/skill.
+#
+# Usage:
+#   godmode-skill new <name> [--kind helper|spine]
+#
+# new <name>: create skills/<name>/ from templates/skill, substituting the
+#   {{name}} and {{description}} placeholders. --kind defaults to "helper".
+#   With --kind spine, the godmode:recommend-convention marker line is
+#   uncommented so the planning-spine recommend gate (check-recommend.sh)
+#   recognises the skill; with --kind helper it stays commented.
+#
+# Validation, the existing-dir guard, and the surface-count guard all run
+# BEFORE anything is written, so a refusal leaves NO partial files behind.
+# The cap and the surface count are read from scripts/check-surface-count.sh
+# so they never diverge from the gate. This script only writes inside
+# skills/<name>/; it does NOT git add or commit.
+#
+# The target tree is SCRIPT_DIR/.. (the repo root: sibling of bin/, holding
+# skills/, templates/, scripts/). Resolved from ${BASH_SOURCE[0]} so it works
+# from any CWD and survives symlink/PATH invocation.
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. In-place edits use the BSD-safe
+# pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
+
+set -euo pipefail
+
+SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+REPO_ROOT=$(cd "${SCRIPT_DIR}/.." && pwd)
+
+TEMPLATE_DIR="${REPO_ROOT}/templates/skill"
+SKILLS_DIR="${REPO_ROOT}/skills"
+COMMANDS_DIR="${REPO_ROOT}/commands"
+SURFACE_GATE="${REPO_ROOT}/scripts/check-surface-count.sh"
+
+# The name rule (AC-8): first char [a-z], then 0-30 more of [a-z0-9-]
+# (max length 31). Kept as a literal string so the error message and the
+# test stay in lockstep.
+NAME_RULE='name must match ^[a-z][a-z0-9-]{0,30}$ (lowercase letter, then up to 30 of [a-z0-9-]; max 31 chars)'
+
+# The default description placed in the generated SKILL.md. Contains an em-dash
+# and spaces but no '|', so '|' is a safe sed delimiter.
+DEFAULT_DESCRIPTION='<TODO: one-sentence description — what the skill does, when to use it.>'
+
+usage() {
+  echo "usage: godmode-skill new <name> [--kind helper|spine]" >&2
+}
+
+# validate_name <name> — exit 0 if <name> matches the rule, else print the
+# rule to stderr and return non-zero. Uses grep -E (no bash-4 constructs).
+validate_name() {
+  local name="$1"
+  if printf '%s' "$name" | grep -Eq '^[a-z][a-z0-9-]{0,30}$'; then
+    return 0
+  fi
+  echo "error: invalid skill name '${name}'" >&2
+  echo "       ${NAME_RULE}" >&2
+  return 1
+}
+
+# read_cap — print the CAP value from the surface-count gate, so the cap never
+# diverges from the gate. Greps the literal CAP= assignment line.
+read_cap() {
+  local line
+  line=$(grep -E '^CAP=' "$SURFACE_GATE" | head -1)
+  # Strip everything up to and including the '='; keep the leading integer.
+  line=${line#CAP=}
+  printf '%s' "$line" | sed 's/[^0-9].*$//'
+}
+
+# current_surface — count the current user-facing surface the SAME way
+# check-surface-count.sh does: skill dirs (non-"_"-prefixed, containing a
+# SKILL.md) plus command files (*.md directly under commands/).
+current_surface() {
+  local skill_count=0 command_count=0 dir base file
+
+  if [ -d "$SKILLS_DIR" ]; then
+    while IFS= read -r dir; do
+      [ -n "$dir" ] || continue
+      base=$(basename -- "$dir")
+      case "$base" in
+        _*) continue ;;
+      esac
+      [ -f "$dir/SKILL.md" ] || continue
+      skill_count=$((skill_count + 1))
+    done < <(find "$SKILLS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
+  fi
+
+  if [ -d "$COMMANDS_DIR" ]; then
+    while IFS= read -r file; do
+      [ -n "$file" ] || continue
+      command_count=$((command_count + 1))
+    done < <(find "$COMMANDS_DIR" -mindepth 1 -maxdepth 1 -type f -name '*.md' 2>/dev/null)
+  fi
+
+  printf '%s' "$((skill_count + command_count))"
+}
+
+# subst_placeholder <file> <placeholder> <value> — BSD-safe in-place
+# substitution using '|' as the delimiter (neither argument contains '|').
+subst_placeholder() {
+  local file="$1" placeholder="$2" value="$3"
+  sed -i.bak "s|${placeholder}|${value}|g" "$file" && rm -f "${file}.bak"
+}
+
+cmd_new() {
+  local name="" kind="helper"
+
+  # Parse: first non-flag positional is the name; --kind takes a value.
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --kind)
+        if [ "$#" -lt 2 ]; then
+          echo "error: --kind requires a value (helper|spine)" >&2
+          usage
+          exit 1
+        fi
+        kind="$2"
+        shift 2
+        ;;
+      --kind=*)
+        kind="${1#--kind=}"
+        shift
+        ;;
+      -h|--help)
+        usage
+        exit 0
+        ;;
+      -*)
+        echo "error: unknown option '$1'" >&2
+        usage
+        exit 1
+        ;;
+      *)
+        if [ -n "$name" ]; then
+          echo "error: unexpected extra argument '$1'" >&2
+          usage
+          exit 1
+        fi
+        name="$1"
+        shift
+        ;;
+    esac
+  done
+
+  case "$kind" in
+    helper|spine) ;;
+    *)
+      echo "error: --kind must be 'helper' or 'spine' (got '${kind}')" >&2
+      usage
+      exit 1
+      ;;
+  esac
+
+  # 1. Name validation (AC-8) — BEFORE name is used in any path or sed.
+  validate_name "$name" || exit 1
+
+  local dest="${SKILLS_DIR}/${name}"
+
+  # 2. Existing-dir guard (AC-6) — refuse, write nothing.
+  if [ -e "$dest" ]; then
+    echo "error: skills/${name}/ already exists; refusing to overwrite" >&2
+    exit 1
+  fi
+
+  # 3. Surface-count guard (AC-7) — read cap + count from the gate; adding
+  #    skills/<name>/ is +1 to the surface.
+  local cap total
+  cap=$(read_cap)
+  if [ -z "$cap" ]; then
+    echo "error: could not read CAP from ${SURFACE_GATE}" >&2
+    exit 1
+  fi
+  total=$(current_surface)
+  if [ "$((total + 1))" -gt "$cap" ]; then
+    echo "error: adding skills/${name}/ would make ${total} + 1 = $((total + 1)) user-facing command(s), exceeding the cap of ${cap}" >&2
+    exit 1
+  fi
+
+  if [ ! -d "$TEMPLATE_DIR" ]; then
+    echo "error: template directory ${TEMPLATE_DIR} not found" >&2
+    exit 1
+  fi
+
+  # 4. Write (AC-3) — copy the template tree, then fix it up.
+  cp -R "$TEMPLATE_DIR" "$dest"
+
+  # The template's scripts/.gitkeep must NOT survive into the generated skill;
+  # scripts/ stays as an empty directory.
+  rm -f "${dest}/scripts/.gitkeep"
+
+  local skill_md="${dest}/SKILL.md"
+  subst_placeholder "$skill_md" '{{name}}' "$name"
+  subst_placeholder "$skill_md" '{{description}}' "$DEFAULT_DESCRIPTION"
+
+  # 5. Spine marker (AC-5) — for spine skills, uncomment the marker so it sits
+  #    on its own line as a bare token that check-recommend.sh matches. For
+  #    helper skills it stays inside the HTML comment and must NOT match.
+  if [ "$kind" = "spine" ]; then
+    subst_placeholder "$skill_md" \
+      '<!--godmode:recommend-convention-->' \
+      'godmode:recommend-convention'
+  fi
+
+  echo "created skills/${name}/ (kind: ${kind})"
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    new)
+      cmd_new "$@"
+      ;;
+    -h|--help)
+      usage
+      exit 0
+      ;;
+    *)
+      echo "error: unknown subcommand '${sub}'" >&2
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
