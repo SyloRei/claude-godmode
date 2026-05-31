@@ -219,6 +219,70 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# R3 regression guards (AC-1, AC-2, AC-3, AC-9, AC-10): close two false-NEGATIVE
+# holes found by /verify 3.
+#
+# Gap 1 (separate-value git globals): --git-dir / --work-tree (and --namespace,
+# --super-prefix) take a SEPARATE value token. Before R3 the subcommand scan only
+# consumed -c/-C values, so the global's value was read as the subcommand, the
+# segment was misclassified as non-commit, and the bypass scan never ran. These
+# exit-2 cases are RED against the pre-R3 hook (verified: it returns 0 there) and
+# GREEN after R3.
+#
+# Gap 2 (quoted -c hooksPath): the global quote-strip erased the quoted -c value,
+# so -c then consumed `commit` as its value and the segment was misclassified.
+# R3 adds a RAW pre-check scoped to the pre-subcommand global region. The quoted
+# bypass cases below are RED pre-R3 (returned 0) and GREEN after; the legit
+# message-mentioning-hooksPath case proves the fix introduces no new false
+# positive (it stays exit 0, since `commit` precedes the word).
+
+@test "pre-tool-use: separate-value --git-dir then --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git --git-dir /tmp commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: separate-value --work-tree then -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git --work-tree /tmp commit -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: separate-value --git-dir with -nv cluster is blocked (exit 2)" {
+  # Separate-value global + short cluster containing n.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git --git-dir /tmp commit -nv -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: separate-value global bypass in later compound segment is blocked (exit 2)" {
+  # Gap-1 regression must also hold when the commit sits in a later segment (AC-8).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"make build && git --git-dir /tmp commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: single-quoted -c hooksPath bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c '\''core.hooksPath=/dev/null'\'' commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: double-quoted -c hooksPath bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c \"core.hooksPath=/dev/null\" commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: the word hooksPath inside a commit message is allowed (exit 0)" {
+  # No new false positive: `commit` precedes the word, so it is outside the
+  # pre-subcommand global region the Gap-2 RAW check inspects (AC-4 family).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix hooksPath bug in the message\""}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: legit separate-value --git-dir on a clean commit is allowed (exit 0)" {
+  # The separate-value-global consume must not itself flag a clean commit.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git --git-dir /tmp commit -m \"clean\""}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
 
 @test "secrets: clean staged diff exits 0 with valid JSON" {

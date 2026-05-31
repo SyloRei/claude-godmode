@@ -81,10 +81,19 @@ fi
 #        --reedit-message, --reuse-message) consume their next token.
 #      - --no-verify / --no-verify=* and -n / -n=* are blocked (AC-1).
 #      - Short-flag clusters containing 'n' are blocked, e.g. -nv (AC-2).
-#      - hooksPath anywhere in the segment is blocked (AC-3).
+#      - An UNQUOTED hooksPath surviving the quote strip is blocked (AC-3).
 #      Because each segment is classified independently, a bypass in a later
 #      segment (make build && git commit --no-verify -m x) is still caught
 #      (AC-8), while a non-commit segment's -n is never flagged (AC-6).
+#
+#   4b. The QUOTED hooksPath bypass (git -c 'core.hooksPath=/dev/null' commit)
+#      cannot be seen in Step 4: the global quote strip removes the quoted -c
+#      value before segments are scanned. So a separate RAW-text pre-check
+#      (below, before the segment loop) flags a -c/-C global whose hooksPath
+#      value sits BEFORE the commit subcommand. It is scoped to the pre-
+#      subcommand global-flag region so a commit MESSAGE that merely mentions
+#      the word hooksPath (git commit -m "fix hooksPath bug") stays allowed —
+#      there `commit` precedes the word, so it is outside the checked region.
 #
 #   5. If no segment triggers a bypass, exit 0.
 
@@ -127,7 +136,23 @@ printf '%s\n' "$SCAN" | sed \
 /g' > "$_SEGTMP"
 
 BYPASS=0
+
+# Step 4b (RAW pre-check): catch the QUOTED `-c core.hooksPath=...` bypass that
+# the quote strip would otherwise erase. Scope the check to the global-flag
+# region BEFORE the first `commit` subcommand word: a -c/-C flag whose value
+# carries hooksPath there disables git hooks. A commit MESSAGE that mentions the
+# word hooksPath appears AFTER `commit`, so it is outside this region and stays
+# allowed. Operate on the RAW $COMMAND (not the quote-stripped SCAN) so quoted
+# values are visible. ${COMMAND%% commit*} keeps only the text up to the first
+# ` commit` token (the whole string if absent — a non-commit command, harmless).
+GLOBAL_REGION="${COMMAND%% commit*}"
+case "$GLOBAL_REGION" in
+  *-c*hooksPath*|*-C*hooksPath*) BYPASS=1 ;;
+esac
+
 while IFS= read -r seg || [ -n "$seg" ]; do
+  # If the RAW pre-check (Step 4b) already found a bypass, stop scanning.
+  [ "$BYPASS" -eq 0 ] || break
   # Skip blank segments (arise from adjacent separators or leading/trailing).
   [ -n "$seg" ] || continue
 
@@ -148,9 +173,18 @@ while IFS= read -r seg || [ -n "$seg" ]; do
   [ "$FIRST_CMD" = "git" ] || continue
 
   # Now walk the remaining tokens to find git's subcommand.
-  # Skip git global flags that take a value: -c <value> and -C <value>
-  # (directory). Other single-char git global flags (-p, -v, ...) do not
-  # take values and are skipped without consuming a token.
+  # Skip git global flags that take a value as a SEPARATE token, so their
+  # value is not misread as the subcommand:
+  #   -c <key=val>, -C <dir>, and the long globals --git-dir, --work-tree,
+  #   --namespace, --super-prefix (each always consumes one following token).
+  # Without this, `git --git-dir /tmp commit --no-verify` would read `/tmp` as
+  # the subcommand, misclassify the segment as non-commit, and skip the bypass
+  # scan. NOTE: bare `--exec-path` is deliberately NOT listed — `git --exec-path`
+  # (no value) just prints the path, so consuming the next token would wrongly
+  # swallow a following `commit`. Its attached `--exec-path=...` form (and every
+  # other attached `--flag=val` global) already falls through the `-*` arm below
+  # without consuming a token. Other single-char/value-less globals (-p, -v, ...)
+  # are likewise skipped without consuming a token.
   SUBCOMMAND=""
   PAST_GIT=0
   SKIP_GIT_VAL=0
@@ -162,21 +196,24 @@ while IFS= read -r seg || [ -n "$seg" ]; do
       fi
       continue
     fi
-    # If the previous token was -c or -C (global git flag), consume value.
+    # If the previous token was a separate-value global flag, consume value.
     if [ "$SKIP_GIT_VAL" -eq 1 ]; then
       SKIP_GIT_VAL=0
       continue
     fi
     case "$tok" in
-      -c|-C)
-        # Global -c key=val or -C dir; next token is the value.
+      -c|-C|--git-dir|--work-tree|--namespace|--super-prefix)
+        # Separate-value global (e.g. -c key=val, --git-dir DIR); next token
+        # is the value — consume it so it is not read as the subcommand.
         SKIP_GIT_VAL=1
         ;;
       -c*|-C*)
         # Attached-value form: -ccore.hooksPath=... — no next token consumed.
         ;;
       -*)
-        # Other git global flags (-p, -v, --version, etc.) — skip.
+        # Other git global flags (-p, -v, --version, --git-dir=..., etc.) —
+        # skip. Attached `--flag=val` globals carry their value inline, so no
+        # token is consumed here.
         ;;
       *)
         # First non-flag token after `git` is the subcommand.
