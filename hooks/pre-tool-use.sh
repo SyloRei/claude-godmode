@@ -125,27 +125,53 @@ esac
 # bare newline (no preceding backslash) is left intact — it stays a real
 # separator. awk joins a line ending in an odd-positioned trailing backslash to
 # the next (BSD/macOS awk safe: no GNU extensions).
-JOINED="$(printf '%s' "$COMMAND" | awk '
-  { line = $0
-    # Strip a single trailing backslash that continues onto the next line.
-    if (substr(line, length(line), 1) == "\\") {
-      printf "%s ", substr(line, 1, length(line) - 1)
-    } else {
-      printf "%s\n", line
-    }
-  }')"
+#
+# Performance: a backslash-newline continuation REQUIRES a literal backslash in
+# the command. The overwhelmingly common commit form has none, so gate the awk
+# fork behind a cheap in-shell backslash-presence test — when there is no `\` at
+# all there is nothing to fold and JOINED is just COMMAND. This is behavior-
+# preserving (the awk pass is an identity transform on backslash-free input) and
+# spares the hot path one fork.
+case "$COMMAND" in
+  *\\*)
+    JOINED="$(printf '%s' "$COMMAND" | awk '
+      { line = $0
+        # Strip a single trailing backslash that continues onto the next line.
+        if (substr(line, length(line), 1) == "\\") {
+          printf "%s ", substr(line, 1, length(line) - 1)
+        } else {
+          printf "%s\n", line
+        }
+      }')"
+    ;;
+  *)
+    JOINED="$COMMAND"
+    ;;
+esac
 
-# Step 1b: strip every single- and double-quoted segment, then normalize stray
-# control whitespace to spaces. [^"]* / [^']* are BSD-compatible (no PCRE); the
-# quote strip removes bypass-shaped text inside a quoted message (AC-4). The
-# `tr` maps carriage return (\015), vertical tab (\013) and form feed (\014) to
-# spaces so a control char adjacent to `git`/`commit` cannot split the
-# subcommand token and dodge the equality check. Newline (\n) is deliberately
-# NOT mapped — it is a real segment separator (Step 2). Normalization only ever
-# errs toward blocking: a segment must still classify as a genuine `git commit`
-# invocation to be scanned, so it cannot create a false positive.
+# Step 1b: replace every single- and double-quoted segment with a PLACEHOLDER
+# word, then normalize stray control whitespace to spaces. [^"]* / [^']* are
+# BSD-compatible (no PCRE). The placeholder ` _GMQUOTED_ ` (NOT deletion) erases
+# the bypass-shaped TEXT of a quoted message (AC-4) while keeping a WORD where the
+# value was — mirroring _GMSUBST_ for substitutions. This matters for an empty or
+# erased value-flag argument: `git commit -m "" --no-verify` deletion-stripped to
+# `git commit -m  --no-verify`, so `-m`'s value-skip swallowed the real
+# `--no-verify`; with the placeholder it becomes `git commit -m _GMQUOTED_
+# --no-verify`, `-m` consumes the placeholder, and `--no-verify` is still scanned
+# (BLOCK). AC-4 still passes: `git commit -m "…-n…--no-verify…"` ->
+# `git commit -m _GMQUOTED_` -> `-m` consumes the placeholder, nothing else is a
+# flag (exit 0). The placeholder is non-flag, non-`git`, non-`commit`, so it never
+# classifies a segment nor trips the scan on its own. This applies to the SCAN
+# (Pass A) stream ONLY; Pass B walks the quote-intact $JOINED so the quoted
+# hooksPath value stays visible there. The `tr` maps carriage return (\015),
+# vertical tab (\013) and form feed (\014) to spaces so a control char adjacent
+# to `git`/`commit` cannot split the subcommand token and dodge the equality
+# check. Newline (\n) is deliberately NOT mapped — it is a real segment separator
+# (Step 2). Normalization only ever errs toward blocking: a segment must still
+# classify as a genuine `git commit` invocation to be scanned, so it cannot
+# create a false positive.
 SCAN="$(printf '%s' "$JOINED" \
-  | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g" \
+  | sed -e 's/"[^"]*"/ _GMQUOTED_ /g' -e "s/'[^']*'/ _GMQUOTED_ /g" \
   | tr '\015\013\014' '   ')"
 
 # Step 2: split into segments. Two temp files: the quote-stripped SCAN segments
@@ -235,13 +261,34 @@ _collapse_subst() {
     -e 's/`[^`]*`/ _GMSUBST_ /g'
 }
 
-# _emit_segments: write BOTH derived streams (collapsed-then-separator-split,
-# and substitution-exposing-split) of $1 to stdout. A bypass in EITHER stream is
-# caught because the caller classifies+scans every line. Used for both SCAN
-# (Pass A) and RAW (Pass B).
+# _emit_segments: write the derived segment stream(s) of $1 to stdout. A bypass
+# in EITHER stream is caught because the caller classifies+scans every line. Used
+# for both SCAN (Pass A) and RAW (Pass B).
+#
+# Performance: the substitution-COLLAPSE and substitution-EXPOSING work only ever
+# differs from a plain separator split when the input actually contains a command
+# substitution or grouping delimiter — `$(`, a backtick, or a literal paren. With
+# none of those present, `_collapse_subst` is an identity transform and
+# `_split_subst` produces the exact same lines as `_split_separators` (they
+# differ only in the extra `(` `)` backtick rules). So when the input carries no
+# such delimiter, emit a SINGLE separator-split stream — skipping the
+# `_collapse_subst` sed fork and the entire second (exposing) stream. This is
+# behavior-preserving: the dual streams collapse to one identical stream on
+# substitution-free input. The common `git commit -m wip` / `git log | grep
+# commit` path takes this branch and saves several forks.
 _emit_segments() {
-  printf '%s\n' "$1" | _collapse_subst | _split_separators
-  printf '%s\n' "$1" | _split_subst
+  # The single-quoted `'$('` is an intentional LITERAL substring to match (a
+  # dollar followed by a paren), not a shell expansion — keep it single-quoted.
+  # shellcheck disable=SC2016
+  case "$1" in
+    *'$('* | *'`'* | *'('* | *')'*)
+      printf '%s\n' "$1" | _collapse_subst | _split_separators
+      printf '%s\n' "$1" | _split_subst
+      ;;
+    *)
+      printf '%s\n' "$1" | _split_separators
+      ;;
+  esac
 }
 
 _emit_segments "$SCAN" > "$_SEGTMP"
@@ -262,9 +309,27 @@ BYPASS=0
 # as git invocations. The result is PUBLISHED in the global `FCW` (set, not
 # echoed) so the caller need not fork a command-substitution subshell per
 # segment on the hot commit path.
+#
+# Wrappers that carry their OWN option grammar before the wrapped command
+# (`timeout 5 git …`, `nice -n 5 git …`, `sudo -u bob git …`, `xargs -I {} git
+# …`, `ionice -c2 git …`, `env -i VAR=v git …`) are handled by consuming the
+# wrapper's leading run of `-*` options, the one VALUE token of a known separate-
+# value option (`-n`/`-u`/`-g`/`-I`/`-c`/…), and — for a wrapper that takes a
+# bare leading POSITIONAL like `timeout`'s DURATION — exactly one bare token,
+# before resolving the wrapped command word. Without this the wrapper's option or
+# its value (`5`, `-n`, `bob`) was read AS the command word, so `git` was never
+# seen and the commit bypass was never scanned (the regression this closes).
+# Realistic agent-emitted forms are covered; full POSIX wrapper-option grammars
+# stay an acknowledged un-enumerable gap (see header).
 first_command_word() {
   FCW=""
-  for _fcw_tok in $1; do
+  # Re-tokenize the segment into positional params; -f (set globally) keeps `*`
+  # from pathname-expanding here. IFS word-splitting still applies.
+  # shellcheck disable=SC2086
+  set -- $1
+  while [ "$#" -gt 0 ]; do
+    _fcw_tok="$1"
+    shift
     # Strip any leading run of shell-grouping / subshell-opener characters
     # ( { $ ` ) glued to the front of the token, e.g. `$(git` -> `git`,
     # `(git` -> `git`. The bracket set is a literal character class — no
@@ -293,20 +358,81 @@ first_command_word() {
     # --no-verify; fi` / `while x; do git commit -n; done`, is still scanned.
     # After `;` splitting the commit segment's first word is the keyword
     # (then/do/…); skipping it like a wrapper exposes the real `git` word.
-    # Wrappers with their own option grammar (e.g. `sudo -u u git`, `nice -n 5
-    # git`) are only partially covered — the unwrapped and simple-wrapper forms
-    # an agent actually emits are the realistic bypasses, and never blocking
-    # them is the regression this closes; full wrapper-option parsing stays an
-    # acknowledged un-enumerable gap (see header).
     _fcw_tok="${_fcw_tok##*/}"
     case "$_fcw_tok" in
-      command|exec|env|sudo|doas|time|nice|nohup|setsid|stdbuf|ionice|builtin|xargs)
+      command|exec|env|sudo|doas|time|nice|nohup|setsid|stdbuf|ionice|builtin|xargs|timeout)
+        # Consume this wrapper's leading option/value preamble so the NEXT
+        # resolved command word (not the wrapper's `5`/`-n`/`bob`) is returned.
+        # `timeout` (and BSD `nice` with no -n) take a bare leading POSITIONAL
+        # value; the others take only options. _consume_wrapper_preamble shifts
+        # the in-scope positional params ($@) past that preamble.
+        _consume_wrapper_preamble "$_fcw_tok" "$@"
+        # _consume_wrapper_preamble republishes the trimmed list in _WP_REST as a
+        # single space-joined string; re-split it back into $@ for the next loop.
+        # shellcheck disable=SC2086
+        set -- $_WP_REST
         continue ;;
       then|do|else|elif|fi|done|"esac"|"{")
         continue ;;
       *) FCW="$_fcw_tok"; break ;;
     esac
   done
+}
+
+# _consume_wrapper_preamble WRAPPER TOKENS…: given the wrapper name in $1 and the
+# REMAINING tokens (after the wrapper word) in $2…, drop the wrapper's leading
+# options, one value of each known separate-value option, and — for a wrapper
+# that takes a bare leading positional (timeout) — one bare token. Publishes the
+# surviving tokens, space-joined, in the global _WP_REST (set, not echoed, so no
+# per-segment subshell fork on the hot path).
+#
+# Examples (wrapper word already shifted off): `timeout` over `5 git commit …`
+# drops the bare `5` -> `git commit …`; `nice` over `-n 5 git commit …` drops
+# `-n` then its value `5` -> `git commit …`; `sudo` over `-u bob git commit …`
+# drops `-u` then `bob`; `grep` is NOT a wrapper, so `timeout 5 grep -n x` ->
+# wrapper=timeout drops `5`, resolves `grep` (FCW=grep, not git) -> not scanned.
+_consume_wrapper_preamble() {
+  _wp_wrapper="$1"
+  shift
+  # timeout (and bare `nice`/`ionice` adjustment) take a leading positional VALUE
+  # when it is not introduced by an option; allow consuming exactly one bare token.
+  _wp_bareval=0
+  case "$_wp_wrapper" in
+    timeout) _wp_bareval=1 ;;
+  esac
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      # A known separate-value wrapper option: drop the option AND its value.
+      # Covers nice/ionice -n, sudo -u/-g/-p/-C/-r/-h/-T/-U, xargs -I/-n/-L/-P,
+      # env -u, ionice -c, timeout -s/-k. Unknown to a given wrapper is harmless:
+      # consuming one extra value only ever skips MORE preamble, and the wrapped
+      # command word still resolves next.
+      -n|-u|-g|-p|-C|-r|-h|-T|-U|-I|-L|-P|-c|-s|-k|--adjustment|--user|--group|--signal)
+        shift
+        [ "$#" -gt 0 ] && shift
+        ;;
+      # Any other option token (attached value -n5/-c2/-oL, long --foo, flags
+      # -i/-s): drop just the option, keep scanning the preamble.
+      -*)
+        shift ;;
+      # An env-assignment (env VAR=val): drop and keep scanning.
+      *=*)
+        shift ;;
+      # First bare non-option token. For a positional-taking wrapper (timeout),
+      # this is the wrapper's VALUE (the DURATION) — drop it once, then the NEXT
+      # bare token is the wrapped command. For every other wrapper this bare token
+      # IS the wrapped command — stop so the caller resolves it.
+      *)
+        if [ "$_wp_bareval" -eq 1 ]; then
+          _wp_bareval=0
+          shift
+        else
+          break
+        fi
+        ;;
+    esac
+  done
+  _WP_REST="$*"
 }
 
 # ---------------------------------------------------------------------------

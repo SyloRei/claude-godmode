@@ -352,6 +352,11 @@ make_repo_with_staged() {
   # folds the backslash-newline back to a space, so `commit` is recognized.
   run bash -c 'printf %s "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git \\\\\\ncommit --no-verify -m m\"}}" | bash "'"$PRE"'"'
   [ "$status" -eq 2 ]
+  # Assert the hook actually emitted its BLOCKED message, so the test cannot
+  # trivially pass on a printf-escaping mistake that fed the hook a non-commit
+  # payload (which would also exit 0->2-mismatch, but a broken payload that still
+  # happened to exit 2 for an unrelated reason would slip by without this).
+  [[ "$output" == *"BLOCKED:"* ]]
 }
 
 @test "pre-tool-use: a bare newline still separates segments, not a continuation (exit 0)" {
@@ -534,30 +539,98 @@ make_repo_with_staged() {
 
 # R6 forward-guards / false-positive fixes — must be ALLOWED (exit 0).
 
-@test "pre-tool-use: git -C dir whose path mentions hooksPath is allowed (exit 2->0)" {
+@test "pre-tool-use: git -C dir whose path mentions hooksPath is allowed (exit 0)" {
   # -C is change-directory, not config; only -c sets core.hooksPath. R6 removes
-  # -C from the hooksPath bypass match so this legit commit is no longer blocked.
+  # -C from the hooksPath bypass match so this legit commit is no longer blocked
+  # (regression note: the pre-R6 hook BLOCKED it, exit 2->0).
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -C /home/hooksPath/repo commit -m x"}}'
   [ "$status" -eq 0 ]
   assert_json_or_empty
 }
 
-@test "pre-tool-use: substitution of a non-commit git pipeline is allowed (exit 0)" {
-  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo $(git log | grep commit)"}}'
-  [ "$status" -eq 0 ]
-  assert_json_or_empty
-}
-
-@test "pre-tool-use: assignment-captured clean commit is allowed (exit 0)" {
-  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"out=$(git commit -m wip)"}}'
-  [ "$status" -eq 0 ]
-  assert_json_or_empty
-}
+# (Two R6 forward-guards that fed payloads byte-identical to the R5 guards at
+# "nested substitution of a non-commit git pipeline" and "substitution of a clean
+# commit" above were removed in R7 — they added no coverage over the originals.)
 
 @test "pre-tool-use: keyword-led clean commit is allowed (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"if true; then git commit -m ok; fi"}}'
   [ "$status" -eq 0 ]
   assert_json_or_empty
+}
+
+# ---------------------------------------------------------------------------
+# R7 regression guards (AC-1, AC-2, AC-3, AC-4, AC-8): close two CRITICAL
+# false-NEGATIVE holes /verify 3 found in the R6 hook.
+#
+# Gap 1 (wrapper-with-option — CRITICAL regression): first_command_word skipped
+# the wrapper WORD (timeout/nice/sudo) but then read the wrapper's OPTION or its
+# VALUE (`5`, `-n`, `bob`) as the candidate first word, which != git, so the
+# commit segment was discarded and never scanned. The base hook BLOCKED these;
+# the per-segment rewrite regressed them. R7 consumes the wrapper's leading
+# option/value preamble (and timeout's bare DURATION) so the wrapped `git`
+# resolves. The same first_command_word feeds Pass B, so the wrapped hooksPath
+# form is closed too.
+#
+# Gap 2 (empty/erased quoted value-flag — CRITICAL): Step 1b deleted the quoted
+# span, so `-m ""` left `-m` to consume the real trailing `--no-verify` as its
+# value. R7 replaces a quoted span with a _GMQUOTED_ placeholder WORD (like
+# _GMSUBST_) so the value-flag consumes the placeholder and the bypass is scanned.
+
+@test "pre-tool-use: timeout-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"timeout 5 git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: nice -n wrapped git commit --no-verify is blocked (exit 2)" {
+  # `nice -n 5` — the wrapper's -n takes a separate value (5); both must be
+  # consumed so the wrapped `git` (not `-n`/`5`) is resolved as the command word.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"nice -n 5 git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: sudo -u wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo -u bob git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: timeout-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  # Pass B path: the wrapper preamble must resolve `git` so the -c hooksPath
+  # global region is inspected (this also defeated Pass B in R6).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"timeout 5 git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# R7 Gap-1 forward-guards: consuming the wrapper preamble must NOT over-block a
+# non-commit command that merely sits behind the same wrapper.
+
+@test "pre-tool-use: timeout-wrapped grep -n is allowed (exit 0)" {
+  # timeout drops its DURATION `5`, resolves `grep` (FCW=grep, not git) — the -n
+  # here is grep's line-number flag, not a commit bypass.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"timeout 5 grep -n x"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: nice-wrapped git status is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"nice -n 5 git status"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# R7 Gap-2: an empty / erased quoted value-flag argument must not let the
+# value-skip swallow the real trailing bypass flag.
+
+@test "pre-tool-use: empty -m quoted value then --no-verify is blocked (exit 2)" {
+  # `-m ""` -> `-m _GMQUOTED_ --no-verify`: -m consumes the placeholder, the real
+  # --no-verify is still scanned. With the old deletion strip the value-skip ate
+  # --no-verify and this returned 0.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m \"\" --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: empty -F quoted value then -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -F \"\" -n"}}'
+  [ "$status" -eq 2 ]
 }
 
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
