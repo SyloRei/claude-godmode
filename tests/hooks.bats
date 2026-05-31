@@ -120,39 +120,103 @@ make_repo_with_staged() {
 
 # Legitimate -n on non-commit commands — false-positive regression (AC-5/6/7).
 
+# AC-9 redness map: of the exit-0 false-positive cases below, only
+# `git log --oneline | grep -n commit` reproduces the ORIGINAL false positive —
+# it is RED against the pre-segment-scoping hook (which flagged the -n in a piped
+# grep as a commit bypass) and GREEN now. The other exit-0 cases are
+# forward-guards (they were already green) that lock the segment scoping against
+# future regressions. The exit-2 cases below are RED against the pre-R1 hook
+# (verified: `&` and CR-adjacency bypasses returned 0 there) and GREEN now —
+# they guard the R1 hardening, not the original false positive.
+
 @test "pre-tool-use: grep -rn is not a bypass (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"grep -rn PATTERN ."}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: grep -n is not a bypass (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"grep -n PATTERN file"}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: sed -n is not a bypass (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sed -n 1,5p file"}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: git log piped to grep -n commit is not a bypass (exit 0)" {
+  # This is the ONE case that reproduces the original false positive: red against
+  # the pre-segment-scoping hook, green now (see AC-9 redness map above).
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log --oneline | grep -n commit"}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: git log piped to grep -n is not a bypass (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log | grep -n x"}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: git merge --no-edit followed by clean commit is allowed (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git merge --no-edit && git commit -m \"merge\""}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 @test "pre-tool-use: git commit --no-edit is not a bypass (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-edit"}}'
   [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# R1 intent-regression guards (AC-8): background `&` operator and carriage-return
+# adjacency. These return exit 0 (allowed) against the pre-R1 hook — proven by
+# extracting hooks/pre-tool-use.sh@4e67a0b and feeding it the same payloads —
+# and exit 2 (blocked) now. They guard the lone-& separator and the
+# tr '\015\013\014' control-char normalization added in R1.
+
+@test "pre-tool-use: bypass after background & operator is blocked (exit 2)" {
+  # `x & git commit --no-verify` — the `&` backgrounds `x`, leaving a genuine
+  # commit segment that must still be scanned (red against pre-R1: returned 0).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"x & git commit --no-verify -m m"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: short -n after background & operator is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sleep 1 & git commit -n -m m"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: carriage-return adjacency cannot dodge the commit check (exit 2)" {
+  # A real CR byte glued to `commit` (git<CR>commit) would split the subcommand
+  # token before R1's tr normalization. JSON requires the CR be escaped as \r;
+  # built via printf (a literal CR inside a here-string is awkward and would be
+  # invalid JSON). jq decodes the \r escape to a real CR, which the hook's
+  # tr '\015\013\014' maps to a space so `commit` is still recognized and the
+  # --no-verify is blocked. Red against pre-R1 (returned 0).
+  run bash -c 'printf %s "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git \\rcommit --no-verify -m m\"}}" | bash "'"$PRE"'"'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: hooksPath bypass in a later compound segment is blocked (exit 2)" {
+  # AC-8 forward coverage: the test-reviewer noted later-segment coverage only
+  # exercised --no-verify, not the -c core.hooksPath form. (Already green on
+  # pre-R1; this locks the segment scoping for hooksPath specifically.)
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"make build && git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: quoted shell separators and bypass token in message are allowed (exit 0)" {
+  # The message contains both `&&` and `--no-verify`, but quoted: the quote-strip
+  # removes the message content before segment splitting, so it neither splits
+  # the segment nor trips the bypass guard.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m \"msg with && --no-verify\""}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
