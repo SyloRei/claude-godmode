@@ -979,6 +979,46 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# --- S4: quoted-subcommand fail-closed (AC-1, AC-2, AC-3) -------------------
+# Completes the subcommand class S3 started: a QUOTED subcommand (`git "commit"`,
+# `git 'commit'`) collapses to the _GMQUOTED_ placeholder after the Step-1b
+# quote-strip, so its literal value is NOT `commit`. S3 deliberately excluded
+# _GMQUOTED_ from _subcmd_is_nonliteral, letting these slip (exit 0); S4 folds it
+# in so a quoted subcommand falls through to the bypass scan and BLOCKS, exactly
+# like the substitution case. Base c88d540 blocked these; pre-S4 hook let them
+# through (exit 0); GREEN after.
+
+@test "pre-tool-use: S4 double-quoted subcommand git \"commit\" --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git \"commit\" --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S4 single-quoted subcommand git 'commit' -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git '"'"'commit'"'"' -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S4 quoted subcommand git \"commit\" -n -m x is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git \"commit\" -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# S4 forward-guards: a quoted NON-commit subcommand has no literal `commit`
+# substring, so the cheap `*commit*` pre-filters short-circuit it before any
+# subcommand resolution — _GMQUOTED_ being non-literal cannot over-block it.
+
+@test "pre-tool-use: S4 quoted non-commit git \"log\" -n 5 is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git \"log\" -n 5"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: S4 quoted non-commit git \"status\" -n is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git \"status\" -n"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
 
 @test "secrets: clean staged diff exits 0 with valid JSON" {

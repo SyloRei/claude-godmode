@@ -425,21 +425,26 @@ segment_is_display_verb() {
 
 # _subcmd_is_nonliteral TOKEN: true (return 0) when the resolved subcommand TOKEN
 # is NOT a plain literal word — i.e. it carries a `$`, a backtick, a `(`/`)` left
-# over from the substitution-exposing stream, or is the collapse placeholder
-# `_GMSUBST_`. Such a token means the `commit` word was produced by a shell
-# expansion (`git $(echo commit) …`, `git ${x}commit …`, `` git `echo commit` ``),
-# so its literal value is NOT `commit` and the prior `_gi_sub = commit` equality
-# would mis-judge the segment as non-commit and fail OPEN. Treating a non-literal
-# subcommand as possibly-`commit` restores the fail-CLOSED default (consistent with
-# the leading-word fail-closed gate): the caller then runs its normal bypass scan,
-# which only BLOCKS when an actual bypass flag (--no-verify / -n / -c…hooksPath) is
-# also present — so a clean expanded non-commit (`git $(echo log)`) stays allowed.
-# The quote-strip placeholder `_GMQUOTED_` is deliberately NOT treated as
-# non-literal: a quoted subcommand (`git "commit" …`) is out of this fix's scope
-# and folding it in here would newly over-block it.
+# over from the substitution-exposing stream, or is a collapse placeholder
+# (`_GMSUBST_` for substitutions, `_GMQUOTED_` for quoted values). Such a token
+# means the `commit` word was produced by a shell expansion or quoting
+# (`git $(echo commit) …`, `git ${x}commit …`, `` git `echo commit` ``,
+# `git "commit" …`, `git 'commit' …`), so its literal value is NOT `commit` and the
+# prior `_gi_sub = commit` equality would mis-judge the segment as non-commit and
+# fail OPEN. Treating a non-literal subcommand as possibly-`commit` restores the
+# fail-CLOSED default (consistent with the leading-word fail-closed gate): the
+# caller then runs its normal bypass scan, which only BLOCKS when an actual bypass
+# flag (--no-verify / -n / -c…hooksPath) is also present — so a clean expanded
+# non-commit (`git $(echo log)`) stays allowed.
+# A quoted subcommand (`git "commit" --no-verify`) becomes `_GMQUOTED_` after the
+# Step-1b quote-strip and is just as much an obfuscated real bypass as the
+# substitution case, so it is folded in here too (fail closed). This does NOT
+# over-block a legit quoted non-commit subcommand (`git "log" -n 5`): the cheap
+# `*commit*` pre-filters gate ALL scanning, so a command with no literal `commit`
+# substring exits early and is never resolved as a subcommand at all.
 _subcmd_is_nonliteral() {
   case "$1" in
-    *'$'* | *'`'* | *'('* | *')'* | _GMSUBST_) return 0 ;;
+    *'$'* | *'`'* | *'('* | *')'* | _GMSUBST_ | _GMQUOTED_) return 0 ;;
   esac
   return 1
 }
