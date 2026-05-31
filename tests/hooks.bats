@@ -283,6 +283,105 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# R4 regression guards (AC-1, AC-3, AC-8, AC-10): close a false-POSITIVE
+# regression and four false-NEGATIVE bypass holes found by /verify 3.
+#
+# Regression (CRITICAL): the R3 RAW pre-check used `${COMMAND%% commit*}`, which
+# returns the WHOLE command when there is no ` commit` token, so a NON-commit
+# `git -c core.hooksPath=x …` was wrongly blocked. R4 replaces it with a
+# per-RAW-segment global-region check scoped to genuine `git commit` segments,
+# so the cases below stay exit 0. These are RED against the pre-R4 hook
+# (returned 2 there) and GREEN after.
+
+@test "pre-tool-use: -c hooksPath on a non-commit git log is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=x log --oneline"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: -c hooksPath on a non-commit git status is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=x status"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: -c hooksPath on a non-commit git fetch is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=x fetch origin"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: -c hooksPath on a non-commit pipeline ending in grep commit is allowed (exit 0)" {
+  # A non-commit pipeline whose LATER segment merely contains the word `commit`
+  # must not be flagged — the naive `*\" commit\"*` guard would wrongly fire here.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=x diff | grep commit"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# Bypass holes the R4 classifier now closes (each RED against pre-R4: returned 0).
+
+@test "pre-tool-use: subshell ( git commit --no-verify ) is blocked (exit 2)" {
+  # The segment's first token is `(`/`( git`; the classifier strips leading
+  # grouping openers so the inner commit is still recognized.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"( git commit --no-verify )"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: command-substitution \$(git commit --no-verify) is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"$(git commit --no-verify -m x)"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: redirect-prefixed >f git commit --no-verify is blocked (exit 2)" {
+  # A leading redirection token is valid shell; the commit still runs, so the
+  # classifier must skip the redirect token to find `git`.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":">f git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: fd-redirect-prefixed 2>/tmp/x git commit -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"2>/tmp/x git commit -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: backslash-newline continuation joins git \\ commit --no-verify (exit 2)" {
+  # `git \<newline>commit --no-verify` is ONE command to bash; the newline is a
+  # CONTINUATION, not a segment separator. The \n arrives JSON-escaped, so build
+  # the payload with printf (like the carriage-return test above). The hook
+  # folds the backslash-newline back to a space, so `commit` is recognized.
+  run bash -c 'printf %s "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git \\\\\\ncommit --no-verify -m m\"}}" | bash "'"$PRE"'"'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: a bare newline still separates segments, not a continuation (exit 0)" {
+  # `git commit -m x<newline>git log` — the newline is a real separator (no
+  # preceding backslash), so the segments do not join; neither carries a bypass.
+  run bash -c 'printf %s "{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"git commit -m x\\ngit log\"}}" | bash "'"$PRE"'"'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: mixed-case -c core.HooksPath bypass is blocked (exit 2)" {
+  # Git config keys are case-insensitive, so HooksPath disables hooks identically.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.HooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: upper-case -c core.HOOKSPATH bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.HOOKSPATH=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: unquoted message word fix-hooksPath-bug is allowed (exit 2->0)" {
+  # The over-broad R3 per-segment `*hooksPath*` test fired on a plain message
+  # word; R4 scopes the hooksPath check to -c/-C global tokens, so an UNQUOTED
+  # message word no longer trips it.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m fix-hooksPath-bug"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
 
 @test "secrets: clean staged diff exits 0 with valid JSON" {
