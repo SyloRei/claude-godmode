@@ -373,11 +373,86 @@ make_repo_with_staged() {
   [ "$status" -eq 2 ]
 }
 
-@test "pre-tool-use: unquoted message word fix-hooksPath-bug is allowed (exit 2->0)" {
+@test "pre-tool-use: unquoted message word fix-hooksPath-bug is allowed (exit 0)" {
   # The over-broad R3 per-segment `*hooksPath*` test fired on a plain message
   # word; R4 scopes the hooksPath check to -c/-C global tokens, so an UNQUOTED
   # message word no longer trips it.
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m fix-hooksPath-bug"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# R5 regression guards (AC-1, AC-2, AC-8): close two false-NEGATIVE holes found
+# by /verify 3's security lens — both forms were BLOCKED by the original
+# whole-command-scan hook but slipped through the per-segment rewrite (RED
+# against the pre-R5 hook: each returned 0).
+#
+# Hole 1 (command-word prefix): the segment classifier required the first word
+# to be exactly `git`, so a wrapper prefix (command/exec/env/sudo/time/xargs) or
+# a fully-qualified path (/usr/bin/git) defeated classification and the bypass
+# scan never ran. R5 makes first_command_word basename-normalize the word and
+# look past known wrappers.
+#
+# Hole 2 (nested command substitution): a `git commit` nested inside another
+# word (`echo $(git commit --no-verify)`, `foo=$(git commit --no-verify)`) was
+# masked by its outer word. R5 splits on the grouping/substitution delimiters
+# `(` `)` and a backtick so the inner commit is its own segment.
+
+@test "pre-tool-use: wrapper-prefixed command git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"command git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: wrapper-prefixed sudo git commit -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo git commit -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: wrapper-prefixed env git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"env git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: path-form /usr/bin/git commit --no-verify is blocked (exit 2)" {
+  # first_command_word basename-normalizes the path so it classifies as git.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"/usr/bin/git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: nested substitution echo \$(git commit --no-verify) is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo $(git commit --no-verify -m x)"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: assignment substitution foo=\$(git commit --no-verify) is blocked (exit 2)" {
+  # The closing `)` glues to the final flag token; the `)` split keeps the scan
+  # exact-matching `--no-verify` rather than seeing `--no-verify)`.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"foo=$(git commit --no-verify)"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: backtick substitution \`git commit -n\` is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"x=`git commit -n -m x`"}}'
+  [ "$status" -eq 2 ]
+}
+
+# R5 forward-guards: the wrapper/substitution handling must not over-block legit
+# commands that merely contain a wrapper word or a substitution near `commit`.
+
+@test "pre-tool-use: nested substitution of a non-commit git pipeline is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo $(git log | grep commit)"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: substitution of a clean commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"out=$(git commit -m wip)"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: wrapped clean commit (env assignment + git) is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"env FOO=bar git commit -m ok"}}'
   [ "$status" -eq 0 ]
   assert_json_or_empty
 }

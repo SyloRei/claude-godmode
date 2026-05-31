@@ -29,8 +29,25 @@ set -f
 # Read the full event from stdin. Guard against early EOF under pipefail.
 INPUT="$(cat 2>/dev/null || true)"
 
-# If we did not get JSON, or jq is unavailable, fail open (allow).
-if [ -z "$INPUT" ] || ! command -v jq > /dev/null 2>&1; then
+# Fail open on empty stdin.
+if [ -z "$INPUT" ]; then
+  exit 0
+fi
+
+# Cheap raw pre-filter (performance): a git-commit bypass always carries the
+# substring `commit` somewhere in the event JSON (it is part of the command
+# string). If the raw input has no `commit` at all, there is nothing to guard —
+# skip the jq parse and every subprocess below. Pure performance gate: it only
+# ever lets calls THROUGH (every blockable form contains `commit`), so it adds
+# no false negative; it just spares the common non-commit Bash call the
+# `command -v jq` and jq forks entirely.
+case "$INPUT" in
+  *commit*) : ;;
+  *) exit 0 ;;
+esac
+
+# We need jq to parse the event; fail open if it is unavailable.
+if ! command -v jq > /dev/null 2>&1; then
   exit 0
 fi
 
@@ -73,11 +90,14 @@ esac
 # Strategy (each numbered step is implemented in order below):
 #   1. Fold backslash-newline line continuations, then strip quoted strings and
 #      normalize stray control whitespace.
-#   2. Split the command into pipeline/compound segments on shell separators.
+#   2. Split the command into pipeline/compound segments on shell separators
+#      AND on the grouping/substitution delimiters ( ) and backtick, so a commit
+#      nested inside a substitution (echo $(git commit …)) is its own segment.
 #   3. For each quote-stripped segment, classify whether it is a `git commit`
-#      invocation (drop leading env assignments / grouping / redirect tokens;
-#      first command word must be `git`; first non-global token must be
-#      `commit`).
+#      invocation (drop leading env assignments / grouping / redirect tokens and
+#      command wrappers like command/exec/env/sudo; basename-normalize a path so
+#      /usr/bin/git counts; first command word must be `git`; first non-global
+#      token must be `commit`).
 #   4. Only within a commit segment, scan for bypass flags (--no-verify / -n /
 #      short clusters containing n / an attached -c…hooksPath that survived the
 #      quote strip).
@@ -139,7 +159,17 @@ _RAWTMP="$(mktemp)"
 # shellcheck disable=SC2064
 trap "rm -f '$_SEGTMP' '$_RAWTMP'" EXIT INT TERM
 
-# Shared separator-splitting sed program.
+# Shared separator-splitting sed program. The command-grouping / substitution
+# delimiters `(`, `)`, and a backtick are split too, so a `git commit` nested
+# inside another word (e.g. `echo $(git commit --no-verify)` or
+# `foo=$(git commit --no-verify)`) becomes its OWN clean segment and is
+# classified — without the split its outer word (`echo`/`foo=`) would mask the
+# commit, and a closing `)` glued to the final flag token (`--no-verify)`) would
+# dodge the exact-match bypass scan. After the quote strip these characters are
+# always shell syntax, never data, so splitting on them is safe; over-splitting
+# only ever produces more segments, each still independently classified — it
+# cannot manufacture a false positive. The bracket classes [(] / [)] match the
+# literal parens without sed BRE metacharacter ambiguity.
 _split_segments() {
   sed \
     -e 's/&&/\
@@ -151,6 +181,12 @@ _split_segments() {
     -e 's/|/\
 /g' \
     -e 's/;/\
+/g' \
+    -e 's/[(]/\
+/g' \
+    -e 's/[)]/\
+/g' \
+    -e 's/`/\
 /g'
 }
 
@@ -162,14 +198,18 @@ printf '%s\n' "$JOINED" | _split_segments > "$_RAWTMP"
 
 BYPASS=0
 
-# strip_leading_noise: given a segment, drop leading tokens that are not the
-# command word — environment assignments (VAR=val), shell-grouping / subshell
-# openers ( { $( ` and redirection tokens (>f, >>f, <f, 2>f, &>f, …) — and echo
-# the first real command word. Used by both passes so `( git commit … )`,
-# `$(git commit …)`, `` `git commit …` ``, and `>f git commit …` are still
-# recognized as git invocations.
+# first_command_word: given a segment, find its first real command word —
+# skipping leading environment assignments (VAR=val), shell-grouping / subshell
+# openers ( { $( ` , redirection tokens (>f, >>f, <f, 2>f, &>f, …), and known
+# command wrappers (command/exec/env/sudo/…) — normalizing a path to its
+# basename so /usr/bin/git is recognized as git. Used by both passes so
+# `( git commit … )`, `$(git commit …)`, `` `git commit …` ``, `>f git commit …`,
+# `command git commit …`, and `/usr/bin/git commit …` are all still recognized
+# as git invocations. The result is PUBLISHED in the global `_FCW` (set, not
+# echoed) so the caller need not fork a command-substitution subshell per
+# segment on the hot commit path.
 first_command_word() {
-  _fcw_out=""
+  _FCW=""
   for _fcw_tok in $1; do
     # Strip any leading run of shell-grouping / subshell-opener characters
     # ( { $ ` ) glued to the front of the token, e.g. `$(git` -> `git`,
@@ -182,6 +222,8 @@ first_command_word() {
         *) break ;;
       esac
     done
+    # Checked BEFORE basename normalization so an assignment whose value is a
+    # path (FOO=/a/b) is not mistaken for a command word.
     case "$_fcw_tok" in
       # Empty after stripping (a bare opener like `(` or `$(`), or an
       # environment assignment (FOO=bar) — skip to the next token.
@@ -189,10 +231,22 @@ first_command_word() {
       # Redirection token, e.g. >f, >>f, <f, 2>f, &>f — skip; the value is part
       # of the same token (>file) so nothing else needs consuming.
       [\>\<]* | [0-9][\>\<]* | "&"[\>\<]*) continue ;;
-      *) _fcw_out="$_fcw_tok"; break ;;
+    esac
+    # Normalize a path to its basename so a fully-qualified /usr/bin/git
+    # classifies as `git`, then look PAST known command wrappers so a wrapped
+    # `command git commit --no-verify` / `sudo git commit -n` is still scanned.
+    # Wrappers with their own option grammar (e.g. `sudo -u u git`, `nice -n 5
+    # git`) are only partially covered — the unwrapped and simple-wrapper forms
+    # an agent actually emits are the realistic bypasses, and never blocking
+    # them is the regression this closes; full wrapper-option parsing stays an
+    # acknowledged un-enumerable gap (see header).
+    _fcw_tok="${_fcw_tok##*/}"
+    case "$_fcw_tok" in
+      command|exec|env|sudo|doas|time|nice|nohup|setsid|stdbuf|ionice|builtin|xargs)
+        continue ;;
+      *) _FCW="$_fcw_tok"; break ;;
     esac
   done
-  printf '%s' "$_fcw_out"
 }
 
 # ---------------------------------------------------------------------------
@@ -205,8 +259,8 @@ while IFS= read -r seg || [ -n "$seg" ]; do
   [ -n "$seg" ] || continue
 
   # Step 3: the first real command word must be `git`.
-  FIRST_CMD="$(first_command_word "$seg")"
-  [ "$FIRST_CMD" = "git" ] || continue
+  first_command_word "$seg"
+  [ "$_FCW" = "git" ] || continue
 
   # Walk the remaining tokens to find git's subcommand. Skip git global flags
   # that take a value as a SEPARATE token (-c <key=val>, -C <dir>, and the long
@@ -218,25 +272,25 @@ while IFS= read -r seg || [ -n "$seg" ]; do
   # so consuming the next token would wrongly swallow a following `commit`. Its
   # attached `--exec-path=...` form (and every other attached `--flag=val`
   # global) already falls through the `-*` arm below without consuming a token.
-  SUBCOMMAND=""
-  PAST_GIT=0
-  SKIP_GIT_VAL=0
+  _subcmd=""
+  _past_git=0
+  _skip_val=0
   for tok in $seg; do
-    if [ "$PAST_GIT" -eq 0 ]; then
+    if [ "$_past_git" -eq 0 ]; then
       # Skip everything up to and including the `git` word (grouping/redirect
       # noise was already accounted for by first_command_word).
       case "$tok" in
-        *git) PAST_GIT=1 ;;
+        *git) _past_git=1 ;;
       esac
       continue
     fi
-    if [ "$SKIP_GIT_VAL" -eq 1 ]; then
-      SKIP_GIT_VAL=0
+    if [ "$_skip_val" -eq 1 ]; then
+      _skip_val=0
       continue
     fi
     case "$tok" in
       -c|-C|--git-dir|--work-tree|--namespace|--super-prefix)
-        SKIP_GIT_VAL=1
+        _skip_val=1
         ;;
       -c*|-C*)
         : # attached-value form (-ccore.hooksPath=…); no next token consumed
@@ -245,27 +299,27 @@ while IFS= read -r seg || [ -n "$seg" ]; do
         : # other git global flag (-p, -v, --version, --git-dir=…) — skip
         ;;
       *)
-        SUBCOMMAND="$tok"
+        _subcmd="$tok"
         break
         ;;
     esac
   done
 
   # If the subcommand is not `commit`, this segment is not a commit invocation.
-  [ "$SUBCOMMAND" = "commit" ] || continue
+  [ "$_subcmd" = "commit" ] || continue
 
   # Step 4: this segment IS a git commit invocation — scan it for bypass flags.
-  SKIP_NEXT=0
+  _skip_next=0
   for tok in $seg; do
-    if [ "$SKIP_NEXT" -eq 1 ]; then
-      SKIP_NEXT=0
+    if [ "$_skip_next" -eq 1 ]; then
+      _skip_next=0
       continue
     fi
     case "$tok" in
       -m|--message|-F|--file|-c|-C|--reedit-message|--reuse-message)
         # Value is the next separate token — skip it so an unquoted value that
         # looks like a flag (e.g. -m wip_-n) is not misread as a bypass.
-        SKIP_NEXT=1
+        _skip_next=1
         ;;
       -c*|-C*)
         # Attached-value global (-ccore.hooksPath=… or -c'…' after quote strip).
@@ -313,64 +367,64 @@ while IFS= read -r rawseg || [ -n "$rawseg" ]; do
   [ "$BYPASS" -eq 0 ] || break
   [ -n "$rawseg" ] || continue
 
-  RAW_FIRST="$(first_command_word "$rawseg")"
-  [ "$RAW_FIRST" = "git" ] || continue
+  first_command_word "$rawseg"
+  [ "$_FCW" = "git" ] || continue
 
   # Collect the global-flag region (tokens after `git`, up to and excluding the
   # first non-global token = the subcommand). A -c/-C global there (separate- or
   # attached-value) whose value carries hooksPath is the bypass. Track whether
   # the immediately preceding global was a separate-value -c/-C so its value
   # token is checked too.
-  RAW_PAST_GIT=0
-  RAW_SUB=""
-  RAW_C_PENDING=0
-  RAW_REGION=""
+  _raw_past_git=0
+  _raw_sub=""
+  _raw_skip_val=0
+  _raw_region=""
   for tok in $rawseg; do
-    if [ "$RAW_PAST_GIT" -eq 0 ]; then
+    if [ "$_raw_past_git" -eq 0 ]; then
       case "$tok" in
-        *git) RAW_PAST_GIT=1 ;;
+        *git) _raw_past_git=1 ;;
       esac
       continue
     fi
-    if [ "$RAW_C_PENDING" -eq 1 ]; then
+    if [ "$_raw_skip_val" -eq 1 ]; then
       # This token is the separate value of a preceding -c/-C global.
-      RAW_C_PENDING=0
-      RAW_REGION="$RAW_REGION $tok"
+      _raw_skip_val=0
+      _raw_region="$_raw_region $tok"
       continue
     fi
     case "$tok" in
       -c|-C)
-        RAW_C_PENDING=1
-        RAW_REGION="$RAW_REGION $tok"
+        _raw_skip_val=1
+        _raw_region="$_raw_region $tok"
         ;;
       -c*|-C*)
-        RAW_REGION="$RAW_REGION $tok"
+        _raw_region="$_raw_region $tok"
         ;;
       --git-dir|--work-tree|--namespace|--super-prefix)
         # Separate-value global, not -c/-C; consume its value so it is not read
-        # as the subcommand. Reuse RAW_C_PENDING as a generic "skip next value"
+        # as the subcommand. Reuse _raw_skip_val as a generic "skip next value"
         # flag (the value can never carry a -c hooksPath, so adding it to the
         # region is harmless to the match below).
-        RAW_C_PENDING=1
-        RAW_REGION="$RAW_REGION $tok"
+        _raw_skip_val=1
+        _raw_region="$_raw_region $tok"
         ;;
       -*)
-        RAW_REGION="$RAW_REGION $tok"
+        _raw_region="$_raw_region $tok"
         ;;
       *)
-        RAW_SUB="$tok"
+        _raw_sub="$tok"
         break
         ;;
     esac
   done
 
   # Only a genuine `git commit` segment is in scope.
-  [ "$RAW_SUB" = "commit" ] || continue
+  [ "$_raw_sub" = "commit" ] || continue
 
   # A -c/-C global in the region carrying hooksPath (case-insensitive) is the
   # bypass. The region only ever contains global flags and their values, so a
   # commit message word can never reach here.
-  case "$RAW_REGION" in
+  case "$_raw_region" in
     *-c*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*|*-C*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*)
       BYPASS=1
       ;;
@@ -391,5 +445,6 @@ if [ "$BYPASS" -eq 1 ]; then
 fi
 
 # Allowed: emit an empty JSON object (matching pre-tool-use-secrets.sh) and pass.
-jq -n '{}' 2>/dev/null || printf '{}\n'
+# printf, not `jq -n`, so the allow path costs no extra subprocess fork.
+printf '{}\n'
 exit 0
