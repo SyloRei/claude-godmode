@@ -617,13 +617,16 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
-# R8 Gap (CRITICAL regression): _consume_wrapper_preamble unconditionally
-# consumed the token AFTER a wrapper option, assuming every option takes a value.
-# For a BOOLEAN wrapper flag (`sudo -n` non-interactive, `sudo -k`) that eats the
-# wrapped `git` word, so the segment misclassifies and the bypass slips. The same
-# over-consume bit the positional path (`timeout -s KILL git …` — the `-s KILL`
-# value is consumed, leaving `git` in timeout's DURATION slot). R8 guards both
-# value-consumes so neither drops the wrapped `git` word.
+# R8 Gap (CRITICAL regression, pre-S1 mechanism): an earlier wrapper-preamble
+# walker unconditionally consumed the token AFTER a wrapper option, assuming every
+# option took a value. For a BOOLEAN wrapper flag (`sudo -n` non-interactive,
+# `sudo -k`) that ate the wrapped `git` word, so the segment misclassified and the
+# bypass slipped; the same over-consume bit the positional path (`timeout -s KILL
+# git …` — the `-s KILL` value was consumed, leaving `git` in timeout's DURATION
+# slot). S1 folded the preamble walk into the find-`git`-ANYWHERE model: a segment
+# is now scanned for EVERY `git` token regardless of what precedes it (the leading
+# word is consulted only for the display-verb deny-list gate), so neither
+# over-consume can drop the wrapped `git`. These cases stay GREEN under that model.
 
 @test "pre-tool-use: sudo -n (boolean) wrapped git commit --no-verify is blocked (exit 2)" {
   # sudo -n = non-interactive; it takes NO value, so the token after it (`git`)
@@ -913,6 +916,67 @@ make_repo_with_staged() {
   ! env -i PATH="$bindir" command -v jq > /dev/null 2>&1
   run env -i PATH="$bindir" bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-verify -m x"}}'
   [ "$status" -eq 0 ]
+}
+
+# --- S3: subcommand-via-expansion fail-closed (AC-1, AC-2, AC-3, AC-11) -----
+# The fail-safe redesign made the LEADING WORD position fail-closed, but the
+# SUBCOMMAND resolution still failed OPEN: both passes read a LITERAL token and
+# concluded "not a commit" on anything else. When the `commit` word is itself a
+# shell expansion, the resolved subcommand is a non-literal placeholder
+# (`_GMSUBST_`, `${x}commit`, a `$`/backtick/paren-bearing token), so the segment
+# was judged non-commit and never scanned — yet at runtime it executes as a real
+# `git commit` bypass. S3 treats a NON-LITERAL subcommand as possibly-commit and
+# falls through to the bypass scan (fail closed). These were RED against the
+# pre-S3 hook (each returned 0) and GREEN after. Base c88d540 blocked them all.
+
+@test "pre-tool-use: S3 command-substitution subcommand git \$(echo commit) -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git $(echo commit) -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S3 backtick subcommand git \`echo commit\` -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git `echo commit` -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S3 brace-expansion subcommand git \${x}commit -n is blocked (exit 2)" {
+  # No $(/backtick/paren, so it stays on the single separator-split stream; the
+  # literal token `${x}commit` != `commit` but carries a `$` -> non-literal.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git ${x}commit -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S3 expanded subcommand git \$(echo commit) --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git $(echo commit) --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S3 Pass-B -c hooksPath then expanded commit is blocked (exit 2)" {
+  # Pass B: the global -c…hooksPath disables hooks; the subcommand expansion must
+  # not let the segment escape the global-region check.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -c core.hooksPath=/dev/null $(echo commit)"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: S3 wrapper + expanded subcommand flock git \$(echo commit) -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"flock /tmp/x git $(echo commit) -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+# S3 forward-guards: a non-literal subcommand with NO bypass flag must stay
+# ALLOWED — the fail-closed fall-through blocks only when a real bypass token is
+# present, so clean expanded non-commit commands do not over-block.
+
+@test "pre-tool-use: S3 expanded non-commit git \$(echo log) --oneline is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git $(echo log) --oneline"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: S3 expanded non-commit git \$(echo status) is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git $(echo status)"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
 }
 
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------

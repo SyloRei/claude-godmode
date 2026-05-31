@@ -423,6 +423,27 @@ segment_is_display_verb() {
   return 1
 }
 
+# _subcmd_is_nonliteral TOKEN: true (return 0) when the resolved subcommand TOKEN
+# is NOT a plain literal word — i.e. it carries a `$`, a backtick, a `(`/`)` left
+# over from the substitution-exposing stream, or is the collapse placeholder
+# `_GMSUBST_`. Such a token means the `commit` word was produced by a shell
+# expansion (`git $(echo commit) …`, `git ${x}commit …`, `` git `echo commit` ``),
+# so its literal value is NOT `commit` and the prior `_gi_sub = commit` equality
+# would mis-judge the segment as non-commit and fail OPEN. Treating a non-literal
+# subcommand as possibly-`commit` restores the fail-CLOSED default (consistent with
+# the leading-word fail-closed gate): the caller then runs its normal bypass scan,
+# which only BLOCKS when an actual bypass flag (--no-verify / -n / -c…hooksPath) is
+# also present — so a clean expanded non-commit (`git $(echo log)`) stays allowed.
+# The quote-strip placeholder `_GMQUOTED_` is deliberately NOT treated as
+# non-literal: a quoted subcommand (`git "commit" …`) is out of this fix's scope
+# and folding it in here would newly over-block it.
+_subcmd_is_nonliteral() {
+  case "$1" in
+    *'$'* | *'`'* | *'('* | *')'* | _GMSUBST_) return 0 ;;
+  esac
+  return 1
+}
+
 # _scan_git_invocation TOKENS…: given the tokens that FOLLOW a `git` word (the
 # git word already shifted off), resolve this invocation's subcommand and, when it
 # is `commit`, scan its own args for a bypass. Sets the global BYPASS=1 on a hit.
@@ -477,9 +498,17 @@ _scan_git_invocation() {
     esac
   done
 
-  # Only a `git commit` invocation is scanned for bypass flags. Return 0 (not the
-  # failing test status) so the bare top-level call does not trip `set -e`.
-  [ "$_gi_sub" = "commit" ] || return 0
+  # A `git commit` invocation is scanned for bypass flags. A NON-LITERAL
+  # subcommand (the `commit` word came from a shell expansion, e.g.
+  # `git $(echo commit) -n`) is also scanned: its literal value is not `commit`,
+  # so failing the equality and returning here would fail OPEN. Falling through
+  # fails CLOSED — the Walk-2 scan below blocks only if a real bypass flag is also
+  # present, so a clean expanded non-commit stays allowed. Any other LITERAL
+  # subcommand (`log`, `status`, `help`, `commit-graph`) is not a commit -> return
+  # 0 (not the failing test status) so the bare top-level call does not trip `set -e`.
+  if [ "$_gi_sub" != "commit" ] && ! _subcmd_is_nonliteral "$_gi_sub"; then
+    return 0
+  fi
 
   _gi_skip_next=0
   while [ "$#" -gt 0 ]; do
@@ -591,9 +620,17 @@ _scan_raw_git_hookspath() {
     esac
   done
 
-  # Only a genuine `git commit` invocation is in scope. Return 0 (not the failing
-  # test status) so the bare top-level call does not trip `set -e`.
-  [ "$_rg_sub" = "commit" ] || return 0
+  # A genuine `git commit` invocation is in scope. A NON-LITERAL subcommand (the
+  # `commit` word came from a shell expansion, e.g.
+  # `git -c core.hooksPath=… $(echo commit)`) is also in scope: its literal value
+  # is not `commit`, so failing the equality would fail OPEN. Falling through fails
+  # CLOSED — the region match below blocks only if a -c…hooksPath global is also
+  # present, so a clean expanded non-commit stays allowed. Any other LITERAL
+  # subcommand is not a commit -> return 0 (not the failing test status) so the
+  # bare top-level call does not trip `set -e`.
+  if [ "$_rg_sub" != "commit" ] && ! _subcmd_is_nonliteral "$_rg_sub"; then
+    return 0
+  fi
 
   case "$_rg_region" in
     *-c*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*)
