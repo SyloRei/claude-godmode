@@ -617,6 +617,57 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# R8 Gap (CRITICAL regression): _consume_wrapper_preamble unconditionally
+# consumed the token AFTER a wrapper option, assuming every option takes a value.
+# For a BOOLEAN wrapper flag (`sudo -n` non-interactive, `sudo -k`) that eats the
+# wrapped `git` word, so the segment misclassifies and the bypass slips. The same
+# over-consume bit the positional path (`timeout -s KILL git …` — the `-s KILL`
+# value is consumed, leaving `git` in timeout's DURATION slot). R8 guards both
+# value-consumes so neither drops the wrapped `git` word.
+
+@test "pre-tool-use: sudo -n (boolean) wrapped git commit --no-verify is blocked (exit 2)" {
+  # sudo -n = non-interactive; it takes NO value, so the token after it (`git`)
+  # must not be swallowed by the option's value-consume.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo -n git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: sudo -k (boolean) wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo -k git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: timeout -s KILL wrapped git commit --no-verify is blocked (exit 2)" {
+  # `-s KILL` consumes the signal value; `git` then lands in timeout's DURATION
+  # slot and must not be eaten by the positional consume.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"timeout -s KILL git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: stacked time sudo -n wrapped git commit --no-verify is blocked (exit 2)" {
+  # Stacked wrappers: time -> sudo -n -> git; the boolean -n guard must hold
+  # through both preamble consumes.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"time sudo -n git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# R8 forward-guards: the boolean-flag guard must NOT over-block a non-commit
+# command behind the same boolean wrapper flag.
+
+@test "pre-tool-use: sudo -n wrapped grep -n is allowed (exit 0)" {
+  # sudo -n resolves `grep` (FCW=grep, not git); the trailing -n is grep's
+  # line-number flag, not a commit bypass.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo -n grep -n x"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: sudo -n wrapped git status is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sudo -n git status"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
 # R7 Gap-2: an empty / erased quoted value-flag argument must not let the
 # value-skip swallow the real trailing bypass flag.
 

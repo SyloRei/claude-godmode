@@ -216,23 +216,23 @@ _split_separators() {
 # independently classified — it cannot manufacture a false positive. The bracket
 # classes [(] / [)] match the literal parens without sed BRE metacharacter
 # ambiguity.
+#
+# Composed from _split_separators (rather than duplicating its five separator
+# expressions) plus the extra `(`/`)`/backtick rules. The two rule groups are
+# independent — the separator rules never emit a paren/backtick and the extra
+# rules never emit a separator — so the split is order-independent and pipe-
+# composing yields output identical to a single monolithic sed. The extra sed
+# fork only ever runs on the substitution-bearing stream (the cold path); the hot
+# substitution-free commit takes the single-stream branch in _emit_segments and
+# never reaches here.
 _split_subst() {
-  sed \
-    -e 's/&&/\
+  _split_separators \
+    | sed \
+      -e 's/[(]/\
 /g' \
-    -e 's/&/\
+      -e 's/[)]/\
 /g' \
-    -e 's/||/\
-/g' \
-    -e 's/|/\
-/g' \
-    -e 's/;/\
-/g' \
-    -e 's/[(]/\
-/g' \
-    -e 's/[)]/\
-/g' \
-    -e 's/`/\
+      -e 's/`/\
 /g'
 }
 
@@ -276,11 +276,50 @@ _collapse_subst() {
 # behavior-preserving: the dual streams collapse to one identical stream on
 # substitution-free input. The common `git commit -m wip` / `git log | grep
 # commit` path takes this branch and saves several forks.
+#
+# The branch decision is taken on a QUOTE-STRIPPED guard view, not the raw input,
+# so a paren that appears ONLY inside a quoted span (the very common conventional-
+# commit message `git commit -m "fix(scope): msg"`) does NOT needlessly trigger
+# the dual-stream pass — that paren is message DATA, never shell grouping syntax.
+# The strip is deliberately conservative to stay behavior-preserving: a single-
+# quoted span is always erased (no expansion happens inside single quotes, so a
+# paren/`$(`/backtick there is pure data), but a DOUBLE-quoted span is erased
+# ONLY when it contains neither `$` nor a backtick — a `"$(evil)"` / `` "`evil`" ``
+# is a REAL command substitution that must keep the dual-stream pass. So if any
+# substitution or grouping delimiter survives in the view (an unquoted `(`/`)`, a
+# real `$(`/backtick, or a double-quoted span carrying one), the dual-stream pass
+# still runs and the exposing split still catches the nested commit. The split
+# work itself runs on the unmodified `$1` (quotes intact) so Pass B's quoted
+# hooksPath value stays visible; only the cheap branch test reads the view.
 _emit_segments() {
-  # The single-quoted `'$('` is an intentional LITERAL substring to match (a
-  # dollar followed by a paren), not a shell expansion — keep it single-quoted.
+  # Guard view: by default the cheap branch test reads the raw input directly, so
+  # the hot substitution-free path (`git commit -m wip`) costs no extra fork. ONLY
+  # when the input carries BOTH a grouping/substitution delimiter AND a quote is a
+  # quote-stripped view computed — that is the sole case where a delimiter might be
+  # message DATA rather than shell syntax. The strip erases single-quoted spans
+  # (no expansion inside single quotes) and substitution-FREE double-quoted spans,
+  # but preserves a double-quoted span carrying `$`/backtick (a real `"$(evil)"`
+  # substitution must keep the dual-stream pass), so the dual-stream pass still
+  # runs whenever a real substitution or unquoted grouping delimiter survives.
+  _emit_view="$1"
+  # The single-quoted `'$('`/`` '`' `` are intentional LITERAL substrings to match,
+  # not shell expansions — keep them single-quoted.
   # shellcheck disable=SC2016
   case "$1" in
+    *'('* | *')'* | *'`'*)
+      case "$1" in
+        *'"'* | *"'"*)
+          # Substitution-free double-quoted spans -> erased; single-quoted spans
+          # -> erased; `"$(…)"`/`` "`…`" `` preserved. `[^"$\`]` is a sed CHARACTER
+          # CLASS (literal `"`, `$`, backtick), NOT a shell expansion.
+          # shellcheck disable=SC2016
+          _emit_view="$(printf '%s' "$1" | sed -e "s/'[^']*'/ /g" -e 's/"[^"$`]*"/ /g')"
+          ;;
+      esac
+      ;;
+  esac
+  # shellcheck disable=SC2016
+  case "$_emit_view" in
     *'$('* | *'`'* | *'('* | *')'*)
       printf '%s\n' "$1" | _collapse_subst | _split_separators
       printf '%s\n' "$1" | _split_subst
@@ -406,10 +445,15 @@ _consume_wrapper_preamble() {
       # Covers nice/ionice -n, sudo -u/-g/-p/-C/-r/-h/-T/-U, xargs -I/-n/-L/-P,
       # env -u, ionice -c, timeout -s/-k. Unknown to a given wrapper is harmless:
       # consuming one extra value only ever skips MORE preamble, and the wrapped
-      # command word still resolves next.
+      # command word still resolves next. But guard the VALUE consume so it never
+      # eats the wrapped `git` word: a BOOLEAN wrapper flag (`sudo -n`/`sudo -k`)
+      # takes NO value, so the token after it is already the wrapped command — if
+      # that token is `git`, leave it for the caller to resolve. Over-skipping a
+      # genuine value only ever skips MORE preamble (safe); under-consuming `git`
+      # is the bypass this guard closes.
       -n|-u|-g|-p|-C|-r|-h|-T|-U|-I|-L|-P|-c|-s|-k|--adjustment|--user|--group|--signal)
         shift
-        [ "$#" -gt 0 ] && shift
+        [ "$#" -gt 0 ] && [ "${1##*/}" != git ] && shift
         ;;
       # Any other option token (attached value -n5/-c2/-oL, long --foo, flags
       # -i/-s): drop just the option, keep scanning the preamble.
@@ -421,9 +465,13 @@ _consume_wrapper_preamble() {
       # First bare non-option token. For a positional-taking wrapper (timeout),
       # this is the wrapper's VALUE (the DURATION) — drop it once, then the NEXT
       # bare token is the wrapped command. For every other wrapper this bare token
-      # IS the wrapped command — stop so the caller resolves it.
+      # IS the wrapped command — stop so the caller resolves it. Guard the
+      # positional consume the same way: never drop the bare token when it is the
+      # wrapped `git` word (`timeout -s KILL git commit …` — the `-s KILL` value
+      # was already consumed above, so the DURATION slot is empty and `git` is the
+      # next bare token; without this guard the positional consume would eat it).
       *)
-        if [ "$_wp_bareval" -eq 1 ]; then
+        if [ "$_wp_bareval" -eq 1 ] && [ "${1##*/}" != git ]; then
           _wp_bareval=0
           shift
         else
