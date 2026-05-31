@@ -684,6 +684,237 @@ make_repo_with_staged() {
   [ "$status" -eq 2 ]
 }
 
+# --- pre-tool-use.sh: fail-safe redesign (S2 A–H matrix) -------------------
+# S1 rewrote the classifier to FIND `git` anywhere + a CLOSED display-verb
+# deny-list, dropping the wrapper allow-list (fail closed). This matrix locks
+# that redesign in. The headline NN-fix is class B: an UNENUMERATED wrapper
+# (flock/chrt/taskset/unbuffer/watch/randomcmd) is no longer allow-listed, so a
+# `<wrapper> git commit <bypass>` it fronts is now SCANNED and blocked. The
+# pre-S1 per-segment hook (1870dc8) had a wrapper allow-list and returned exit 0
+# (RED) for every class-B row below; the S1 fail-safe model returns exit 2
+# (GREEN). The AC-9 false-POSITIVE differential (`git log | grep -n commit`,
+# RED 2 against c88d540 -> GREEN 0 now) is asserted at the regression-suite
+# section above; this block asserts the false-NEGATIVE closure plus the
+# deny-list ALLOW recoveries (class D/E) it must NOT over-block.
+
+# --- B: wrapper-class now-blocks (no allow-list) — the headline NN-fix ------
+# Each unenumerated wrapper fronting a `git commit` bypass must be SCANNED and
+# blocked (fail closed). Pass-A (--no-verify) and Pass-B (-c …hooksPath) parity.
+
+@test "pre-tool-use: flock-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"flock /tmp/l git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: flock-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"flock /tmp/l git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: chrt-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"chrt -f 99 git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: chrt-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"chrt -f 99 git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: taskset-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"taskset -c 0 git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: taskset-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"taskset -c 0 git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: unbuffer-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"unbuffer git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: unbuffer-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"unbuffer git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: watch-wrapped git commit --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"watch git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: watch-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"watch git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: randomcmd-wrapped git commit --no-verify is blocked (exit 2)" {
+  # An entirely unknown leading word defaults to SCAN (fail closed) — this is the
+  # core fail-safe guarantee: no allow-list means no unenumerated bypass.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"randomcmd git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: randomcmd-wrapped -c core.hooksPath commit is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"randomcmd git -c core.hooksPath=/dev/null commit -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: xargs -I {} git commit --no-verify is blocked (exit 2)" {
+  # xargs with a replacement template still fronts a real `git commit` bypass.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"xargs -I {} git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# --- C: first-git-wins (multiple git tokens in one segment) ----------------
+# Find-`git`-anywhere iterates EVERY git word in a segment; a later `git commit`
+# bypass is still scanned even when an earlier non-commit git precedes it, and a
+# flag BEFORE a git word is never read as that commit's argument.
+
+@test "pre-tool-use: git log then later git commit -n in one segment is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log $(true) git commit -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: git diff then later git commit --no-verify in one segment is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git diff $(git log) git commit --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+# --- D: display-verb deny-list ALLOW ---------------------------------------
+# A segment whose FIRST real word is a CLOSED display/data verb is NOT a git
+# invocation — its `git`/`commit`/`-n` tokens are data, recovered as exit 0.
+# But the gate is PER SEGMENT: a real `git commit` bypass in a SIBLING segment
+# is still scanned.
+
+@test "pre-tool-use: echo git commit -n is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo git commit -n"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: grep git commit -n is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"grep git commit -n"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: man git commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"man git commit"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: ls git commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"ls git commit"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: git help commit -n is allowed (exit 0)" {
+  # Subcommand `help` != `commit`, so the -n is never read as a commit bypass.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git help commit -n"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: git commit-graph write is allowed (exit 0)" {
+  # Subcommand `commit-graph` != `commit`; the bypass scan is scoped to an exact
+  # `commit` subcommand, so a commit-PREFIXED subcommand is not over-blocked.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit-graph write"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: echo x then git commit -n in a sibling segment is blocked (exit 2)" {
+  # The deny-list gate is per SEGMENT: `echo x` is allowed, but the `&&`-separated
+  # `git commit -n` is its own segment and is still scanned and blocked.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo x && git commit -n"}}'
+  [ "$status" -eq 2 ]
+}
+
+# --- E: value-flag-before-git (wrapper option takes a value) ---------------
+# A wrapper's value-flag (`nice -n N`, `xargs -n N`, `ionice -c N`) must have its
+# value consumed so the wrapped clean `git commit` is resolved and ALLOWED — but
+# the same wrapped commit carrying a real bypass is still blocked.
+
+@test "pre-tool-use: nice -n 5 wrapped clean git commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"nice -n 5 git commit -m wip"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: xargs -n 1 wrapped clean git commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"xargs -n 1 git commit -m wip"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: ionice -c2 wrapped clean git commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"ionice -c2 git commit -m wip"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: xargs -n 1 wrapped git commit -n bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"xargs -n 1 git commit -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# --- F: conventional-commit lock -------------------------------------------
+# Parens inside a quoted commit MESSAGE are data, not shell grouping — the
+# quote-aware branch test keeps the dual-stream pass off and the commit allowed.
+
+@test "pre-tool-use: conventional-commit message with parens is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m \"fix(scope): thing\""}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# --- G: `--` pathspec lock -------------------------------------------------
+# A `--` end-of-options separator means a following `--no-verify` is a PATHSPEC,
+# not a flag. These are a DELIBERATE BLOCK: the hook does not honor `--`, because
+# doing so would be a trivial bypass (`git commit -- --no-verify` could disable
+# hooks if `--no-verify` were ever a real arg in some context, and a scanner
+# cannot prove the pathspec is inert). If a future change adds `--` handling, it
+# MUST be a conscious decision — these tests will fail loudly to force that
+# review rather than silently opening a hole.
+
+@test "pre-tool-use: git commit -- --no-verify is DELIBERATELY blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -- --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: git commit -m x -- --no-verify is DELIBERATELY blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m x -- --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+# --- H: fail-open when jq is unavailable ------------------------------------
+# The hook needs jq to parse the event; with jq absent from PATH it MUST fail
+# OPEN (exit 0) rather than block every Bash call. The hook runs `cat` (to read
+# stdin) BEFORE the `command -v jq` check, so an entirely empty PATH would fail
+# at `cat` (exit 127), not exercise the jq fail-open path. Instead build a bin
+# dir holding symlinks to every tool the hook uses EXCEPT jq, then point PATH at
+# it alone — so `command -v jq` returns non-zero while the rest of the hook still
+# runs and reaches its fail-open `exit 0`. BSD/macOS safe (ln -s, command -v).
+
+@test "pre-tool-use: absent jq (jq-free PATH) fails open (exit 0)" {
+  local bindir; bindir="$(mktemp -d "$TEST_HOME/nojqbin.XXXXXX")"
+  local t src
+  for t in cat awk sed tr mktemp grep rm bash env; do
+    src="$(command -v "$t")" && [ -n "$src" ] && ln -s "$src" "$bindir/$t"
+  done
+  # Sanity: the jq-free PATH must genuinely hide jq (asserted inline, not via
+  # `run`, to avoid a bats BW01 warning on the intentional non-zero exit).
+  ! env -i PATH="$bindir" command -v jq > /dev/null 2>&1
+  run env -i PATH="$bindir" bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-verify -m x"}}'
+  [ "$status" -eq 0 ]
+}
+
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
 
 @test "secrets: clean staged diff exits 0 with valid JSON" {
