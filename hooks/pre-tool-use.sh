@@ -19,6 +19,12 @@
 # string interpolation.
 
 set -euo pipefail
+# noglob: the unquoted `for tok in $seg` loops rely on word-splitting only.
+# Without -f, a trailing `*` (e.g. `git commit -m wip *`) would pathname-expand,
+# and a file literally named `-n` in the cwd would surface as a bogus bypass
+# token. -f disables globbing but NOT word-splitting; `case` patterns are
+# unaffected — the hook only ever pattern-matches, it never relies on a glob.
+set -f
 
 # Read the full event from stdin. Guard against early EOF under pipefail.
 INPUT="$(cat 2>/dev/null || true)"
@@ -44,10 +50,18 @@ fi
 #   1. Strip quoted strings from the command so that bypass-shaped tokens
 #      inside quoted messages are never mistaken for real flags (AC-4).
 #      E.g. git commit -m "mention -n flag" -> the -n inside quotes is gone.
+#      Then normalize stray control whitespace (carriage return \r, vertical
+#      tab \v, form feed \f) to spaces so a CR adjacent to git/commit cannot
+#      defeat the `subcommand = commit` equality check (e.g. `git \rcommit
+#      --no-verify` must still classify as a commit and block). Newline \n is
+#      left intact — it is a meaningful segment separator handled in Step 2.
 #
 #   2. Split the quote-stripped command into pipeline/compound segments on
-#      shell separators (&&, ||, |, ;, newline). Longest separators are
-#      translated first (&&, || before |) to avoid partial matches.
+#      shell separators (&&, ||, |, ;, &, newline). Longest/compound separators
+#      are translated first (&& before a lone & ; || before |) so the compound
+#      operator is consumed before its single-char form is matched. The lone &
+#      is the background operator, so `x & git commit --no-verify` splits into
+#      `x` and a real commit segment that is then scanned (AC-8).
 #      Output is written to a temp file; the while loop reads the file so
 #      variable assignments inside the loop propagate to the outer scope
 #      (bash 3.2 / BSD compatible: no mapfile/readarray, no process
@@ -74,21 +88,36 @@ fi
 #
 #   5. If no segment triggers a bypass, exit 0.
 
-# Step 1: strip every single- and double-quoted segment from the command.
-# [^"]* / [^']* are BSD-compatible (no PCRE). This removes the quoted values
-# so that bypass-shaped text inside a quoted message is gone.
-SCAN="$(printf '%s' "$COMMAND" | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g")"
+# Step 1: strip every single- and double-quoted segment from the command,
+# then normalize stray control whitespace to spaces. [^"]* / [^']* are
+# BSD-compatible (no PCRE); the quote strip removes bypass-shaped text inside a
+# quoted message. The `tr` maps carriage return (\r = \015), vertical tab
+# (\v = \013) and form feed (\f = \014) to spaces so a control char adjacent to
+# `git`/`commit` (e.g. `git \rcommit --no-verify`) cannot split the subcommand
+# token and dodge the equality check. Newline (\n) is deliberately NOT mapped —
+# it is a real segment separator (Step 2). This only ever errs toward blocking:
+# a segment must still be a genuine `git commit` invocation to be scanned, so
+# normalization cannot create a false positive on a non-commit command.
+SCAN="$(printf '%s' "$COMMAND" \
+  | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g" \
+  | tr '\015\013\014' '   ')"
 
 # Step 2: split on shell separators into segments.
-# Translate &&, ||, |, ;, and literal newlines to newline — LONGEST separators
-# first (&&, || before |) to avoid partial matches.
+# Translate &&, ||, |, ;, &, and literal newlines to newline — LONGEST/compound
+# separators first (&& before a lone &; || before |) so the compound operator is
+# consumed before its single-char form matches and only a genuine background &
+# remains.
 # Output to a temp file so the while loop can read from a file redirect;
 # this keeps variable assignments (BYPASS) in the same shell, not a subshell.
 _SEGTMP="$(mktemp)"
+# Double-quoted so the captured path is expanded at trap-definition time (the
+# value of $_SEGTMP we just created), not re-evaluated at trap-firing time.
 # shellcheck disable=SC2064
 trap "rm -f '$_SEGTMP'" EXIT INT TERM
 printf '%s\n' "$SCAN" | sed \
   -e 's/&&/\
+/g' \
+  -e 's/&/\
 /g' \
   -e 's/||/\
 /g' \
@@ -106,42 +135,42 @@ while IFS= read -r seg || [ -n "$seg" ]; do
   #
   # First drop leading VAR=val assignments; iterate tokens until we find the
   # first word that is not of the form NAME=value.
-  first_cmd=""
+  FIRST_CMD=""
   for tok in $seg; do
     case "$tok" in
       *=*) continue ;;  # env assignment, skip
-      *)   first_cmd="$tok"; break ;;
+      *)   FIRST_CMD="$tok"; break ;;
     esac
   done
 
   # If the first real command word is not `git`, this segment is not a git
   # commit — skip it entirely (catches `grep -n commit`, `sed -n ...`, etc.).
-  [ "$first_cmd" = "git" ] || continue
+  [ "$FIRST_CMD" = "git" ] || continue
 
   # Now walk the remaining tokens to find git's subcommand.
   # Skip git global flags that take a value: -c <value> and -C <value>
   # (directory). Other single-char git global flags (-p, -v, ...) do not
   # take values and are skipped without consuming a token.
-  subcommand=""
-  past_git=0
-  skip_git_val=0
+  SUBCOMMAND=""
+  PAST_GIT=0
+  SKIP_GIT_VAL=0
   for tok in $seg; do
     # Skip the `git` word itself on the first encounter.
-    if [ "$past_git" -eq 0 ]; then
+    if [ "$PAST_GIT" -eq 0 ]; then
       if [ "$tok" = "git" ]; then
-        past_git=1
+        PAST_GIT=1
       fi
       continue
     fi
     # If the previous token was -c or -C (global git flag), consume value.
-    if [ "$skip_git_val" -eq 1 ]; then
-      skip_git_val=0
+    if [ "$SKIP_GIT_VAL" -eq 1 ]; then
+      SKIP_GIT_VAL=0
       continue
     fi
     case "$tok" in
       -c|-C)
         # Global -c key=val or -C dir; next token is the value.
-        skip_git_val=1
+        SKIP_GIT_VAL=1
         ;;
       -c*|-C*)
         # Attached-value form: -ccore.hooksPath=... — no next token consumed.
@@ -151,14 +180,14 @@ while IFS= read -r seg || [ -n "$seg" ]; do
         ;;
       *)
         # First non-flag token after `git` is the subcommand.
-        subcommand="$tok"
+        SUBCOMMAND="$tok"
         break
         ;;
     esac
   done
 
   # If the subcommand is not `commit`, this segment is not a commit invocation.
-  [ "$subcommand" = "commit" ] || continue
+  [ "$SUBCOMMAND" = "commit" ] || continue
 
   # Step 4: this segment IS a git commit invocation — scan it for bypass flags.
   #
