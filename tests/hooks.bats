@@ -382,6 +382,7 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# ---------------------------------------------------------------------------
 # R5 regression guards (AC-1, AC-2, AC-8): close two false-NEGATIVE holes found
 # by /verify 3's security lens — both forms were BLOCKED by the original
 # whole-command-scan hook but slipped through the per-segment rewrite (RED
@@ -453,6 +454,108 @@ make_repo_with_staged() {
 
 @test "pre-tool-use: wrapped clean commit (env assignment + git) is allowed (exit 0)" {
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"env FOO=bar git commit -m ok"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+# ---------------------------------------------------------------------------
+# R6 regression guards (AC-1, AC-2, AC-3, AC-8): close the gaps /verify 3 found
+# in the R5 hook — one a CRITICAL regression R5 introduced, the rest holes the
+# per-segment rewrite never covered.
+#
+# Gap 1 (mid-flag substitution — CRITICAL regression): R5 split on bare parens,
+# which fixed a commit nested INSIDE a substitution but chopped a flag away from
+# `git commit` when a substitution sat BETWEEN them. These BLOCK cases were
+# blocked by both the pre-R5 hook AND the original whole-command-scan hook, but
+# slip (return 0) against the R5 HEAD c65f20c. R6 classifies a substitution-
+# COLLAPSED stream (spans -> placeholder, split on separators only, parens kept)
+# alongside the EXPOSING stream so the flag stays in the commit segment.
+#
+# Gap 2 (shell-keyword segments): after `;` splitting, `then git commit …` /
+# `do git commit …` had first word `then`/`do`, so it never classified. R6 adds
+# the leading shell keywords to first_command_word's skip-list.
+#
+# Gap 3 (token ending in git): the subcommand loop matched any `*git`, so an
+# env-assignment VALUE ending in git (X=mygit) slipped past `git`. R6 skips
+# `*=*` tokens and matches the git word by BASENAME exactly.
+#
+# Gap 4 (-C false positive): -C is git's change-directory flag, not config; only
+# -c sets config. The hooksPath match wrongly included -C, BLOCKING a legit
+# `git -C /home/hooksPath/repo commit`. R6 drops -C from the bypass match (kept
+# in the value-skip) so it is allowed while -c hooksPath is still blocked.
+
+@test "pre-tool-use: mid-flag substitution then --no-verify is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit $(true) --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: mid-flag substitution then -n is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit $(true) -n -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: mid-flag backtick substitution then --no-verify is blocked (exit 2)" {
+  # Backtick span between `git commit` and the flag; single-quoted heredoc keeps
+  # the backticks literal (no command substitution in the test shell).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit `true` --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: -m value substitution then --no-verify is blocked (exit 2)" {
+  # The collapsed-stream placeholder is the value -m consumes, so the real
+  # --no-verify that follows is still scanned (not swallowed as the -m value).
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -m $(echo hi) --no-verify"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: trailing substitution after --no-verify is blocked (exit 2)" {
+  # Lock-in: the flag precedes the substitution; the collapsed stream keeps the
+  # commit segment whole so --no-verify is still caught.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-verify $(date)"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: if/then keyword-led commit bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"if true; then git commit --no-verify -m x; fi"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: while/do keyword-led commit bypass is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"while x; do git commit -n -m x; done"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: env-assignment value ending in git does not mask the bypass (exit 2)" {
+  # X=mygit must NOT be read as the git word; the real `git commit --no-verify`
+  # that follows is still classified and scanned.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"X=mygit git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# R6 forward-guards / false-positive fixes — must be ALLOWED (exit 0).
+
+@test "pre-tool-use: git -C dir whose path mentions hooksPath is allowed (exit 2->0)" {
+  # -C is change-directory, not config; only -c sets core.hooksPath. R6 removes
+  # -C from the hooksPath bypass match so this legit commit is no longer blocked.
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git -C /home/hooksPath/repo commit -m x"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: substitution of a non-commit git pipeline is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"echo $(git log | grep commit)"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: assignment-captured clean commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"out=$(git commit -m wip)"}}'
+  [ "$status" -eq 0 ]
+  assert_json_or_empty
+}
+
+@test "pre-tool-use: keyword-led clean commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"if true; then git commit -m ok; fi"}}'
   [ "$status" -eq 0 ]
   assert_json_or_empty
 }

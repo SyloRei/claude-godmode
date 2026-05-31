@@ -90,22 +90,27 @@ esac
 # Strategy (each numbered step is implemented in order below):
 #   1. Fold backslash-newline line continuations, then strip quoted strings and
 #      normalize stray control whitespace.
-#   2. Split the command into pipeline/compound segments on shell separators
-#      AND on the grouping/substitution delimiters ( ) and backtick, so a commit
-#      nested inside a substitution (echo $(git commit …)) is its own segment.
+#   2. Split the command into pipeline/compound segments. To handle command
+#      substitutions WITHOUT chopping a flag away from its `git commit` when a
+#      substitution sits between them, classify TWO derived streams of the
+#      command (see _emit_segments): a substitution-COLLAPSED stream (each
+#      $(...) / `...` span blanked to a space, then split on shell separators
+#      ONLY — parens kept intact) and a substitution-EXPOSING stream (split on
+#      the substitution delimiters $( ) ` too, so an inner nested commit becomes
+#      its own segment). A bypass in EITHER stream blocks.
 #   3. For each quote-stripped segment, classify whether it is a `git commit`
 #      invocation (drop leading env assignments / grouping / redirect tokens and
-#      command wrappers like command/exec/env/sudo; basename-normalize a path so
-#      /usr/bin/git counts; first command word must be `git`; first non-global
-#      token must be `commit`).
+#      command wrappers like command/exec/env/sudo and shell keywords; basename-
+#      normalize a path so /usr/bin/git counts; first command word must be `git`;
+#      first non-global token must be `commit`).
 #   4. Only within a commit segment, scan for bypass flags (--no-verify / -n /
 #      short clusters containing n / an attached -c…hooksPath that survived the
 #      quote strip).
 #   5. The QUOTED -c hooksPath bypass (git -c 'core.hooksPath=…' commit) cannot
 #      be seen in step 4 — the quote strip erases the value. So a separate RAW
-#      pass splits the unmodified command on the same separators and, for each
-#      raw segment that is itself a git-commit invocation, checks its
-#      pre-subcommand global-flag region for a -c/-C carrying hooksPath
+#      pass applies the SAME dual-stream split to the unmodified command and, for
+#      each raw segment that is itself a git-commit invocation, checks its
+#      pre-subcommand global-flag region for a -c carrying hooksPath
 #      (case-insensitive). Scoping to genuine commit segments keeps non-commit
 #      commands (git -c core.hooksPath=x log/status/fetch, and a
 #      `git -c … diff | grep commit` pipeline) allowed, and scoping to the
@@ -143,14 +148,10 @@ SCAN="$(printf '%s' "$JOINED" \
   | sed -e 's/"[^"]*"//g' -e "s/'[^']*'//g" \
   | tr '\015\013\014' '   ')"
 
-# Step 2: split on shell separators into segments.
-# Translate &&, ||, |, ;, &, and literal newlines to newline — LONGEST/compound
-# separators first (&& before a lone &; || before |) so the compound operator is
-# consumed before its single-char form matches and only a genuine background &
-# remains. Two temp files: the quote-stripped SCAN segments (classification +
-# -n scan, Steps 3-4) and the RAW segments split on the SAME separators (the
-# quoted-hooksPath pass, Step 5). Writing to files lets the while loops read via
-# a redirect so variable assignments (BYPASS) stay in this shell, not a subshell
+# Step 2: split into segments. Two temp files: the quote-stripped SCAN segments
+# (classification + -n scan, Steps 3-4) and the RAW segments (the quoted-
+# hooksPath pass, Step 5). Writing to files lets the while loops read via a
+# redirect so variable assignments (BYPASS) stay in this shell, not a subshell
 # (bash 3.2 / BSD: no mapfile/readarray, no process substitution).
 _SEGTMP="$(mktemp)"
 _RAWTMP="$(mktemp)"
@@ -159,18 +160,37 @@ _RAWTMP="$(mktemp)"
 # shellcheck disable=SC2064
 trap "rm -f '$_SEGTMP' '$_RAWTMP'" EXIT INT TERM
 
-# Shared separator-splitting sed program. The command-grouping / substitution
-# delimiters `(`, `)`, and a backtick are split too, so a `git commit` nested
-# inside another word (e.g. `echo $(git commit --no-verify)` or
-# `foo=$(git commit --no-verify)`) becomes its OWN clean segment and is
-# classified — without the split its outer word (`echo`/`foo=`) would mask the
-# commit, and a closing `)` glued to the final flag token (`--no-verify)`) would
-# dodge the exact-match bypass scan. After the quote strip these characters are
-# always shell syntax, never data, so splitting on them is safe; over-splitting
-# only ever produces more segments, each still independently classified — it
-# cannot manufacture a false positive. The bracket classes [(] / [)] match the
-# literal parens without sed BRE metacharacter ambiguity.
-_split_segments() {
+# Separator-only split: translate the shell separators &&, ||, |, ;, &, and
+# literal newlines to newline — LONGEST/compound separators first (&& before a
+# lone &; || before |) so the compound operator is consumed before its single-
+# char form matches and only a genuine background & remains. Parens and backtick
+# are deliberately NOT split here.
+_split_separators() {
+  sed \
+    -e 's/&&/\
+/g' \
+    -e 's/&/\
+/g' \
+    -e 's/||/\
+/g' \
+    -e 's/|/\
+/g' \
+    -e 's/;/\
+/g'
+}
+
+# Substitution-exposing split: the separator split PLUS the grouping /
+# substitution delimiters `(`, `)`, and a backtick, so a `git commit` nested
+# inside a substitution (e.g. `echo $(git commit --no-verify)`) becomes its OWN
+# clean segment and is classified — without the split its outer word
+# (`echo`/`foo=`) would mask the commit, and a closing `)` glued to the final
+# flag token (`--no-verify)`) would dodge the exact-match bypass scan. After the
+# quote strip these characters are always shell syntax, never data, so splitting
+# on them is safe; over-splitting only ever produces more segments, each still
+# independently classified — it cannot manufacture a false positive. The bracket
+# classes [(] / [)] match the literal parens without sed BRE metacharacter
+# ambiguity.
+_split_subst() {
   sed \
     -e 's/&&/\
 /g' \
@@ -190,11 +210,45 @@ _split_segments() {
 /g'
 }
 
-printf '%s\n' "$SCAN" | _split_segments > "$_SEGTMP"
+# Substitution-COLLAPSED stream feed: replace each command-substitution span —
+# `$(...)` and a backtick pair — with a single placeholder TOKEN so the
+# surrounding command rejoins intact. This is the stream that keeps
+# `git commit $(true) --no-verify` whole (-> `git commit _GMSUBST_ --no-verify`,
+# still a scannable commit) WITHOUT the paren split that would otherwise chop the
+# flag away from the commit segment. A placeholder WORD (not a bare space) is
+# used so that when a value-flag's argument was itself a substitution
+# (`git commit -m $(echo hi) --no-verify`), the flag consumes the placeholder —
+# not the real `--no-verify` that follows — and the bypass is still scanned. The
+# placeholder is non-flag, non-`git`, non-`commit`, so it never classifies a
+# segment nor trips the scan on its own. Conversely `echo $(git commit
+# --no-verify)` collapses to `echo _GMSUBST_` (no commit) on THIS stream — the
+# EXPOSING stream below catches that inner case instead. BSD/macOS sed, non-PCRE:
+# [^)] / [^`] stop at the first closing delimiter, so a single un-nested
+# substitution per span is collapsed. Nested substitutions `$( … $( … ) … )`
+# remain an acknowledged un-enumerable gap (see header).
+_collapse_subst() {
+  # The sed scripts are single-quoted on purpose: `\$(` and the backtick pair are
+  # sed REGEX literals (a literal `$`, `(`, and backtick), NOT shell expansions.
+  # shellcheck disable=SC2016
+  sed \
+    -e 's/\$([^)]*)/ _GMSUBST_ /g' \
+    -e 's/`[^`]*`/ _GMSUBST_ /g'
+}
+
+# _emit_segments: write BOTH derived streams (collapsed-then-separator-split,
+# and substitution-exposing-split) of $1 to stdout. A bypass in EITHER stream is
+# caught because the caller classifies+scans every line. Used for both SCAN
+# (Pass A) and RAW (Pass B).
+_emit_segments() {
+  printf '%s\n' "$1" | _collapse_subst | _split_separators
+  printf '%s\n' "$1" | _split_subst
+}
+
+_emit_segments "$SCAN" > "$_SEGTMP"
 # RAW segments come from the line-continuation-folded command so the same
 # `git \<newline>commit` form rejoins here too; quotes are intact so the
 # hooksPath value is visible.
-printf '%s\n' "$JOINED" | _split_segments > "$_RAWTMP"
+_emit_segments "$JOINED" > "$_RAWTMP"
 
 BYPASS=0
 
@@ -205,11 +259,11 @@ BYPASS=0
 # basename so /usr/bin/git is recognized as git. Used by both passes so
 # `( git commit … )`, `$(git commit …)`, `` `git commit …` ``, `>f git commit …`,
 # `command git commit …`, and `/usr/bin/git commit …` are all still recognized
-# as git invocations. The result is PUBLISHED in the global `_FCW` (set, not
+# as git invocations. The result is PUBLISHED in the global `FCW` (set, not
 # echoed) so the caller need not fork a command-substitution subshell per
 # segment on the hot commit path.
 first_command_word() {
-  _FCW=""
+  FCW=""
   for _fcw_tok in $1; do
     # Strip any leading run of shell-grouping / subshell-opener characters
     # ( { $ ` ) glued to the front of the token, e.g. `$(git` -> `git`,
@@ -233,8 +287,12 @@ first_command_word() {
       [\>\<]* | [0-9][\>\<]* | "&"[\>\<]*) continue ;;
     esac
     # Normalize a path to its basename so a fully-qualified /usr/bin/git
-    # classifies as `git`, then look PAST known command wrappers so a wrapped
-    # `command git commit --no-verify` / `sudo git commit -n` is still scanned.
+    # classifies as `git`, then look PAST known command wrappers AND leading
+    # shell keywords so a wrapped `command git commit --no-verify` /
+    # `sudo git commit -n`, or a keyword-led `if true; then git commit
+    # --no-verify; fi` / `while x; do git commit -n; done`, is still scanned.
+    # After `;` splitting the commit segment's first word is the keyword
+    # (then/do/…); skipping it like a wrapper exposes the real `git` word.
     # Wrappers with their own option grammar (e.g. `sudo -u u git`, `nice -n 5
     # git`) are only partially covered — the unwrapped and simple-wrapper forms
     # an agent actually emits are the realistic bypasses, and never blocking
@@ -244,7 +302,9 @@ first_command_word() {
     case "$_fcw_tok" in
       command|exec|env|sudo|doas|time|nice|nohup|setsid|stdbuf|ionice|builtin|xargs)
         continue ;;
-      *) _FCW="$_fcw_tok"; break ;;
+      then|do|else|elif|fi|done|"esac"|"{")
+        continue ;;
+      *) FCW="$_fcw_tok"; break ;;
     esac
   done
 }
@@ -260,7 +320,7 @@ while IFS= read -r seg || [ -n "$seg" ]; do
 
   # Step 3: the first real command word must be `git`.
   first_command_word "$seg"
-  [ "$_FCW" = "git" ] || continue
+  [ "$FCW" = "git" ] || continue
 
   # Walk the remaining tokens to find git's subcommand. Skip git global flags
   # that take a value as a SEPARATE token (-c <key=val>, -C <dir>, and the long
@@ -278,9 +338,13 @@ while IFS= read -r seg || [ -n "$seg" ]; do
   for tok in $seg; do
     if [ "$_past_git" -eq 0 ]; then
       # Skip everything up to and including the `git` word (grouping/redirect
-      # noise was already accounted for by first_command_word).
+      # noise was already accounted for by first_command_word). An env-assignment
+      # token (X=mygit) is skipped, and the git word is matched by BASENAME
+      # exactly (==git) — so a path /usr/bin/git still classifies while `mygit`,
+      # `legit`, or an assignment VALUE ending in `git` does NOT trip the scan.
       case "$tok" in
-        *git) _past_git=1 ;;
+        *=*) : ;;
+        *) case "${tok##*/}" in git) _past_git=1 ;; esac ;;
       esac
       continue
     fi
@@ -321,14 +385,20 @@ while IFS= read -r seg || [ -n "$seg" ]; do
         # looks like a flag (e.g. -m wip_-n) is not misread as a bypass.
         _skip_next=1
         ;;
-      -c*|-C*)
-        # Attached-value global (-ccore.hooksPath=… or -c'…' after quote strip).
-        # Only a -c/-C carrying hooksPath disables git hooks; scope the check to
-        # this token (case-insensitive — git config keys are case-insensitive)
-        # so a plain message word never trips it.
+      -c*)
+        # Attached-value config global (-ccore.hooksPath=… or -c'…' after quote
+        # strip). ONLY -c sets config; a -c carrying hooksPath disables git hooks.
+        # Scope the check to this token (case-insensitive — git config keys are
+        # case-insensitive) so a plain message word never trips it. -C is git's
+        # change-directory flag, NOT config, so it is handled as a value-skip
+        # above and a no-op below — a legit `git -C /home/hooksPath/repo commit`
+        # must NOT be blocked.
         case "$tok" in
           *[hH][oO][oO][kK][sS][pP][aA][tT][hH]*) BYPASS=1; break ;;
         esac
+        ;;
+      -C*)
+        : # attached -C<dir> change-directory flag; not config, nothing to skip
         ;;
       -m*|--message=*|-F*|--file=*)
         : # attached-value form; value is part of this token, nothing to skip
@@ -368,7 +438,7 @@ while IFS= read -r rawseg || [ -n "$rawseg" ]; do
   [ -n "$rawseg" ] || continue
 
   first_command_word "$rawseg"
-  [ "$_FCW" = "git" ] || continue
+  [ "$FCW" = "git" ] || continue
 
   # Collect the global-flag region (tokens after `git`, up to and excluding the
   # first non-global token = the subcommand). A -c/-C global there (separate- or
@@ -381,8 +451,11 @@ while IFS= read -r rawseg || [ -n "$rawseg" ]; do
   _raw_region=""
   for tok in $rawseg; do
     if [ "$_raw_past_git" -eq 0 ]; then
+      # Skip env-assignments (X=mygit); match the git word by basename exactly so
+      # /usr/bin/git classifies while mygit/legit/an assignment value do not.
       case "$tok" in
-        *git) _raw_past_git=1 ;;
+        *=*) : ;;
+        *) case "${tok##*/}" in git) _raw_past_git=1 ;; esac ;;
       esac
       continue
     fi
@@ -421,11 +494,15 @@ while IFS= read -r rawseg || [ -n "$rawseg" ]; do
   # Only a genuine `git commit` segment is in scope.
   [ "$_raw_sub" = "commit" ] || continue
 
-  # A -c/-C global in the region carrying hooksPath (case-insensitive) is the
-  # bypass. The region only ever contains global flags and their values, so a
-  # commit message word can never reach here.
+  # A -c config global in the region carrying hooksPath (case-insensitive) is the
+  # bypass. ONLY -c sets config; -C is git's change-directory flag, so it is NOT
+  # matched here — a legit `git -C /home/hooksPath/repo commit` must pass even
+  # though its dir mentions hooksPath. -C is still value-skipped above so its
+  # directory argument is not read as the subcommand. The region only ever
+  # contains global flags and their values, so a commit message word can never
+  # reach here.
   case "$_raw_region" in
-    *-c*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*|*-C*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*)
+    *-c*[hH][oO][oO][kK][sS][pP][aA][tT][hH]*)
       BYPASS=1
       ;;
   esac
