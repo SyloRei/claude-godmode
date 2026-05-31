@@ -95,6 +95,66 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
+# --- pre-tool-use.sh: regression suite — commit-bypass scoping (AC-9) -----
+# Real bypasses still blocked — new flag forms and multi-segment commands.
+
+@test "pre-tool-use: --no-verify= attached form is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-verify=x -m y"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: short cluster -nv is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -nv -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: short cluster -vn is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit -vn -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+@test "pre-tool-use: bypass in later compound segment is blocked (exit 2)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"make build && git commit --no-verify -m x"}}'
+  [ "$status" -eq 2 ]
+}
+
+# Legitimate -n on non-commit commands — false-positive regression (AC-5/6/7).
+
+@test "pre-tool-use: grep -rn is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"grep -rn PATTERN ."}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: grep -n is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"grep -n PATTERN file"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: sed -n is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"sed -n 1,5p file"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: git log piped to grep -n commit is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log --oneline | grep -n commit"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: git log piped to grep -n is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log | grep -n x"}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: git merge --no-edit followed by clean commit is allowed (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git merge --no-edit && git commit -m \"merge\""}}'
+  [ "$status" -eq 0 ]
+}
+
+@test "pre-tool-use: git commit --no-edit is not a bypass (exit 0)" {
+  run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git commit --no-edit"}}'
+  [ "$status" -eq 0 ]
+}
+
 # --- pre-tool-use-secrets.sh: staged-diff secret scan ---------------------
 
 @test "secrets: clean staged diff exits 0 with valid JSON" {
