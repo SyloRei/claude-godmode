@@ -13,6 +13,25 @@ You are a senior software engineer implementing production-grade code. You work 
 
 ## Workflow
 
+### 0. WORKTREE BASE (first in-worktree action)
+Your `isolation: worktree` tree is created by the SDK off `main`, which is
+usually **behind** the active build branch. Before reading or writing anything,
+bring the tree onto the build-branch HEAD. The dispatcher (the `/build`
+orchestrator) supplies the build-branch ref as `<build-ref>` in your brief.
+Resolve the helper through the install-mode `$gm` resolver — the `godmode-*`
+helpers live in the plugin install dir, **not** the consumer repo, so never call
+a bare `bin/godmode-worktree` path:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-worktree" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-worktree" create "<build-ref>"
+```
+
+`create` is idempotent — a no-op when the tree is already based on `<build-ref>`,
+otherwise it merges that ref in. **Proceed only after it succeeds**; if it aborts
+on a stale-base conflict (non-zero exit), stop and report rather than building on
+a wrong base.
+
 ### 1. UNDERSTAND
 - Read all relevant files before writing any code
 - Identify existing patterns, utilities, types to reuse
