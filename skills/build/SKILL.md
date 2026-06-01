@@ -95,6 +95,13 @@ Run **steps within a wave concurrently**; run **waves strictly in order** — a 
 
 ## Step 3: Dispatch each step to an isolated worktree
 
+**Reap orphaned worktrees first.** Before this wave dispatches any agent, prune leaked/orphaned worktrees so a stale `.git/worktrees/<id>` admin entry can't block a fresh `git worktree add`. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows; `cleanup` is idempotent and never touches a live worktree or the main tree:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-worktree" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-worktree" cleanup
+```
+
 For each step in the current wave, dispatch the implementation to a **code-writing agent running in its own git worktree** so concurrent steps never collide on files:
 
 - **`@executor`** — for a step that maps to a discrete, spec-shaped unit of work (the default for plan-driven steps).
@@ -103,13 +110,16 @@ For each step in the current wave, dispatch the implementation to a **code-writi
 Both agents declare `isolation: worktree` in their frontmatter. **The SDK roots each agent's worktree on `main`, not on the build branch** — so each agent's **first action inside its worktree** is to run the `godmode-worktree create` helper, which merges the up-to-date build-branch HEAD into that main-based tree (the enforced base). Because waves run strictly in order (Step 2) and each wave merges back before the next begins (Step 5), the build-branch HEAD each agent merges in is up to date — every worktree in a wave converges on the same base. Spawn one agent **per step**, in parallel within the wave. Give each agent:
 
 - the step's **ID**, the **files it touches**, the **change it makes**, and the brief **AC IDs** it satisfies;
-- the instruction to, **as its first action inside its worktree**, run the `godmode-worktree create` helper with the build branch as the explicit `<build-ref>` — this merges the current build-branch HEAD into its SDK-provided (main-based) worktree so it builds on the enforced base, not a stale `main`. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows; never call a bare relative `bin/godmode-worktree` path:
+- the **build-branch HEAD ref**, captured by the orchestrator on the build branch *before* dispatch, with the instruction to, **as its first action inside its worktree**, run the `godmode-worktree create` helper with that ref as the explicit `<build-ref>` — this merges the current build-branch HEAD into the agent's SDK-provided (main-based) worktree so it builds on the enforced base, not a stale `main`. Capturing the ref is the **orchestrator side** of the create-first contract (`@executor`/`@writer` declare the create-first first action); the orchestrator resolves the ref here and hands it to each agent's brief. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows; never call a bare relative `bin/godmode-worktree` path:
 
   ```bash
-  build_branch=$(git branch --show-current)
-  [ -n "$build_branch" ] || { echo "error: HEAD is detached — cannot resolve the build branch to merge in." >&2; exit 1; }
-  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
-  "$gm/godmode-worktree" create "$build_branch"
+  # Orchestrator, on the build branch: capture the HEAD ref to hand each agent.
+  build_ref=$(git rev-parse HEAD)
+  [ -n "$build_ref" ] || { echo "error: cannot resolve the build-branch HEAD to pass to agents." >&2; exit 1; }
+  # Pass "$build_ref" into each dispatched agent's brief as its <build-ref>, with
+  # the instruction that the agent's FIRST in-worktree action is:
+  #   gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-worktree" ] && { echo "$c/bin"; break; }; done)
+  #   "$gm/godmode-worktree" create "<build-ref>"
   ```
 
 - the instruction to then, inside its own worktree: implement the step, **run the per-step quality gates** (Step 4), and on green make **exactly one atomic commit** for the step — **never `--no-verify`** (Step 5). The agent does **not** push and does **not** merge; it returns its worktree branch name and commit hash.
@@ -177,22 +187,21 @@ The agent does this with `git commit` inside its worktree. **Never `--no-verify`
 **5b — The orchestrator merges each step's branch back, sequentially.** After every step in the wave has returned (committed in its worktree, or failed), the orchestrator merges the wave's step branches **one at a time** onto the build branch, in step order:
 
 ```bash
-build_branch=$(git branch --show-current)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-worktree" ] && { echo "$c/bin"; break; }; done)
 # For each successfully-committed step branch in the wave, in order:
 for step_branch in "${WAVE_STEP_BRANCHES[@]}"; do
-  # Fast-forward when the build branch hasn't moved; otherwise a normal merge.
-  if ! git merge --ff-only "$step_branch" 2>/dev/null; then
-    if ! git merge --no-edit "$step_branch"; then
-      git merge --abort
-      echo "merge conflict on $step_branch — halting that step's subtree; reporting." >&2
-      # Record the step as failed (its descendants are skipped — see Step 6).
-      continue
-    fi
+  # The helper owns the ff-only -> no-edit -> abort+report ladder; the
+  # orchestrator just reacts to its exit code. Non-zero == conflict (the
+  # helper has already aborted, leaving a clean tree).
+  if ! "$gm/godmode-worktree" mergeback "$step_branch"; then
+    echo "merge conflict on $step_branch — halting that step's subtree; reporting." >&2
+    # Record the step as failed (its descendants are skipped — see Step 6).
+    continue
   fi
 done
 ```
 
-Because the plan makes the steps in a wave **file-disjoint**, these sequential merges are clean in the normal case — a fast-forward when the build branch hasn't advanced, a trivial merge otherwise. **On conflict**, the orchestrator aborts that single merge, **halts that step's dependency subtree** (Step 6), and reports it — other steps and waves are unaffected.
+Because the plan makes the steps in a wave **file-disjoint**, these sequential merges are clean in the normal case — `mergeback` fast-forwards when the build branch hasn't advanced and does a trivial no-edit merge otherwise. **On conflict** the helper aborts that single merge and exits non-zero; the orchestrator then **halts that step's dependency subtree** (Step 6) and reports it — other steps and waves are unaffected.
 
 **5c — Record and advance.** The orchestrator records each merged step's commit hash, marks the step done (resumability, Step 6), and only then advances to the next wave. The next wave's worktrees are still SDK-rooted on `main`, but each agent's first-action `godmode-worktree create` (Step 3) merges the **now-updated** build-branch HEAD in — so no wave ever builds on a stale base.
 
