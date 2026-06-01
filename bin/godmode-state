@@ -6,8 +6,15 @@
 # Usage:
 #   godmode-state get <key>
 #   godmode-state set <key> <value>
+#   godmode-state done add <step>
+#   godmode-state done has <step>
+#   godmode-state done list
 #
 # Keys: active_unit | status | next_command | mission_id | mission_name
+#
+# The done-set (steps completed for the active unit) is encoded INSIDE the
+# `status` value after a " | done: " marker, e.g. "building 5 | done: S1,S2".
+# This preserves the three-key state invariant — there is no fourth key.
 #
 # Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
 # no associative arrays, no GNU-only flags. In-place edits use the
@@ -21,8 +28,14 @@ STATE_FILE="${STATE_DIR}/STATE.md"
 usage() {
   echo "usage: godmode-state get <key>" >&2
   echo "       godmode-state set <key> <value>" >&2
+  echo "       godmode-state done add <step>" >&2
+  echo "       godmode-state done has <step>" >&2
+  echo "       godmode-state done list" >&2
   echo "keys:  active_unit | status | next_command | mission_id | mission_name" >&2
 }
+
+# Marker that separates the status label from the encoded done-set.
+DONE_MARKER=" | done: "
 
 # Validate that a key is one of the supported state keys.
 valid_key() {
@@ -82,6 +95,72 @@ cmd_set() {
   fi
 }
 
+# done_list_of <status> — print the comma-separated done-set encoded in a
+# status value (the portion after DONE_MARKER), or empty if no marker present.
+done_list_of() {
+  local status="$1"
+  case "$status" in
+    *"$DONE_MARKER"*)
+      # Strip everything up to and including the first marker occurrence.
+      printf '%s' "${status#*"$DONE_MARKER"}"
+      ;;
+    *) ;;
+  esac
+}
+
+# done_label_of <status> — print the label prefix that precedes DONE_MARKER,
+# or the whole status if no marker is present.
+done_label_of() {
+  local status="$1"
+  case "$status" in
+    *"$DONE_MARKER"*)
+      printf '%s' "${status%%"$DONE_MARKER"*}"
+      ;;
+    *) printf '%s' "$status" ;;
+  esac
+}
+
+# done add <step> — add <step> to the done-set inside `status` (idempotent),
+# preserving the label prefix. done has <step> — exit 0 if member, else 1.
+# done list — print the comma-separated done-set.
+cmd_done() {
+  local action="$1"
+  local status list label step
+  status="$(cmd_get status)"
+  list="$(done_list_of "$status")"
+
+  case "$action" in
+    list)
+      printf '%s\n' "$list"
+      ;;
+    has)
+      step="$2"
+      case ",${list}," in
+        *",${step},"*) exit 0 ;;
+        *) exit 1 ;;
+      esac
+      ;;
+    add)
+      step="$2"
+      # Idempotent: skip if already a member (comma-wrapped match).
+      case ",${list}," in
+        *",${step},"*) return 0 ;;
+      esac
+      if [ -z "$list" ]; then
+        list="$step"
+      else
+        list="${list},${step}"
+      fi
+      label="$(done_label_of "$status")"
+      cmd_set status "${label}${DONE_MARKER}${list}"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
 main() {
   if [ "$#" -lt 1 ]; then
     usage
@@ -109,6 +188,25 @@ main() {
         exit 1
       fi
       cmd_set "$1" "$2"
+      ;;
+    done)
+      if [ "$#" -lt 1 ]; then usage; exit 1; fi
+      local action="$1"
+      shift
+      case "$action" in
+        add|has)
+          if [ "$#" -ne 1 ]; then usage; exit 1; fi
+          cmd_done "$action" "$1"
+          ;;
+        list)
+          if [ "$#" -ne 0 ]; then usage; exit 1; fi
+          cmd_done list
+          ;;
+        *)
+          usage
+          exit 1
+          ;;
+      esac
       ;;
     *)
       usage
