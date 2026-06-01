@@ -25,6 +25,11 @@
 
 set -euo pipefail
 
+# Adjacency text, slurped once from stdin in main() and scanned by
+# direct_dependents. Declared at script scope (house style) rather than as an
+# implicit global first created inside main().
+ADJ=""
+
 usage() {
   echo "usage: godmode-skipset <failed-step>   < adjacency-on-stdin" >&2
 }
@@ -106,6 +111,11 @@ main() {
     # Iterate the current frontier line by line (bash 3.2: no arrays needed).
     while IFS= read -r cur; do
       [ -n "$cur" ] || continue
+      # Never include the failed step itself, even when a cycle (S1->S2->S1)
+      # makes it its own transitive dependent. Its direct dependents were
+      # already seeded into the initial frontier, so skipping its re-expansion
+      # loses nothing.
+      [ "$cur" = "$failed" ] && continue
       if in_set "$cur" "$skip"; then
         continue
       fi
