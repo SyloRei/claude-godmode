@@ -298,9 +298,10 @@ checkout_build() {
   git worktree remove --force .claude/worktrees/live >/dev/null 2>&1 || true
 }
 
-@test "cleanup: an extra argument exits non-zero with usage" {
+@test "cleanup: a second argument exits non-zero with usage" {
   cd "$SCRATCH" || return 1
-  run "$WT" cleanup extra-arg
+  # cleanup takes an optional single [<id|path>]; a second positional is invalid.
+  run "$WT" cleanup target-id extra-arg
   [ "$status" -ne 0 ]
   [[ "$output" == *"usage:"* ]]
 }
