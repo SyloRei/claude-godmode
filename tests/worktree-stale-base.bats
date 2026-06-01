@@ -65,7 +65,7 @@ teardown() {
   fi
 }
 
-@test "AC-3/AC-7: X is absent before create and present after (regression guard)" {
+@test "AC-3/AC-7: X is absent before create and present after (regression guard) [repro:stale-base]" {
   # The audit's observed outcome: the SDK's main-based worktree does not contain
   # the build branch's work. Asserting absence and presence in ONE body is the
   # load-bearing check — if `create` were a no-op, replaced with `touch X`, or
@@ -303,7 +303,7 @@ checkout_build() {
 
 # --- cleanup (unit 4) ----------------------------------------------------------
 
-@test "AC-4: cleanup reaps a prunable worktree, keeps live ones, is idempotent" {
+@test "AC-4: cleanup reaps a prunable worktree, keeps live ones, is idempotent [repro:cleanup-leak]" {
   cd "$SCRATCH" || return 1
   # Two further worktrees under .claude/worktrees: one we will make prunable,
   # one that stays live throughout. Each gets its own branch — `main` is already

@@ -147,7 +147,7 @@ make_repo_with_staged() {
   assert_json_or_empty
 }
 
-@test "pre-tool-use: git log piped to grep -n commit is not a bypass (exit 0)" {
+@test "pre-tool-use: git log piped to grep -n commit is not a bypass (exit 0) [repro:dash-n]" {
   # This is the ONE case that reproduces the original false positive: red against
   # the pre-segment-scoping hook, green now (see AC-9 redness map above).
   run bash "$PRE" <<<'{"tool_name":"Bash","tool_input":{"command":"git log --oneline | grep -n commit"}}'
