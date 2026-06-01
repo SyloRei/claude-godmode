@@ -233,6 +233,11 @@ checkout_build() {
   # Conflict report (on stderr) names the step branch.
   [[ "$output" == *"conflict"* ]]
   [[ "$output" == *"mb/step"* ]]
+  # AC-5: a structured "conflicted paths:" report names the conflicted file
+  # BEFORE the abort clears the unmerged index. Without it the operator has no
+  # signal as to WHICH file diverged.
+  [[ "$output" == *"conflicted paths:"* ]]
+  [[ "$output" == *"shared.txt"* ]]
   # The abort left a clean tree: no merge in progress, no conflict markers or
   # half-applied changes (staged or unstaged), build HEAD unmoved. We assert via
   # diff rather than `status --porcelain` because the scratch repo carries an
@@ -260,6 +265,40 @@ checkout_build() {
   run "$WT" mergeback no/such/branch
   [ "$status" -ne 0 ]
   [[ "$output" == *"does not resolve"* ]]
+}
+
+@test "AC-4: mergeback refuses a dirty work tree and starts no merge" {
+  checkout_build
+  # A committed, fast-forwardable step branch exists, so the ONLY thing that can
+  # stop the merge here is the dirty-tree guard itself.
+  git checkout -q -b mb/step
+  echo step-one > step.txt
+  git add step.txt
+  git commit -qm "step adds step.txt"
+
+  # Dirty the build tree by modifying a TRACKED file (base.txt is tracked from
+  # setup()). The guard scopes its check to tracked changes
+  # (--untracked-files=no), so an untracked file would NOT trip it — a tracked
+  # edit is what reproduces the real-world dirty-tree case.
+  git checkout -q mb/build
+  printf 'uncommitted edit\n' >> base.txt
+  local dirty_before
+  dirty_before="$(git status --porcelain --untracked-files=no base.txt)"
+  [ -n "$dirty_before" ]
+  local head_before
+  head_before="$(git rev-parse HEAD)"
+
+  run "$WT" mergeback mb/step
+  [ "$status" -ne 0 ]
+  # The guard's diagnostic lands on stderr (folded into $output by `run`).
+  [[ "$output" == *"working tree not clean"* ]]
+  # No merge was ever started: no MERGE_HEAD, and HEAD is unmoved.
+  run git rev-parse --verify --quiet MERGE_HEAD
+  [ "$status" -ne 0 ]
+  [ "$(git rev-parse HEAD)" = "$head_before" ]
+  # The pre-existing dirty change is exactly as it was — the guard touched
+  # nothing in the tree or index.
+  [ "$(git status --porcelain --untracked-files=no base.txt)" = "$dirty_before" ]
 }
 
 # --- cleanup (unit 4) ----------------------------------------------------------
@@ -298,9 +337,44 @@ checkout_build() {
   git worktree remove --force .claude/worktrees/live >/dev/null 2>&1 || true
 }
 
-@test "cleanup: an extra argument exits non-zero with usage" {
+@test "AC-6: cleanup <id> reaps only the named tree, leaves others, is idempotent" {
   cd "$SCRATCH" || return 1
-  run "$WT" cleanup extra-arg
+  # Two further worktrees under .claude/worktrees: one we target by id, one that
+  # must survive untouched. Each gets its own branch — `main` is already claimed
+  # by setup()'s simulated stale worktree.
+  mkdir -p .claude/worktrees
+  git worktree add -q -b wt/target .claude/worktrees/target main
+  git worktree add -q -b wt/other .claude/worktrees/other main
+
+  # Make the target prunable: remove its working dir out from under git so the
+  # targeted reap drops the stale admin entry by id.
+  rm -rf .claude/worktrees/target
+
+  run "$WT" cleanup target
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reaped"* ]]
+  # Only the named tree disappears from git's view; the other live tree remains.
+  run git worktree list --porcelain
+  [[ "$output" != *".claude/worktrees/target"* ]]
+  [[ "$output" == *".claude/worktrees/other"* ]]
+  [ -d .claude/worktrees/other ]
+
+  # Idempotent: a second targeted run on the already-reaped id is a no-op exit 0.
+  run "$WT" cleanup target
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nothing to reap"* ]]
+  # The unrelated live tree is still present after the second run.
+  run git worktree list --porcelain
+  [[ "$output" == *".claude/worktrees/other"* ]]
+
+  git worktree remove --force .claude/worktrees/other >/dev/null 2>&1 || true
+}
+
+@test "cleanup: two arguments exit non-zero with usage" {
+  cd "$SCRATCH" || return 1
+  # A single <id|path> is now valid (AC-6 targeted reap); the arg-count guard
+  # only rejects MORE than one argument.
+  run "$WT" cleanup one two
   [ "$status" -ne 0 ]
   [[ "$output" == *"usage:"* ]]
 }
