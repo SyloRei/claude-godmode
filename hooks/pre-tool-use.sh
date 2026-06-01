@@ -107,7 +107,7 @@ esac
 # Strategy (each numbered step is implemented in order below):
 #   1. Fold backslash-newline line continuations, then strip quoted strings and
 #      normalize stray control whitespace.
-#   2. Split the command into pipeline/compound segments. To handle command
+#   2. Split the command into piped/compound segments. To handle command
 #      substitutions WITHOUT chopping a flag away from its `git commit` when a
 #      substitution sits between them, classify TWO derived streams of the
 #      command (see _emit_segments): a substitution-COLLAPSED stream (each
@@ -135,7 +135,7 @@ esac
 #      pre-subcommand global-flag region for a -c carrying hooksPath
 #      (case-insensitive). Scoping to genuine commit invocations keeps non-commit
 #      commands (git -c core.hooksPath=x log/status/fetch, and a
-#      `git -c … diff | grep commit` pipeline) allowed, and scoping to the
+#      `git -c … diff | grep commit` pipe chain) allowed, and scoping to the
 #      global region keeps a commit MESSAGE that merely mentions the word
 #      hooksPath allowed.
 #   6. If no segment triggers a bypass, exit 0.
@@ -653,7 +653,7 @@ _scan_raw_git_hookspath() {
 # Pass A so a wrapper-prefixed form (`flock /tmp/x git -c core.hooksPath=… commit`)
 # is still caught. Scoping to a genuine commit invocation keeps non-commit forms
 # allowed (git -c core.hooksPath=x log/status/fetch and a `git -c … diff | grep
-# commit` pipeline); scoping to the global region keeps a commit message mentioning
+# commit` pipe chain); scoping to the global region keeps a commit message mentioning
 # hooksPath allowed (the word comes AFTER `commit`).
 # ---------------------------------------------------------------------------
 while IFS= read -r rawseg || [ -n "$rawseg" ]; do
