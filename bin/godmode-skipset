@@ -1,0 +1,136 @@
+#!/usr/bin/env bash
+# godmode-skipset — transitive descendant closure over a step-dependency graph.
+# Given a failed step and a `dependsOn` adjacency on stdin, prints every step
+# that must be skipped because it (transitively) depends on the failed step.
+#
+# Usage:
+#   godmode-skipset <failed-step>   < adjacency
+#
+# Adjacency input (stdin), one line per step:
+#   STEP: dep1, dep2     — STEP dependsOn dep1 and dep2
+#   STEP: none           — STEP has no dependencies
+#   STEP:                — same as none
+# Deps may be separated by commas and/or whitespace.
+#
+# Output: the transitive descendant closure of <failed-step> — every step that
+# transitively dependsOn it — one ID per line, sorted, de-duplicated, and NOT
+# including <failed-step> itself. A leaf failure prints nothing and exits 0.
+#
+# Pure function: no git, no PLAN.md parsing, no filesystem writes.
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. The skip set is a newline-
+# delimited string; membership is tested with comma-wrapped tokens so that
+# "S2" never matches "S20".
+
+set -euo pipefail
+
+usage() {
+  echo "usage: godmode-skipset <failed-step>   < adjacency-on-stdin" >&2
+}
+
+# Normalise an adjacency line's dependency list into a comma-wrapped token
+# string, e.g. ",S1,S3," — so membership can be tested with a substring match
+# that cannot straddle ID boundaries. Prints empty for "none"/empty dep lists.
+deps_tokens() {
+  # $1 = raw text after the first colon
+  local raw="$1"
+  # Replace commas with spaces, collapse to one token per line, drop blanks
+  # and the literal "none" sentinel, then re-join wrapped in commas.
+  local toks
+  toks=$(printf '%s\n' "$raw" \
+    | tr ',' ' ' \
+    | tr -s '[:space:]' '\n' \
+    | grep -v '^$' \
+    | grep -vx 'none' \
+    || true)
+  if [ -z "$toks" ]; then
+    printf ''
+    return 0
+  fi
+  # ,tok1,tok2,
+  printf ',%s,' "$(printf '%s' "$toks" | tr '\n' ',')"
+}
+
+# Print the IDs of every step whose dependency list contains $1 (a direct
+# dependent). Reads the adjacency from the global $ADJ string.
+direct_dependents() {
+  local target="$1"
+  local line step rest tokens
+  printf '%s\n' "$ADJ" | while IFS= read -r line; do
+    # Skip blank lines.
+    case "$line" in
+      *:*) ;;
+      *) continue ;;
+    esac
+    step="${line%%:*}"
+    rest="${line#*:}"
+    # Trim whitespace around the step id.
+    step=$(printf '%s' "$step" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    [ -n "$step" ] || continue
+    tokens=$(deps_tokens "$rest")
+    [ -n "$tokens" ] || continue
+    case "$tokens" in
+      *",${target},"*) printf '%s\n' "$step" ;;
+    esac
+  done
+}
+
+# Test whether $1 is already a member of the comma-wrapped skip set $2.
+in_set() {
+  case "$2" in
+    *",$1,"*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+main() {
+  if [ "$#" -ne 1 ] || [ -z "$1" ]; then
+    usage
+    exit 1
+  fi
+  local failed="$1"
+
+  # Slurp the whole adjacency once into a global for repeated scans.
+  ADJ=$(cat)
+
+  # Comma-wrapped membership set; starts empty (",").
+  local skip=","
+  # Worklist of newly-added steps to expand, newline-delimited.
+  local frontier
+  frontier=$(direct_dependents "$failed")
+
+  while [ -n "$frontier" ]; do
+    local next=""
+    local cur
+    # Iterate the current frontier line by line (bash 3.2: no arrays needed).
+    while IFS= read -r cur; do
+      [ -n "$cur" ] || continue
+      if in_set "$cur" "$skip"; then
+        continue
+      fi
+      skip="${skip}${cur},"
+      # Queue this step's own dependents for the next pass.
+      local deps
+      deps=$(direct_dependents "$cur")
+      if [ -n "$deps" ]; then
+        next="${next}${deps}
+"
+      fi
+    done <<EOF
+$frontier
+EOF
+    frontier="$next"
+  done
+
+  # Emit the closure: strip the wrapping commas, one ID per line, sorted/uniq.
+  if [ "$skip" = "," ]; then
+    return 0
+  fi
+  printf '%s' "$skip" \
+    | tr ',' '\n' \
+    | grep -v '^$' \
+    | sort -u
+}
+
+main "$@"
