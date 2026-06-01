@@ -68,7 +68,7 @@ Do **not** silently proceed with mismatched state, and do **not** treat a differ
 **Re-entry contract.** Inspect `status` (the done-set schema is defined in Step 6):
 
 - If `status` begins with `build complete` **for this unit** (it reads `build complete | unit: $N` and `active` matched `$N`, see Step 7), there is nothing to build — report it and offer `/verify $N`.
-- If `status` contains a `done:` list for this unit, **skip** those step IDs (their commits already exist) and run only the remaining steps plus any failed subtree from the prior run.
+- If `status` contains a done-set for this unit, query it via `godmode-state done has`/`done list` (Step 6) and **skip** those step IDs (their commits already exist), running only the remaining steps plus any failed subtree from the prior run.
 - Otherwise, this is a fresh build of unit `$N` — the done-set starts empty.
 
 ---
@@ -195,13 +195,25 @@ for step_branch in "${WAVE_STEP_BRANCHES[@]}"; do
   # helper has already aborted, leaving a clean tree).
   if ! "$gm/godmode-worktree" mergeback "$step_branch"; then
     echo "merge conflict on $step_branch — halting that step's subtree; reporting." >&2
+    # Reap ONLY this failed step's worktree (targeted cleanup, $step_id its
+    # worktree id/path) so the abandoned tree doesn't leak. This is the
+    # failure-path reap — distinct from the Step 3 wave-start full sweep.
+    "$gm/godmode-worktree" cleanup "$step_id"
     # Record the step as failed (its descendants are skipped — see Step 6).
     continue
   fi
 done
 ```
 
-Because the plan makes the steps in a wave **file-disjoint**, these sequential merges are clean in the normal case — `mergeback` fast-forwards when the build branch hasn't advanced and does a trivial no-edit merge otherwise. **On conflict** the helper aborts that single merge and exits non-zero; the orchestrator then **halts that step's dependency subtree** (Step 6) and reports it — other steps and waves are unaffected.
+Because the plan makes the steps in a wave **file-disjoint**, these sequential merges are clean in the normal case — `mergeback` fast-forwards when the build branch hasn't advanced and does a trivial no-edit merge otherwise. **On conflict** the helper aborts that single merge and exits non-zero; the orchestrator then **reaps that one failed step's worktree** with `godmode-worktree cleanup <id>` (a targeted reap of just that worktree, not the Step 3 full sweep), **halts that step's dependency subtree** (Step 6), and reports it — other steps and waves are unaffected.
+
+**Reap on agent-abort too.** When a dispatched agent reports it cannot complete its step (gates won't pass, or it aborts) — not a merge conflict but a failure before any merge-back — apply the same targeted reap so the agent's abandoned worktree is cleaned up promptly rather than waiting for the next wave's Step 3 sweep:
+
+```bash
+# $step_id is the aborted step's worktree id/path.
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-worktree" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-worktree" cleanup "$step_id"
+```
 
 **5c — Record and advance.** The orchestrator records each merged step's commit hash, marks the step done (resumability, Step 6), and only then advances to the next wave. The next wave's worktrees are still SDK-rooted on `main`, but each agent's first-action `godmode-worktree create` (Step 3) merges the **now-updated** build-branch HEAD in — so no wave ever builds on a stale base.
 
@@ -211,9 +223,18 @@ Because the plan makes the steps in a wave **file-disjoint**, these sequential m
 
 A failed step (gates won't pass, or its agent reports it cannot complete) **halts only its dependency subtree** — the steps that transitively declare `dependsOn` on the failed step — **not** unrelated waves or steps:
 
-- Skip the failed step's descendants (any step that depends on it, directly or transitively, via `dependsOn`).
+- **Compute the subtree to skip with `godmode-skipset`** instead of hand-walking `dependsOn`. Feed the plan's `dependsOn` adjacency — the same `STEP: dep1, dep2` mapping the orchestrator already parses to derive waves (Step 2) — on stdin to `godmode-skipset <failed-step>`. It emits the **transitive descendant closure** (every step that depends on the failed step directly or transitively, one ID per line, sorted and de-duplicated, excluding the failed step itself). Treat those emitted IDs as the exact set to skip. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows:
+
+  ```bash
+  # $failed is the failed step ID; the adjacency is the same STEP: deps mapping
+  # used to derive waves (Step 2), one line per step ("S3: S1, S2" / "S1: none").
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-skipset" ] && { echo "$c/bin"; break; }; done)
+  skip_ids=$(printf '%s\n' "$ADJACENCY" | "$gm/godmode-skipset" "$failed")
+  # $skip_ids is the exact set of steps to skip — do NOT dispatch them.
+  ```
+
 - **Continue** running every other independent step and wave. Steps with no dependency on the failure proceed and commit normally.
-- Report which step failed, why, and which descendant steps were skipped as a result.
+- Report which step failed, why, and which descendant steps were skipped as a result (the `godmode-skipset` output).
 
 Record **partial progress** so `/build` is **resumable** — a re-run picks up where it left off rather than redoing committed steps. The state file has exactly three keys (`active_unit`, `status`, `next_command`); the done-set is encoded **into `status`** using a fixed, parseable convention so no fourth key is needed:
 
@@ -221,40 +242,30 @@ Record **partial progress** so `/build` is **resumable** — a re-run picks up w
 status = "building <N> | done: <S-id>,<S-id>,..."
 ```
 
-`building <N>` is the human-readable label; everything after ` | done: ` is the machine done-set — a comma-separated list of completed step IDs. The completion state uses `build complete` (Step 7).
+`building <N>` is the human-readable label; everything after ` | done: ` is the machine done-set — a comma-separated list of completed step IDs. The completion state uses `build complete` (Step 7). **This schema is owned by the `godmode-state` helper** — the orchestrator never parses or rebuilds the encoded list by hand; it calls the helper's `done` subcommands, which encode membership inside `status` while preserving the three-key invariant.
 
-**Append a just-merged step to the done-set** by reading the current `status`, parsing out the existing list, appending the new step, and writing it back. Never hardcode the list — always read-parse-append-write (bash 3.2, parameter expansion + `sed`):
+**Append a just-merged step to the done-set** with `godmode-state done add <step>`. The helper reads the current `status`, appends the step (idempotently — re-adding a member is a no-op), and writes it back, preserving the label prefix. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows; never hardcode or hand-parse the list:
 
 ```bash
 # $step is the step ID that just merged (e.g. "S2").
 gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
-status=$("$gm/godmode-state" get status)
-
-# Parse the existing done-set: text after " | done: ", else empty.
-case "$status" in
-  *" | done: "*) existing=${status#*" | done: "} ;;
-  *)             existing="" ;;
-esac
-
-# Append $step (no leading comma when the list was empty), then write back.
-if [ -n "$existing" ]; then
-  newlist="${existing},${step}"
-else
-  newlist="$step"
-fi
-"$gm/godmode-state" set status "building $N | done: $newlist"
+"$gm/godmode-state" done add "$step"
 ```
 
-To **test membership** when deciding whether to skip a step on re-entry, wrap both sides in commas so `S2` never matches `S20`:
+To **test membership** when deciding whether to skip a step on re-entry, use `godmode-state done has <step>` — it exits `0` when the step is already in the done-set (skip it) and `1` otherwise (run it). The helper does the comma-wrapped match so `S2` never matches `S20`:
 
 ```bash
-case ",${existing}," in
-  *",${step},"*) echo "skip $step — already done" ;;
-  *)             echo "run $step" ;;
-esac
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+if "$gm/godmode-state" done has "$step"; then
+  echo "skip $step — already done"
+else
+  echo "run $step"
+fi
 ```
 
-On a fresh `/build $N` (Step 1 re-entry contract), parse the done-set from `status` the same way, **skip** every step already listed (their commits already exist and are merged), and resume with the first wave that still has incomplete steps. A re-run after a failure retries the failed subtree without touching the steps that already committed.
+To **read the whole done-set** (e.g. to report resumable progress), use `godmode-state done list`, which prints the comma-separated set.
+
+On a fresh `/build $N` (Step 1 re-entry contract), query the done-set via `godmode-state done has`/`done list`, **skip** every step already listed (their commits already exist and are merged), and resume with the first wave that still has incomplete steps. A re-run after a failure retries the failed subtree without touching the steps that already committed.
 
 ---
 
