@@ -8,16 +8,23 @@
 #
 # Usage:
 #   godmode-worktree create <build-ref>
+#   godmode-worktree mergeback <step-branch>
+#   godmode-worktree cleanup
 #
 # Subcommands:
-#   create <build-ref>  Guarantee the current worktree contains <build-ref>.
-#                       Idempotent: a no-op (exit 0) when <build-ref> is
-#                       already an ancestor of HEAD. Otherwise merges it in
-#                       with no editor; on conflict, aborts the merge and
-#                       exits non-zero (the conflict/merge-back ladder lives
-#                       in unit 5, not here).
-#   mergeback           Stub — not yet implemented (unit 4).
-#   cleanup             Stub — not yet implemented (unit 5).
+#   create <build-ref>      Guarantee the current worktree contains <build-ref>.
+#                           Idempotent: a no-op (exit 0) when <build-ref> is
+#                           already an ancestor of HEAD. Otherwise merges it in
+#                           with no editor; on conflict, aborts the merge and
+#                           exits non-zero.
+#   mergeback <step-branch> Merge a committed step branch back into the current
+#                           build branch via the ladder: fast-forward if
+#                           possible, else a no-editor merge, else abort the
+#                           merge and exit non-zero (leaving a clean tree).
+#   cleanup                 Reap orphaned/prunable worktrees: prune stale admin
+#                           entries and remove leaked .claude/worktrees/* dirs
+#                           that are not live. Never touches a live worktree or
+#                           the main tree. Idempotent.
 #
 # Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
 # no associative arrays, no GNU-only flags. Any in-place edits would use the
@@ -27,8 +34,8 @@ set -euo pipefail
 
 usage() {
   echo "usage: godmode-worktree create <build-ref>" >&2
-  echo "       godmode-worktree mergeback   (not yet implemented, unit 4)" >&2
-  echo "       godmode-worktree cleanup     (not yet implemented, unit 5)" >&2
+  echo "       godmode-worktree mergeback <step-branch>" >&2
+  echo "       godmode-worktree cleanup" >&2
 }
 
 # create <build-ref> — ensure the current worktree is based on <build-ref>.
@@ -71,8 +78,123 @@ cmd_create() {
   # diagnostic below. Swallow that so the explicit, clearer exit 1 always wins.
   git merge --abort >/dev/null 2>&1 || true
   echo "error: stale-base merge conflict bringing '${build_ref}' into this worktree;" >&2
-  echo "       aborted the merge. The conflict/merge-back ladder is unit 5." >&2
+  echo "       aborted the merge." >&2
   exit 1
+}
+
+# Resolve a human-friendly name for the current build branch (for diagnostics).
+# A detached HEAD reports "HEAD"; fall back to the short SHA in that case.
+current_build_branch() {
+  local name
+  name="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ -z "$name" ] || [ "$name" = "HEAD" ]; then
+    git rev-parse --short HEAD 2>/dev/null || echo "HEAD"
+    return 0
+  fi
+  echo "$name"
+}
+
+# mergeback <step-branch> — bring a committed step branch into the current build
+# branch via the fast-forward -> no-edit-merge -> abort ladder.
+cmd_mergeback() {
+  if [ "$#" -ne 1 ]; then
+    usage
+    exit 1
+  fi
+  local step_branch="$1"
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  # 2. Resolve <step-branch> to a commit.
+  if ! git rev-parse --verify "${step_branch}^{commit}" >/dev/null 2>&1; then
+    echo "error: step-branch '${step_branch}' does not resolve to a commit" >&2
+    exit 1
+  fi
+
+  local build_branch
+  build_branch="$(current_build_branch)"
+
+  # 3. Prefer a fast-forward (no merge commit) when the step branch is strictly
+  #    ahead or equal. `--` keeps a dash-prefixed ref from parsing as an option.
+  if git merge --ff-only -- "$step_branch" >/dev/null 2>&1; then
+    echo "fast-forwarded to '${step_branch}'"
+    exit 0
+  fi
+
+  # 4. Diverged but mergeable: do a no-editor merge commit.
+  if GIT_MERGE_AUTOEDIT=no git merge --no-edit -- "$step_branch" >/dev/null 2>&1; then
+    echo "merged '${step_branch}' (no-edit)"
+    exit 0
+  fi
+
+  # 5. Conflict. Abort whatever merge state was left behind. Guard the abort: a
+  #    merge git refused to start has no MERGE_HEAD, and a bare abort exits 128
+  #    under `set -e` — swallow that so the explicit exit 1 below always wins.
+  git merge --abort >/dev/null 2>&1 || true
+  echo "error: merge conflict bringing '${step_branch}' into ${build_branch};" >&2
+  echo "       aborted the merge." >&2
+  exit 1
+}
+
+# cleanup — reap orphaned/prunable worktrees without touching live ones.
+cmd_cleanup() {
+  if [ "$#" -ne 0 ]; then
+    usage
+    exit 1
+  fi
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  local reaped=0
+
+  # 2. Drop stale admin entries whose working dir is already gone. The
+  #    --verbose output names each pruned entry; capture it to know whether
+  #    anything was reaped (a no-op prune prints nothing).
+  local pruned
+  pruned="$(git worktree prune --verbose 2>/dev/null || true)"
+  if [ -n "$pruned" ]; then
+    reaped=1
+  fi
+
+  # 3. Remove leaked directories under .claude/worktrees/* that git no longer
+  #    tracks as live. Derive the live set from the porcelain listing so an
+  #    active worktree (or the main tree) is never removed.
+  local top wt_root
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ] && [ -d "$top/.claude/worktrees" ]; then
+    wt_root="$top/.claude/worktrees"
+
+    # Collect live worktree paths (one per "worktree <path>" porcelain line).
+    local live_paths
+    live_paths="$(git worktree list --porcelain 2>/dev/null \
+      | sed -n 's/^worktree //p' || true)"
+
+    local dir
+    for dir in "$wt_root"/*; do
+      [ -d "$dir" ] || continue
+      # Skip if this directory is reported as a live worktree.
+      if printf '%s\n' "$live_paths" | grep -Fxq "$dir"; then
+        continue
+      fi
+      rm -rf "$dir"
+      reaped=1
+    done
+  fi
+
+  if [ "$reaped" -eq 1 ]; then
+    echo "cleanup: reaped orphaned worktree(s)"
+  else
+    echo "cleanup: nothing to reap"
+  fi
+  exit 0
 }
 
 main() {
@@ -89,12 +211,10 @@ main() {
       cmd_create "$@"
       ;;
     mergeback)
-      echo "error: 'mergeback' not yet implemented (unit 4)" >&2
-      exit 1
+      cmd_mergeback "$@"
       ;;
     cleanup)
-      echo "error: 'cleanup' not yet implemented (unit 5)" >&2
-      exit 1
+      cmd_cleanup "$@"
       ;;
     *)
       usage

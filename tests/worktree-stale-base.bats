@@ -143,11 +143,164 @@ teardown() {
   [ "$status" -ne 0 ]
 }
 
-@test "stubs: mergeback and cleanup exit non-zero (not yet implemented)" {
+# --- mergeback (unit 4) --------------------------------------------------------
+#
+# mergeback operates on the currently-checked-out build branch and brings a
+# committed step branch back via the fast-forward -> no-edit-merge -> abort
+# ladder. These tests build the build/step topology inside the scratch repo and
+# drive the helper from a checkout of the build branch.
+
+# Put the scratch repo's main checkout onto a fresh build branch (off main) and
+# cd there. The simulated stale worktree from setup() is left intact.
+checkout_build() {
+  cd "$SCRATCH" || return 1
+  git checkout -q -B mb/build main
+}
+
+@test "AC-1: mergeback fast-forwards when the step branch is strictly ahead" {
+  checkout_build
+  local build_before
+  build_before="$(git rev-parse HEAD)"
+
+  # Step branch strictly ahead of the build branch.
+  git checkout -q -b mb/step
+  echo step-one > step.txt
+  git add step.txt
+  git commit -qm "step adds step.txt"
+  local step_head
+  step_head="$(git rev-parse mb/step)"
+
+  # Back on the build branch, mergeback fast-forwards onto the step branch.
+  git checkout -q mb/build
+  run "$WT" mergeback mb/step
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"fast-forwarded"* ]]
+  # Build HEAD is now exactly the step HEAD, and the prior build HEAD is an
+  # ancestor (a true fast-forward, no merge commit).
+  [ "$(git rev-parse HEAD)" = "$step_head" ]
+  git merge-base --is-ancestor "$build_before" HEAD
+}
+
+@test "AC-2: mergeback merges a clean divergence with no editor" {
+  checkout_build
+  # Advance the build branch on its own file.
+  echo build-side > build_side.txt
+  git add build_side.txt
+  git commit -qm "build advances build_side.txt"
+
+  # Step branch diverges off the original base, touching a DIFFERENT file.
+  git checkout -q -b mb/step main
+  echo step-side > step_side.txt
+  git add step_side.txt
+  git commit -qm "step advances step_side.txt"
+  local step_head
+  step_head="$(git rev-parse mb/step)"
+
+  # mergeback makes a no-editor merge commit (GIT_MERGE_AUTOEDIT=no); if an
+  # editor were spawned the command would hang/fail rather than return 0 here.
+  git checkout -q mb/build
+  run "$WT" mergeback mb/step
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"merged"* ]]
+  [[ "$output" == *"no-edit"* ]]
+  git merge-base --is-ancestor "$step_head" HEAD
+  # Both sides' files are present in the merged tree.
+  [ -f build_side.txt ]
+  [ -f step_side.txt ]
+}
+
+@test "AC-3: mergeback conflict is aborted, leaves a clean tree, exits non-zero" {
+  checkout_build
+  # Build branch edits a line of shared.txt.
+  printf 'line\n' > shared.txt
+  git add shared.txt
+  git commit -qm "build seeds shared.txt"
+  printf 'build-version\n' > shared.txt
+  git add shared.txt
+  git commit -qm "build edits shared.txt"
+  local build_head
+  build_head="$(git rev-parse HEAD)"
+
+  # Step branch edits the SAME line off the seeded version -> genuine conflict.
+  git checkout -q -b mb/step HEAD~1
+  printf 'step-version\n' > shared.txt
+  git add shared.txt
+  git commit -qm "step edits shared.txt"
+
+  git checkout -q mb/build
+  run "$WT" mergeback mb/step
+  [ "$status" -ne 0 ]
+  # Conflict report (on stderr) names the step branch.
+  [[ "$output" == *"conflict"* ]]
+  [[ "$output" == *"mb/step"* ]]
+  # The abort left a clean tree: no merge in progress, no conflict markers or
+  # half-applied changes (staged or unstaged), build HEAD unmoved. We assert via
+  # diff rather than `status --porcelain` because the scratch repo carries an
+  # untracked sibling `worktree/` from setup() that is unrelated to the merge.
+  run git rev-parse --verify --quiet MERGE_HEAD
+  [ "$status" -ne 0 ]
+  git diff --quiet
+  git diff --cached --quiet
+  # No unresolved-conflict entries remain in the porcelain output.
+  run git status --porcelain
+  [[ "$output" != *"UU "* ]]
+  [[ "$output" != *"AA "* ]]
+  [ "$(git rev-parse HEAD)" = "$build_head" ]
+}
+
+@test "mergeback: no argument exits non-zero with usage" {
+  checkout_build
   run "$WT" mergeback
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not yet implemented"* ]]
-  run "$WT" cleanup
+  [[ "$output" == *"usage:"* ]]
+}
+
+@test "mergeback: an unresolvable step-branch exits non-zero with a clear message" {
+  checkout_build
+  run "$WT" mergeback no/such/branch
   [ "$status" -ne 0 ]
-  [[ "$output" == *"not yet implemented"* ]]
+  [[ "$output" == *"does not resolve"* ]]
+}
+
+# --- cleanup (unit 4) ----------------------------------------------------------
+
+@test "AC-4: cleanup reaps a prunable worktree, keeps live ones, is idempotent" {
+  cd "$SCRATCH" || return 1
+  # Two further worktrees under .claude/worktrees: one we will make prunable,
+  # one that stays live throughout. Each gets its own branch — `main` is already
+  # claimed by setup()'s simulated stale worktree, and git refuses to check out
+  # the same branch in two trees.
+  mkdir -p .claude/worktrees
+  git worktree add -q -b wt/gone .claude/worktrees/gone main
+  git worktree add -q -b wt/live .claude/worktrees/live main
+
+  # Make the first prunable: remove its working directory out from under git.
+  rm -rf .claude/worktrees/gone
+
+  run "$WT" cleanup
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reaped"* ]]
+  # The prunable entry is gone from git's view; the live one remains.
+  run git worktree list --porcelain
+  [[ "$output" != *".claude/worktrees/gone"* ]]
+  [[ "$output" == *".claude/worktrees/live"* ]]
+  # The live working directory still exists on disk.
+  [ -d .claude/worktrees/live ]
+
+  # Idempotent: a second run with nothing to reap still exits 0.
+  run "$WT" cleanup
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nothing to reap"* ]]
+  # Still untouched the live worktree.
+  run git worktree list --porcelain
+  [[ "$output" == *".claude/worktrees/live"* ]]
+
+  git worktree remove --force .claude/worktrees/live >/dev/null 2>&1 || true
+}
+
+@test "cleanup: an extra argument exits non-zero with usage" {
+  cd "$SCRATCH" || return 1
+  run "$WT" cleanup extra-arg
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage:"* ]]
 }
