@@ -177,6 +177,17 @@ cmd_cleanup_one() {
   # an id under .claude/worktrees/<id>.
   local top wt_dir
   top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+  # Refuse path-traversal up front: a target containing ".." could let the
+  # rm -rf branch below escape the worktrees root. This helper only ever reaps
+  # worktrees under .claude/worktrees/, so a "../" segment is never legitimate.
+  case "$target" in
+    *..*)
+      echo "error: refusing suspicious target '${target}' (contains '..')" >&2
+      return 1
+      ;;
+  esac
+
   case "$target" in
     */*) wt_dir="$target" ;;
     *)
@@ -201,15 +212,30 @@ cmd_cleanup_one() {
       echo "cleanup: reaped worktree '${target}'"
       return 0
     fi
-    echo "cleanup: nothing to reap for '${target}'"
-    return 0
+    # The remove genuinely failed (e.g. the path is the current working dir or
+    # locked) — surface it loudly rather than masking a failed reap as a no-op.
+    echo "error: failed to reap live worktree '${target}'" >&2
+    return 1
   fi
 
   # Not live. Reap this one tree's leaked directory and stale admin entry only,
-  # never another's. Remove the leaked working dir first.
+  # never another's. Before any rm -rf, require the resolved dir to live under
+  # the repo's worktrees root so a crafted path can never delete outside it.
+  if [ -z "$top" ]; then
+    echo "error: not inside a git work tree; cannot resolve worktrees root" >&2
+    return 1
+  fi
+  case "$wt_dir" in
+    "$top/.claude/worktrees/"*) ;;
+    *)
+      echo "error: refusing to reap '${target}' outside ${top}/.claude/worktrees/" >&2
+      return 1
+      ;;
+  esac
+
   local did=0
   if [ -d "$wt_dir" ]; then
-    rm -rf "$wt_dir"
+    rm -rf -- "$wt_dir"
     did=1
   fi
 
@@ -221,7 +247,7 @@ cmd_cleanup_one() {
   if [ -n "$git_common" ] && [ -n "$id" ]; then
     admin_dir="$git_common/worktrees/$id"
     if [ -d "$admin_dir" ]; then
-      rm -rf "$admin_dir"
+      rm -rf -- "$admin_dir"
       did=1
     fi
   fi
@@ -286,7 +312,7 @@ cmd_cleanup() {
       if printf '%s\n' "$live_paths" | grep -Fxq "$dir"; then
         continue
       fi
-      rm -rf "$dir"
+      rm -rf -- "$dir"
       reaped=1
     done
   fi

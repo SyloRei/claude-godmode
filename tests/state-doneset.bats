@@ -93,11 +93,34 @@ teardown() {
   [ "$status" -eq 0 ]
   [ "$output" = "1" ]
 
-  # That one status: line carries the encoded done-set.
+  # That one status: line carries the encoded done-set (match the full marker,
+  # not a bare "done:", so an accidentally-malformed marker would be caught).
   run grep '^status:' .planning/STATE.md
   [ "$status" -eq 0 ]
-  [[ "$output" == *"done:"* ]]
+  [[ "$output" == *"| done:"* ]]
   [[ "$output" == *"S1,S2,S3"* ]]
+}
+
+@test "AC-1: done add on an uninitialized status round-trips (no silent corruption)" {
+  # No prior `set status` — status is empty. `done add` must still produce a
+  # well-formed marker that survives the get/read trim, so a later `done has`
+  # finds the step. (Guards the empty-label edge that would otherwise write a
+  # leading-space " | done: ..." value whose marker is lost to whitespace trim.)
+  run "$STATE" "done" add S1
+  [ "$status" -eq 0 ]
+
+  run "$STATE" "done" has S1
+  [ "$status" -eq 0 ]
+
+  run "$STATE" "done" list
+  [ "$status" -eq 0 ]
+  [ "$output" = "S1" ]
+
+  # Still a single status: line carrying the marker — no fourth key, no breakage.
+  run grep -c '^status:' .planning/STATE.md
+  [ "$output" = "1" ]
+  run grep '^status:' .planning/STATE.md
+  [[ "$output" == *"| done:"* ]]
 }
 
 @test "AC-1: done add preserves the status label prefix" {

@@ -370,6 +370,47 @@ checkout_build() {
   git worktree remove --force .claude/worktrees/other >/dev/null 2>&1 || true
 }
 
+@test "AC-6: cleanup <id> reaps a LIVE named tree via git worktree remove, leaves others" {
+  cd "$SCRATCH" || return 1
+  # Exercise the live branch of cmd_cleanup_one (git worktree remove --force),
+  # distinct from the prunable/admin-entry path above. The target keeps its
+  # working dir (stays live) right up to the reap.
+  mkdir -p .claude/worktrees
+  git worktree add -q -b wt/livetarget .claude/worktrees/livetarget main
+  git worktree add -q -b wt/survivor .claude/worktrees/survivor main
+
+  run "$WT" cleanup livetarget
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"reaped"* ]]
+  # The named live tree is gone; the survivor remains live and on disk.
+  run git worktree list --porcelain
+  [[ "$output" != *".claude/worktrees/livetarget"* ]]
+  [[ "$output" == *".claude/worktrees/survivor"* ]]
+  [ ! -d .claude/worktrees/livetarget ]
+  [ -d .claude/worktrees/survivor ]
+
+  git worktree remove --force .claude/worktrees/survivor >/dev/null 2>&1 || true
+}
+
+@test "AC-6: cleanup refuses a path-traversal target and deletes nothing outside the worktrees root" {
+  cd "$SCRATCH" || return 1
+  # A sibling directory outside .claude/worktrees/ that a traversal arg would
+  # try to escape to. The guard must refuse and leave it untouched.
+  mkdir -p outside_canary
+  : > outside_canary/keepme
+
+  # ".." traversal is rejected up front, non-zero, with nothing removed.
+  run "$WT" cleanup ../outside_canary
+  [ "$status" -ne 0 ]
+  [ -f outside_canary/keepme ]
+
+  # An absolute path outside the worktrees root is also refused (containment
+  # check), not rm -rf'd.
+  run "$WT" cleanup "$SCRATCH/outside_canary"
+  [ "$status" -ne 0 ]
+  [ -f outside_canary/keepme ]
+}
+
 @test "cleanup: two arguments exit non-zero with usage" {
   cd "$SCRATCH" || return 1
   # A single <id|path> is now valid (AC-6 targeted reap); the arg-count guard

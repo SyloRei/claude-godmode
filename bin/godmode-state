@@ -152,6 +152,12 @@ cmd_done() {
         list="${list},${step}"
       fi
       label="$(done_label_of "$status")"
+      # An empty label would write a leading-space status (" | done: ...") whose
+      # marker is then lost to cmd_get's whitespace trim, silently breaking the
+      # done-set round-trip (done has/list would read an empty set). Default to a
+      # non-empty sentinel so the marker always survives. The spine always sets
+      # "building <N>" first; this only guards an out-of-order call.
+      [ -n "$label" ] || label="building"
       cmd_set status "${label}${DONE_MARKER}${list}"
       ;;
     *)
