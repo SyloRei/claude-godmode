@@ -48,6 +48,37 @@ if [ ! -d "${TESTS_DIR}" ]; then
   exit 1
 fi
 
+# The gate's own regression file is excluded from BOTH scan families. Its
+# AC-8 `@test` descriptions literally contain the reproduction tokens (e.g.
+# `removing [repro:stale-base] ...`) and its fixture-writer `printf` lines
+# carry the Family-2 subcommand patterns. Scanning it would let those self-
+# satisfying mentions keep the gate green even after a *real* reproduction
+# test lost its tag — defeating the anti-deletion purpose (AC-1/AC-7/AC-8).
+# Excluded by basename (not an absolute path) so it works for the real tests/
+# tree and for any fixture tests-dir passed as $1.
+GATE_BATS='worktree-coverage-gate.bats'
+
+# Collect the real .bats files to scan, omitting the gate's own regression
+# file. bash 3.2 / BSD-safe: a plain glob with the literal-pattern guard, no
+# arrays-as-args trickery. A glob that expands to nothing leaves the literal
+# pattern, which the `-e` guard drops, so SCAN_FILES stays empty.
+SCAN_FILES=()
+for f in "${TESTS_DIR}"/*.bats; do
+  [ -e "$f" ] || continue
+  [ "$(basename "$f")" = "${GATE_BATS}" ] && continue
+  SCAN_FILES+=("$f")
+done
+
+# Empty glob (no real .bats after exclusion) is a misconfiguration — a wrong
+# working dir, a renamed tests tree, or a fixture dir holding only the gate's
+# own regression file. Fail loudly (non-zero, clear stderr) rather than let
+# `2>/dev/null` swallow the empty scan into a false-negative pass. Mirrors the
+# zero-checked loud-fail discipline in scripts/check-cohesion.sh.
+if [ "${#SCAN_FILES[@]}" -eq 0 ]; then
+  echo "worktree-coverage ERROR: no real .bats files to scan in ${TESTS_DIR} (after excluding ${GATE_BATS})." >&2
+  exit 1
+fi
+
 failures=0
 checked=0
 
@@ -56,7 +87,9 @@ checked=0
 # Each token is a literal bracketed string. We require it on a `@test` line so
 # the assertion tracks the reproduction's test, not an incidental prose mention
 # in a header comment. grep -F keeps the brackets literal; we first restrict to
-# `@test` lines, then look for the token within them.
+# `@test` lines, then look for the token within them. The gate's own regression
+# file is excluded (see GATE_BATS above) so its AC-8 descriptions cannot stand
+# in for a deleted real tag.
 for token in \
   '[repro:stale-base]' \
   '[repro:merge-hazard]' \
@@ -64,7 +97,7 @@ for token in \
   '[repro:dash-n]'; do
   checked=$((checked + 1))
 
-  if grep -rhE '^@test' "${TESTS_DIR}"/*.bats 2>/dev/null \
+  if grep -hE '^@test' "${SCAN_FILES[@]}" \
     | grep -F "${token}" >/dev/null 2>&1; then
     echo "worktree-coverage: ok repro token ${token}"
   else
@@ -79,11 +112,19 @@ done
 # --- Family 2: subcommand / helper coverage (referenced by at least one test) -
 #
 # Each entry is "label::pattern". The pattern is an ERE matched across the
-# tests dir's *.bats files. Patterns mirror how the helpers actually appear in
+# real tests' *.bats files. Patterns mirror how the helpers actually appear in
 # the suite today (e.g. `"$WT" create`, `"$STATE" "done" add`,
 # `godmode-skipset`) yet stay specific enough that deleting the covering test
 # trips the gate. We anchor on the closing `WT"` quote + subcommand rather
 # than the `$WT` expansion so the pattern carries no `$` (kept literal).
+#
+# Like Family 1, we scope the match so prose, header comments, and the gate's
+# own fixture-writer text cannot self-satisfy a lock: the gate's regression
+# file is excluded from SCAN_FILES, and we additionally strip comment lines
+# (first non-blank char `#`) before matching. A subcommand is therefore only
+# "covered" when a real, executable test line — a `run "$WT" create`
+# invocation or a `SKIPSET="…/godmode-skipset"` helper binding — references it,
+# never a `# godmode-skipset reads …` doc comment.
 for entry in \
   'godmode-worktree create::WT" create' \
   'godmode-worktree mergeback::WT" mergeback' \
@@ -94,7 +135,8 @@ for entry in \
   pattern="${entry#*::}"
   checked=$((checked + 1))
 
-  if grep -rhE "${pattern}" "${TESTS_DIR}"/*.bats >/dev/null 2>&1; then
+  if grep -hvE '^[[:space:]]*#' "${SCAN_FILES[@]}" \
+    | grep -E "${pattern}" >/dev/null 2>&1; then
     echo "worktree-coverage: ok subcommand ${label}"
   else
     if [ "$failures" -eq 0 ]; then
