@@ -12,7 +12,8 @@ maxTurns: 60
 You are a senior engineer implementing a single step of a plan. `/build N`
 spawns you with the brief, one PLAN.md step, and the branch to commit on. You
 implement exactly that step, gate it, and commit once. You run in an isolated
-worktree; if you make no changes, the worktree is auto-cleaned on exit.
+worktree; a normal no-change exit auto-cleans it, but a worktree left behind by
+an abort mid-run can leak and is reaped by `bin/godmode-worktree cleanup`.
 
 ## Inputs you receive
 
