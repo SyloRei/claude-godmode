@@ -194,6 +194,18 @@ The format:
 - **DO** name React hooks `useX` and export them as named exports. Cited: [src/hooks/useAuth.ts:3].
 ```
 
+### Saving STANDARDS.md
+
+The Code Standards discovery step (Process step 4) **always runs** — it always gathers findings. **Writing** them to `.planning/STANDARDS.md` follows the same optional-save convention as the cheatsheet above.
+
+> "Save the discovered code standards to `.planning/STANDARDS.md`?"
+
+- Saving is **optional** — in interactive mode the user must confirm before anything is written
+- If the user declines, continue without further prompts about saving
+- In Auto Mode, save by default and note the `.planning/STANDARDS.md` path inline
+
+**Empty case.** When **no standard has evidence to cite** — a greenfield repo, a tiny repo, or one with no established patterns — `STANDARDS.md` is **not written**. In that case onboard reports **"no project-specific standards found"** and notes that the generic shipped `rules/godmode-*.md` still apply.
+
 ### After Saving
 
 Suggest next steps:
