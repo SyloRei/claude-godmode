@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.4.0] - 2026-06-03
+
+Mission 03 — worktree hardening. The worktree isolation that makes `/build`
+parallel-safe had failed in practice three times (stale base, hand-merged build
+branch, `-n` hook false-positive); this release moves that correctness from
+prose to mechanical enforcement, audit-first.
+
+### Added
+
+- **`bin/godmode-worktree`** — a deterministic worktree-lifecycle helper with
+  three subcommands: `create <build-ref>` (guarantees the agent's tree is based
+  on the up-to-date build-branch HEAD), `mergeback <step-branch>` (runs the
+  `--ff-only → --no-edit → --abort` merge ladder and reports conflicts), and
+  `cleanup [<id|path>]` (reaps orphaned/aborted worktrees and their admin
+  entries). `/build` and the code-writing agents call it instead of relying on
+  prose instructions.
+- **`scripts/check-worktree-coverage.sh`** — a CI gate that locks the
+  worktree-lifecycle test coverage (audit reproductions + helper subcommands) so
+  the known failures cannot silently return. Backed by `tests/worktree-*.bats`.
+
+### Changed
+
+- **`hooks/pre-tool-use.sh`** redesigned to a find-`git`-anywhere + display-verb
+  deny-list, fail-closed model: it resolves each git token's actual subcommand
+  and only scans genuine commits for a bypass, while a short display-verb
+  deny-list recovers legitimate `grep`/`sed -n`/`echo` data commands.
+- **Docs reconciled to the hardened model** — `skills/build/SKILL.md` and the
+  five `isolation: worktree` agents (`writer`, `executor`, `debugger`,
+  `migration-engineer`, `test-writer`) no longer carry the stale
+  "auto-cleaned on exit" / hand-merge claims; they describe helper-enforced
+  base-ref, merge-back, and abort-path reaping.
+
+### Fixed
+
+- The commit-bypass guard no longer over-blocks legitimate Bash commands that
+  merely contain a `-n` token or the word `commit` as an argument (e.g.
+  `grep -rn`, `sed -n`, `git merge --no-edit`, `git log --grep commit -n 5`).
+
 ## [2.3.0] - 2026-05-26
 
 v3 Phases 2 & 5: the agent roster and spine grow to cover the gaps (debugging,

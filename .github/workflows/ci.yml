@@ -94,6 +94,11 @@ jobs:
       - name: cohesion gate
         run: ./scripts/check-cohesion.sh
 
+      # worktree-lifecycle coverage gate: every audit reproduction + every
+      # godmode-worktree subcommand must stay locked by a named test.
+      - name: worktree-coverage gate
+        run: ./scripts/check-worktree-coverage.sh
+
       # AGENTS.md is a generated, committed artifact; this gate fails if the
       # tracked file drifts from what bin/godmode-agents would regenerate.
       - name: agents-drift gate
