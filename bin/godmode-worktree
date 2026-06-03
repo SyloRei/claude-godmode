@@ -1,0 +1,360 @@
+#!/usr/bin/env bash
+# godmode-worktree — keep an isolation worktree based on the build branch.
+#
+# The SDK auto-creates an `isolation: worktree` agent's tree off `main`, but
+# the active build branch is usually ahead of main. This helper, run as the
+# agent's first action from inside that tree, fast-forwards/merges the build
+# branch HEAD in so the agent builds on the up-to-date base.
+#
+# Usage:
+#   godmode-worktree create <build-ref>
+#   godmode-worktree mergeback <step-branch>
+#   godmode-worktree cleanup [<id|path>]
+#
+# Subcommands:
+#   create <build-ref>      Guarantee the current worktree contains <build-ref>.
+#                           Idempotent: a no-op (exit 0) when <build-ref> is
+#                           already an ancestor of HEAD. Otherwise merges it in
+#                           with no editor; on conflict, aborts the merge and
+#                           exits non-zero.
+#   mergeback <step-branch> Merge a committed step branch back into the current
+#                           build branch via the ladder: fast-forward if
+#                           possible, else a no-editor merge, else abort the
+#                           merge and exit non-zero (leaving a clean tree).
+#   cleanup [<id|path>]     Reap orphaned/prunable worktrees. With no argument,
+#                           sweep all: prune stale admin entries and remove
+#                           leaked .claude/worktrees/* dirs that are not live.
+#                           With an <id|path>, reap ONLY that one named worktree
+#                           and nothing else. Never touches a live worktree or
+#                           the main tree. Idempotent.
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no associative arrays, no GNU-only flags. Any in-place edits would use the
+# BSD-safe pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
+
+set -euo pipefail
+
+usage() {
+  echo "usage: godmode-worktree create <build-ref>" >&2
+  echo "       godmode-worktree mergeback <step-branch>" >&2
+  echo "       godmode-worktree cleanup [<id|path>]" >&2
+}
+
+# create <build-ref> — ensure the current worktree is based on <build-ref>.
+cmd_create() {
+  if [ "$#" -ne 1 ]; then
+    usage
+    exit 1
+  fi
+  local build_ref="$1"
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  # 2. Resolve <build-ref> to a commit.
+  if ! git rev-parse --verify "${build_ref}^{commit}" >/dev/null 2>&1; then
+    echo "error: build-ref '${build_ref}' does not resolve to a commit" >&2
+    exit 1
+  fi
+
+  # 3. Idempotent fast path: already based on <build-ref>.
+  if git merge-base --is-ancestor "$build_ref" HEAD; then
+    echo "worktree already based on '${build_ref}'; nothing to do"
+    exit 0
+  fi
+
+  # 4. Merge the build-branch HEAD in. The `--` end-of-options marker keeps a
+  #    dash-prefixed ref from being parsed as an option (defense-in-depth; the
+  #    rev-parse gate above already rejects non-commits).
+  if GIT_MERGE_AUTOEDIT=no git merge --no-edit -- "$build_ref"; then
+    echo "merged '${build_ref}' into worktree HEAD"
+    exit 0
+  fi
+
+  # Abort whatever merge state was left behind. Guard the abort: if git refused
+  # to *start* the merge (e.g. a dirty index), there is no MERGE_HEAD and a bare
+  # `git merge --abort` exits 128 under `set -e`, killing the script before the
+  # diagnostic below. Swallow that so the explicit, clearer exit 1 always wins.
+  git merge --abort >/dev/null 2>&1 || true
+  echo "error: stale-base merge conflict bringing '${build_ref}' into this worktree;" >&2
+  echo "       aborted the merge." >&2
+  exit 1
+}
+
+# Resolve a human-friendly name for the current build branch (for diagnostics).
+# A detached HEAD reports "HEAD"; fall back to the short SHA in that case.
+current_build_branch() {
+  local name
+  name="$(git rev-parse --abbrev-ref HEAD 2>/dev/null || true)"
+  if [ -z "$name" ] || [ "$name" = "HEAD" ]; then
+    git rev-parse --short HEAD 2>/dev/null || echo "HEAD"
+    return 0
+  fi
+  echo "$name"
+}
+
+# mergeback <step-branch> — bring a committed step branch into the current build
+# branch via the fast-forward -> no-edit-merge -> abort ladder.
+cmd_mergeback() {
+  if [ "$#" -ne 1 ]; then
+    usage
+    exit 1
+  fi
+  local step_branch="$1"
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  # 2. Resolve <step-branch> to a commit.
+  if ! git rev-parse --verify "${step_branch}^{commit}" >/dev/null 2>&1; then
+    echo "error: step-branch '${step_branch}' does not resolve to a commit" >&2
+    exit 1
+  fi
+
+  local build_branch
+  build_branch="$(current_build_branch)"
+
+  # 3. Refuse to merge into a dirty tree. Starting a merge with uncommitted
+  #    changes risks entangling them with the merge or leaving a half-applied
+  #    state; fail fast and touch nothing (no merge started, so no MERGE_HEAD,
+  #    and HEAD/index/worktree are left exactly as found). Scope the dirty check
+  #    to *tracked* changes (--untracked-files=no): merely untracked files (e.g.
+  #    a sibling scratch dir) do not block a merge and must not trip the guard.
+  if [ -n "$(git status --porcelain --untracked-files=no 2>/dev/null)" ]; then
+    echo "error: working tree not clean; refusing to merge" >&2
+    echo "       commit or stash your changes before mergeback." >&2
+    exit 1
+  fi
+
+  # 4. Prefer a fast-forward (no merge commit) when the step branch is strictly
+  #    ahead or equal. `--` keeps a dash-prefixed ref from parsing as an option.
+  if git merge --ff-only -- "$step_branch" >/dev/null 2>&1; then
+    echo "fast-forwarded to '${step_branch}'"
+    exit 0
+  fi
+
+  # 5. Diverged but mergeable: do a no-editor merge commit.
+  if GIT_MERGE_AUTOEDIT=no git merge --no-edit -- "$step_branch" >/dev/null 2>&1; then
+    echo "merged '${step_branch}' (no-edit)"
+    exit 0
+  fi
+
+  # 6. Conflict. Capture the conflicted paths BEFORE aborting (the abort clears
+  #    the unmerged index entries) and report them so the caller knows which
+  #    files diverged. The diff-filter=U listing is the set of unmerged paths.
+  local conflicted
+  conflicted="$(git diff --name-only --diff-filter=U 2>/dev/null || true)"
+  if [ -n "$conflicted" ]; then
+    echo "conflicted paths:" >&2
+    printf '%s\n' "$conflicted" >&2
+  fi
+
+  # Abort whatever merge state was left behind. Guard the abort: a merge git
+  # refused to start has no MERGE_HEAD, and a bare abort exits 128 under
+  # `set -e` — swallow that so the explicit exit 1 below always wins.
+  git merge --abort >/dev/null 2>&1 || true
+  echo "error: merge conflict bringing '${step_branch}' into ${build_branch};" >&2
+  echo "       aborted the merge." >&2
+  exit 1
+}
+
+# cleanup_one <id|path> — reap exactly one named worktree, touching no other.
+# The argument is either a path or a worktree id under .claude/worktrees/. If
+# the named worktree is live, remove it with `git worktree remove --force`;
+# otherwise drop its stale admin entry and rm -rf any leaked directory. A second
+# run on an already-reaped id is a no-op (exit 0). Never touches another tree.
+cmd_cleanup_one() {
+  local target="$1"
+
+  # Resolve the target to an absolute directory path. An argument containing a
+  # slash (or an existing path) is treated as a path; a bare token is treated as
+  # an id under .claude/worktrees/<id>.
+  local top wt_dir
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+
+  # Refuse path-traversal up front: a target containing ".." could let the
+  # rm -rf branch below escape the worktrees root. This helper only ever reaps
+  # worktrees under .claude/worktrees/, so a "../" segment is never legitimate.
+  case "$target" in
+    *..*)
+      echo "error: refusing suspicious target '${target}' (contains '..')" >&2
+      return 1
+      ;;
+  esac
+
+  case "$target" in
+    */*) wt_dir="$target" ;;
+    *)
+      if [ -n "$top" ]; then
+        wt_dir="$top/.claude/worktrees/$target"
+      else
+        wt_dir="$target"
+      fi
+      ;;
+  esac
+
+  # Is this path a live worktree? Match it against the porcelain listing so we
+  # only ever `git worktree remove` something git actually tracks as live.
+  local live_paths
+  live_paths="$(git worktree list --porcelain 2>/dev/null \
+    | sed -n 's/^worktree //p' || true)"
+
+  if printf '%s\n' "$live_paths" | grep -Fxq "$wt_dir"; then
+    # Live worktree: remove it (and its admin entry) cleanly. Guard against a
+    # non-zero exit under `set -e`.
+    if git worktree remove --force "$wt_dir" >/dev/null 2>&1; then
+      echo "cleanup: reaped worktree '${target}'"
+      return 0
+    fi
+    # The remove genuinely failed (e.g. the path is the current working dir or
+    # locked) — surface it loudly rather than masking a failed reap as a no-op.
+    echo "error: failed to reap live worktree '${target}'" >&2
+    return 1
+  fi
+
+  # Not live. Reap this one tree's leaked directory and stale admin entry only,
+  # never another's. Before any rm -rf, require the resolved dir to live under
+  # the repo's worktrees root so a crafted path can never delete outside it.
+  if [ -z "$top" ]; then
+    echo "error: not inside a git work tree; cannot resolve worktrees root" >&2
+    return 1
+  fi
+  case "$wt_dir" in
+    "$top/.claude/worktrees/"*) ;;
+    *)
+      echo "error: refusing to reap '${target}' outside ${top}/.claude/worktrees/" >&2
+      return 1
+      ;;
+  esac
+
+  local did=0
+  if [ -d "$wt_dir" ]; then
+    rm -rf -- "$wt_dir"
+    did=1
+  fi
+
+  # Drop only THIS tree's stale admin entry. Locating it by basename id avoids a
+  # blanket `git worktree prune`, which would also reap unrelated stale trees.
+  local git_common admin_dir id
+  git_common="$(git rev-parse --git-common-dir 2>/dev/null || true)"
+  id="${wt_dir##*/}"
+  if [ -n "$git_common" ] && [ -n "$id" ]; then
+    admin_dir="$git_common/worktrees/$id"
+    if [ -d "$admin_dir" ]; then
+      rm -rf -- "$admin_dir"
+      did=1
+    fi
+  fi
+
+  if [ "$did" -eq 1 ]; then
+    echo "cleanup: reaped worktree '${target}'"
+  else
+    echo "cleanup: nothing to reap for '${target}'"
+  fi
+  return 0
+}
+
+# cleanup [<id|path>] — reap orphaned/prunable worktrees without touching live
+# ones. With no argument, sweep every prunable/leaked worktree. With an
+# <id|path>, reap only that one named worktree and nothing else.
+cmd_cleanup() {
+  if [ "$#" -gt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  # 1. Must be inside a git work tree.
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "error: not inside a git work tree" >&2
+    exit 1
+  fi
+
+  # Targeted reap: a single named worktree, leaving all others untouched.
+  if [ "$#" -eq 1 ]; then
+    cmd_cleanup_one "$1"
+    return 0
+  fi
+
+  local reaped=0
+
+  # 2. Drop stale admin entries whose working dir is already gone. Detect a
+  #    reap by the change in the registered-worktree COUNT, not by scraping
+  #    `git worktree prune --verbose`: git writes that "Removing worktrees/X"
+  #    line to STDERR, and its routing/format varies across git versions (it
+  #    diverges between the macOS and Linux CI legs — the stdout capture there
+  #    is empty, so the reap goes undetected). The porcelain count delta is a
+  #    deterministic, version-stable signal everywhere.
+  local before_n after_n
+  before_n="$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
+  git worktree prune >/dev/null 2>&1 || true
+  after_n="$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
+  if [ "${before_n:-0}" -gt "${after_n:-0}" ]; then
+    reaped=1
+  fi
+
+  # 3. Remove leaked directories under .claude/worktrees/* that git no longer
+  #    tracks as live. Derive the live set from the porcelain listing so an
+  #    active worktree (or the main tree) is never removed.
+  local top wt_root
+  top="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+  if [ -n "$top" ] && [ -d "$top/.claude/worktrees" ]; then
+    wt_root="$top/.claude/worktrees"
+
+    # Collect live worktree paths (one per "worktree <path>" porcelain line).
+    local live_paths
+    live_paths="$(git worktree list --porcelain 2>/dev/null \
+      | sed -n 's/^worktree //p' || true)"
+
+    local dir
+    for dir in "$wt_root"/*; do
+      [ -d "$dir" ] || continue
+      # Skip if this directory is reported as a live worktree.
+      if printf '%s\n' "$live_paths" | grep -Fxq "$dir"; then
+        continue
+      fi
+      rm -rf -- "$dir"
+      reaped=1
+    done
+  fi
+
+  if [ "$reaped" -eq 1 ]; then
+    echo "cleanup: reaped orphaned worktree(s)"
+  else
+    echo "cleanup: nothing to reap"
+  fi
+  exit 0
+}
+
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    create)
+      cmd_create "$@"
+      ;;
+    mergeback)
+      cmd_mergeback "$@"
+      ;;
+    cleanup)
+      cmd_cleanup "$@"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"

@@ -1,7 +1,7 @@
 {
   "name": "claude-godmode",
   "description": "Senior engineering team in a plugin: one clear workflow (mission → brief → plan → build → verify → ship), 18 specialized agents, quality-gate enforcement, and CI. Language-agnostic.",
-  "version": "2.3.0",
+  "version": "2.4.0",
   "author": {
     "name": "sylorei",
     "email": "sylorweb@gmail.com",
