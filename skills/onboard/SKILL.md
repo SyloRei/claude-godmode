@@ -52,13 +52,20 @@ Investigate systematically, then present a structured cheatsheet. Spawn `@resear
 - Data flow patterns
 - Testing patterns and coverage
 
-### 4. How to Run and Test
+### 4. Code Standards (prescriptive — distinct from Convention Analysis)
+Where Convention Analysis above *describes* the patterns it observes, Code Standards *prescribes* the DO / DON'T rules the codebase has already established for itself. This step always runs — whether its findings end up persisted is decided later in **Saving Results**, not here.
+
+- Output is a set of **DO / DON'T** entries, and **every entry must carry a `file:line` citation** as evidence. A DON'T cites where the codebase honors the prohibition, or where a violation was found; a DO cites where the pattern is established.
+- Gather the evidence via `@researcher` (cited findings) — never explore the codebase inline, consistent with the skill's standing rule.
+- Look across these categories of concern as a recommended, non-exhaustive starter set: error handling, naming, testing, types, imports, security, structure.
+
+### 5. How to Run and Test
 Detect and report the exact commands for:
 - Typecheck, lint, test, build, format
 - How to run the project locally
 - These inform the verification done at every `/build N`
 
-### 5. Deep Dive (on user request)
+### 6. Deep Dive (on user request)
 - Trace specific flows end-to-end
 - Identify extension points
 - Map data transformations
@@ -104,6 +111,7 @@ Detect and report the exact commands for:
 | Step | Agent | Purpose |
 |------|-------|---------|
 | Detection & Architecture | MUST spawn `@researcher` (`subagent_type: claude-godmode:researcher`) | Cited, evidence-backed findings with `file:line` references |
+| Code Standards | MUST spawn `@researcher` (`subagent_type: claude-godmode:researcher`) | Cited prescriptive DO / DON'T evidence, each with a `file:line` citation |
 | Deep Dive | MUST spawn parallel `@researcher` agents when >20 source files | One `@researcher` per subsystem for concurrent deep dives |
 | Design questions | Always spawn `@architect` | Evaluate architecture patterns, suggest improvements, validate design decisions |
 | Vulnerability concerns | Always spawn `@security-auditor` | Audit security-sensitive areas discovered during orientation |
