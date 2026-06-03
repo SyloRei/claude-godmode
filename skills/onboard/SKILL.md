@@ -167,6 +167,33 @@ After presenting the cheatsheet, offer to persist it so it can inform later work
 - [Anything surprising or important]
 ```
 
+### STANDARDS.md Format
+
+The Code Standards step (Process step 4) produces a **prescriptive** artifact, distinct from the descriptive cheatsheet above. It is written to **`.planning/STANDARDS.md`**.
+
+The format:
+
+- **Grouped by concern category.** Entries sit under category headings — a recommended, non-exhaustive starter set is error handling, naming, testing, types, imports, security, structure. Add or omit categories per what the codebase actually evidences; only include a category where you have cited entries for it.
+- **Each entry marked DO or DON'T.** Lead every entry with a bold **DO** or **DON'T** marker stating the rule the codebase has established for itself.
+- **Each entry carries at least one `file:line` citation** as evidence. A DO cites where the pattern is established; a DON'T cites where the codebase honors the prohibition or where a violation was found. List multiple citations where prevalence is worth showing.
+- **Rule-mapping note (optional).** Where an entry sharpens or contradicts a shipped generic rule in `rules/godmode-*.md`, append a short note — **"supplements godmode rule X"** when it tightens the generic rule, or **"overrides godmode rule X"** when it diverges. This note is **optional: include it only where the codebase has spoken** — i.e. where a project standard actually tightens or contradicts the generic rule. Omit it for entries that simply restate a generic rule. The generic rule names are `godmode-coding`, `godmode-context`, `godmode-git`, `godmode-identity`, `godmode-quality`, `godmode-recommend`, `godmode-routing`, `godmode-testing`, and `godmode-workflow`.
+
+```markdown
+# Project Standards: [project-name]
+**Date:** [YYYY-MM-DD]
+
+## Error Handling
+- **DON'T** swallow errors with a bare catch — every caught error is logged or rethrown. Cited: [src/api/client.ts:88]. Overrides godmode rule godmode-coding.
+- **DO** wrap external calls in a typed `Result<T, E>` rather than throwing across module boundaries. Cited: [src/core/result.ts:12], [src/api/fetchUser.ts:40].
+
+## Testing
+- **DO** colocate `*.test.ts` files next to the unit under test. Cited: [src/core/result.test.ts:1].
+- **DON'T** mock the database in integration tests — they run against a real test instance. Cited: [tests/integration/db.test.ts:9]. Supplements godmode rule godmode-testing.
+
+## Naming
+- **DO** name React hooks `useX` and export them as named exports. Cited: [src/hooks/useAuth.ts:3].
+```
+
 ### After Saving
 
 Suggest next steps:
