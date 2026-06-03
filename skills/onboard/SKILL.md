@@ -75,7 +75,7 @@ Detect and report the exact commands for:
 
 ## Cheatsheet Format
 
-```
+```markdown
 ## Project: [name]
 **Stack:** [language] / [framework] / [runtime]
 **Type:** [monorepo | single package | library | application]
@@ -188,12 +188,12 @@ The format:
 **Date:** [YYYY-MM-DD]
 
 ## Error Handling
-- **DON'T** swallow errors with a bare catch — every caught error is logged or rethrown. Cited: [src/api/client.ts:88]. Overrides godmode rule godmode-coding.
+- **DON'T** swallow errors with a bare catch — every caught error is logged or rethrown. Cited: [src/api/client.ts:88] — overrides godmode rule godmode-coding.
 - **DO** wrap external calls in a typed `Result<T, E>` rather than throwing across module boundaries. Cited: [src/core/result.ts:12], [src/api/fetchUser.ts:40].
 
 ## Testing
 - **DO** colocate `*.test.ts` files next to the unit under test. Cited: [src/core/result.test.ts:1].
-- **DON'T** mock the database in integration tests — they run against a real test instance. Cited: [tests/integration/db.test.ts:9]. Supplements godmode rule godmode-testing.
+- **DON'T** mock the database in integration tests — they run against a real test instance. Cited: [tests/integration/db.test.ts:9] — supplements godmode rule godmode-testing.
 
 ## Naming
 - **DO** name React hooks `useX` and export them as named exports. Cited: [src/hooks/useAuth.ts:3].
@@ -205,7 +205,7 @@ The Code Standards discovery step (Process step 4) **always runs** — it always
 
 > "Save the discovered code standards to `.planning/STANDARDS.md`?"
 
-- Saving is **optional** — in interactive mode the user must confirm before anything is written
+- Saving is **optional** — the user must confirm before writing anything
 - If the user declines, continue without further prompts about saving
 - In Auto Mode, save by default and note the `.planning/STANDARDS.md` path inline
 
@@ -233,4 +233,4 @@ Onboarding is the orientation step at the front of the workflow spine. Its **des
 - **@architect** — hand off for design decisions based on the cheatsheet
 - **/mission** — turn the cheatsheet into a project charter and numbered roadmap
 
-**Spine:** onboard (read-only), optionally save the cheatsheet to `.planning/onboarding.md`, then start the spine at `/mission` — the cheatsheet sharpens the charter.
+**Spine:** onboard → `/mission` → `/brief N` → `/plan N` → `/build N` → `/verify N` → `/ship`. Onboard is the read-only orientation step that sharpens the charter `/mission` captures.
