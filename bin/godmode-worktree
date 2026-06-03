@@ -283,12 +283,18 @@ cmd_cleanup() {
 
   local reaped=0
 
-  # 2. Drop stale admin entries whose working dir is already gone. The
-  #    --verbose output names each pruned entry; capture it to know whether
-  #    anything was reaped (a no-op prune prints nothing).
-  local pruned
-  pruned="$(git worktree prune --verbose 2>/dev/null || true)"
-  if [ -n "$pruned" ]; then
+  # 2. Drop stale admin entries whose working dir is already gone. Detect a
+  #    reap by the change in the registered-worktree COUNT, not by scraping
+  #    `git worktree prune --verbose`: git writes that "Removing worktrees/X"
+  #    line to STDERR, and its routing/format varies across git versions (it
+  #    diverges between the macOS and Linux CI legs — the stdout capture there
+  #    is empty, so the reap goes undetected). The porcelain count delta is a
+  #    deterministic, version-stable signal everywhere.
+  local before_n after_n
+  before_n="$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
+  git worktree prune >/dev/null 2>&1 || true
+  after_n="$(git worktree list --porcelain 2>/dev/null | grep -c '^worktree ' || true)"
+  if [ "${before_n:-0}" -gt "${after_n:-0}" ]; then
     reaped=1
   fi
 
