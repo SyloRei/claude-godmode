@@ -122,7 +122,12 @@ Detect and report the exact commands for:
 
 ## Saving Results
 
-After presenting the cheatsheet, offer to persist it so it can inform later work.
+After presenting the cheatsheet, offer to persist it so it can inform later work. Onboard can produce **two distinct artifacts**, each saved independently with its own offer:
+
+- **`.planning/onboarding.md` — descriptive.** An orientation cheatsheet: what the codebase *is*, how it's laid out, and how to run and test it. It feeds `/mission`.
+- **`.planning/STANDARDS.md` — prescriptive.** The code standards the codebase has established for itself: cited **DO / DON'T** rules that supplement or override the generic shipped `rules/godmode-*.md` where the codebase has spoken.
+
+The two are written **independently** — each has its own save offer below, and one can be written without the other. The empty case is the clearest example: a greenfield repo gets an `onboarding.md` cheatsheet but **no** `STANDARDS.md`, because it has no established standards to cite.
 
 ### Offer to Save
 
@@ -216,7 +221,9 @@ Suggest next steps:
 
 ## Feeding Back Into the Workflow
 
-Onboarding is the orientation step at the front of the workflow spine. Its cheatsheet feeds `/mission`: the saved cheatsheet gives the charter its starting context — stack, architecture, how-to-run/test, technical-debt hotspots — so `/mission` asks fewer questions and lands a sharper purpose + roadmap. From there the spine continues `/brief N → /plan N → /build N → /verify N → /ship`.
+Onboarding is the orientation step at the front of the workflow spine. Its **descriptive** cheatsheet feeds `/mission`: the saved `.planning/onboarding.md` gives the charter its starting context — stack, architecture, how-to-run/test, technical-debt hotspots — so `/mission` asks fewer questions and lands a sharper purpose + roadmap. From there the spine continues `/brief N → /plan N → /build N → /verify N → /ship`.
+
+`.planning/STANDARDS.md` plays a different role. It is **prescriptive**, not orientation: the cited DO / DON'T standards it captures are written for later code-writing surfaces, where they supplement or override the generic shipped `rules/godmode-*.md` for *this* codebase. It is not consumed by `/mission` the way the cheatsheet is — it exists to carry the codebase's own conventions downstream into the work.
 
 ---
 
