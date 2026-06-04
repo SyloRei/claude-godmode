@@ -89,23 +89,25 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
 # model_profile resolver must not downgrade, and a `## Architecture` template the
 # pass feeds. The cases below pin that wiring against the real brief file so a
 # later reword cannot hollow it without failing a test. Each scopes its greps to
-# the design-pass step (the `### 5.` heading through the `### 6.` heading,
-# exclusive) so a stray match elsewhere in the file cannot mask a regression.
+# the design-pass step (the `### 5.` heading through the `### 6.` heading
+# (inclusive); none of the grep targets match that heading, so the scope is
+# effectively step 5) so a stray match elsewhere in the file cannot mask a
+# regression.
 
-# AC-7 (a): the design-pass step spawns @architect on a `yes` verdict, and spawns
+# AC-7: the design-pass step spawns @architect on a `yes` verdict, and spawns
 # nothing on `no`/absent. Pin both halves: the @architect spawn co-located with
 # the `yes` condition, AND the fail-cheap no-spawn-on-`no` statement.
 @test "brief design-pass step spawns @architect on verdict yes, nothing on no" {
   step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
   # the spawn target and the yes-verdict gate both live in this step
   echo "$step" | grep -qF '@architect'
-  echo "$step" | grep -qiE '`yes`'
+  echo "$step" | grep -qF '`yes`'
   # fail-cheap: no/absent/empty/unset verdict spawns nothing
   echo "$step" | grep -qiF 'spawn **nothing**'
   echo "$step" | grep -qiF 'Fail-cheap'
 }
 
-# AC-7 (b): the step names BOTH branches — an interactive recommendation-backed
+# AC-7: the step names BOTH branches — an interactive recommendation-backed
 # confirm (Recommended / confirm) AND Auto Mode spawning automatically.
 @test "brief design-pass step names interactive confirm and Auto Mode auto-spawn" {
   step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
@@ -115,7 +117,7 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$step" | grep -qiF 'spawn automatically'
 }
 
-# AC-7 (c): the step states the architect runs at opus and that the model_profile
+# AC-7: the step states the architect runs at opus and that the model_profile
 # / godmode-model resolver must NOT downgrade or suppress it. Pin the opus tier,
 # the resolver-bypass directive, and the "sole" cost-control / "does not
 # downgrade" wording.
@@ -127,7 +129,7 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$step" | grep -qiF 'sole'
 }
 
-# AC-7 (d): the BRIEF.md template carries a `## Architecture` heading with all
+# AC-7: the BRIEF.md template carries a `## Architecture` heading with all
 # three parts — Context, Recommended Approach, Tradeoffs. Scope to the section
 # (bounded at the next `## ` heading, exclusive) so the parts are pinned where
 # the template actually lives.
@@ -137,4 +139,23 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$section" | grep -qF '### Context'
   echo "$section" | grep -qF '### Recommended Approach'
   echo "$section" | grep -qF '### Tradeoffs'
+}
+
+# AC-6: the design-pass step forbids a sidecar artifact — the architect output is
+# distilled into BRIEF.md's `## Architecture` section ONLY, preserving the
+# one-brief-per-unit invariant. Pin the no-sidecar clause (the `ARCHITECT.md`
+# token AND the word "sidecar") so a reword cannot reintroduce a second artifact
+# without failing this test. Scoped to step 5 via the same sed range.
+@test "brief design-pass step forbids a sidecar artifact (distill into BRIEF.md only)" {
+  step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
+  echo "$step" | grep -qF 'ARCHITECT.md'
+  echo "$step" | grep -qiF 'sidecar'
+}
+
+# AC-5: the design-pass step pins the fixed Design Risk -> architect -> ACs
+# ordering, so the architect pass runs before the acceptance criteria and its
+# output can inform them. Pin the explicit ordering statement; scoped to step 5.
+@test "brief design-pass step pins the Design Risk -> architect -> ACs ordering" {
+  step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
+  echo "$step" | grep -qiF 'The ordering is fixed'
 }
