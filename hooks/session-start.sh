@@ -81,10 +81,16 @@ fi
 # Capture consumer-side project code standards from .planning/STANDARDS.md.
 # Mirrors the .planning/STATE.md pattern: a literal CWD-relative path, NOT the
 # 3-way plugin/home/repo resolver (this is the repo being worked on, not a
-# shipped artifact). Absent or empty file leaves STANDARDS="" (output unchanged).
+# shipped artifact). Absent, empty (zero-byte), or whitespace-only files all
+# leave STANDARDS="" so the output is unchanged (AC-5).
 STANDARDS=""
-if [ -f .planning/STANDARDS.md ] && [ -s .planning/STANDARDS.md ]; then
+if [ -f .planning/STANDARDS.md ]; then
   STANDARDS=$(cat .planning/STANDARDS.md 2>/dev/null || true)
+  # Treat a whitespace-only file the same as empty/absent (AC-5): -s is true for
+  # a file that has bytes even when those bytes are only spaces/newlines.
+  if [ -z "$(printf '%s' "$STANDARDS" | tr -d '[:space:]')" ]; then
+    STANDARDS=""
+  fi
 fi
 
 # Build context body (real newlines; jq -n encodes them safely below).
