@@ -20,6 +20,7 @@ load test_helper
 
 ROUTING="$PLUGIN_ROOT/rules/godmode-routing.md"
 BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
+PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
 
 # --- the Architect Gate definition (routing.md) ---------------------------
 
@@ -177,8 +178,6 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
 # effectively step 2) so a stray match elsewhere in the file cannot mask a
 # regression.
 
-PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
-
 # AC-7: the plan design-pass step spawns @architect on a `yes` verdict, and spawns
 # nothing on `no`/absent. Pin both halves: the @architect spawn co-located with
 # the `yes` condition, AND the fail-cheap no-spawn statement.
@@ -199,7 +198,13 @@ PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
   step="$(sed -n '/^### 2\. Run the architect design pass/,/^### 3\./p' "$PLAN_SKILL")"
   echo "$step" | grep -qiF 'always re-invoke'
   echo "$step" | grep -qiF 'implementation order'
+  echo "$step" | grep -qiF 'sequencing'
+  echo "$step" | grep -qiF 'risks'
   echo "$step" | grep -qF '## Architecture'
+  # AC-7(b): the brief's `## Architecture` is handed in distinctively *as context*
+  # (an input), not merely mentioned. `as context` is unique to the hands-as-context
+  # sentence, so this pins the input semantic the bare `## Architecture` grep cannot.
+  echo "$step" | grep -qiF 'as context'
 }
 
 # AC-7: the step names BOTH branches — an interactive recommendation-backed
@@ -229,7 +234,8 @@ PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
 # block (from its `# Plan NN` header onward) so the heading is pinned where the
 # template actually lives, mirroring how case 13 scopes `## Architecture`.
 @test "plan template carries a '## Design Notes' section" {
-  grep -qF '## Design Notes' "$PLAN_SKILL"
+  # Scope to the artifact template block only — an unscoped file-wide grep would
+  # pass on the prose mention in step 2 rather than the actual template heading.
   template="$(sed -n '/^# Plan NN/,$p' "$PLAN_SKILL")"
   echo "$template" | grep -qF '## Design Notes'
 }

@@ -77,11 +77,11 @@ Also read for context:
 
 This step **acts** on the Design Risk **Verdict** that `/brief` recorded into the brief's `## Design Risk` section, and it runs **before** "Order the steps" (step 3) so its output can **ground** the step ordering and `dependsOn`. The ordering is fixed: **read the verdict → architect pass on `yes` (this step) → order the steps and declare dependencies (steps 3–4)**.
 
-This is the plan-focused counterpart to `/brief`'s step 5. Where `/brief`'s pass is **spec-focused** (Context / Recommended Approach / Tradeoffs), this pass is **plan-focused**: it asks the architect for **implementation order, sequencing, and risks** — the architect's `## Implementation Order` and `## Risks & Mitigations` — so the steps you order next are grounded in a real sequencing design rather than guessed.
+This is the plan-focused counterpart to `/brief`'s **Run the architect design pass** step. Where `/brief`'s pass is **spec-focused** (Context / Recommended Approach / Tradeoffs), this pass is **plan-focused**: it asks the architect for **implementation order, sequencing, and risks** — the architect's `## Implementation Order` and `## Risks & Mitigations` — so the steps you order next are grounded in a real sequencing design rather than guessed.
 
 **Verdict-gated spawn.** Read the **Verdict** field from the brief's `## Design Risk` section (recorded by `/brief`):
 
-- **`yes`** — spawn `@architect` inline (via the Agent tool, the same way `/verify` spawns its review agents and `/brief`'s step 5 spawns its design pass).
+- **`yes`** — spawn `@architect` inline (via the Agent tool, the same way `/verify` spawns its review agents and `/brief`'s **Run the architect design pass** step spawns its design pass).
 - **`no`, absent, empty, or unset** — spawn **nothing**. This honors the gate default (`default to no`) and keeps trivial units cheap: no architect pass runs, it adds no cost, and it never blocks the plan. Fail-cheap.
 
 **Always re-invoke; plan-focused framing.** When the verdict is `yes`, this pass runs **every time** — it does **not** skip the spawn by reusing whatever the brief already recorded in its `## Architecture` section. Instead it **hands** the architect that brief `## Architecture` content (when present) **as context**, alongside the unit's **Why** / **What** and the recorded **Design Risk triggers**, and asks specifically for **implementation order, sequencing, and risks**. The brief's spec-focused architecture is an input; the output you want here is the architect's `## Implementation Order` and `## Risks & Mitigations` — deliberately distinct from the Context / Approach / Tradeoffs `/brief` distilled.
