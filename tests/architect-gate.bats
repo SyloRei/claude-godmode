@@ -80,3 +80,61 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$section" | grep -qF 'Triggers fired'
   echo "$section" | grep -qF 'Rationale'
 }
+
+# --- the architect-in-/brief wiring (unit 2, S2 — advances AC-7) -----------
+#
+# S1 wired skills/brief/SKILL.md to ACT on the Design Risk verdict: a Process
+# step that spawns @architect when the verdict is `yes` (and nothing when
+# `no`/absent), with Auto-Mode-vs-interactive-confirm behavior, an opus tier the
+# model_profile resolver must not downgrade, and a `## Architecture` template the
+# pass feeds. The cases below pin that wiring against the real brief file so a
+# later reword cannot hollow it without failing a test. Each scopes its greps to
+# the design-pass step (the `### 5.` heading through the `### 6.` heading,
+# exclusive) so a stray match elsewhere in the file cannot mask a regression.
+
+# AC-7 (a): the design-pass step spawns @architect on a `yes` verdict, and spawns
+# nothing on `no`/absent. Pin both halves: the @architect spawn co-located with
+# the `yes` condition, AND the fail-cheap no-spawn-on-`no` statement.
+@test "brief design-pass step spawns @architect on verdict yes, nothing on no" {
+  step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
+  # the spawn target and the yes-verdict gate both live in this step
+  echo "$step" | grep -qF '@architect'
+  echo "$step" | grep -qiE '`yes`'
+  # fail-cheap: no/absent/empty/unset verdict spawns nothing
+  echo "$step" | grep -qiF 'spawn **nothing**'
+  echo "$step" | grep -qiF 'Fail-cheap'
+}
+
+# AC-7 (b): the step names BOTH branches — an interactive recommendation-backed
+# confirm (Recommended / confirm) AND Auto Mode spawning automatically.
+@test "brief design-pass step names interactive confirm and Auto Mode auto-spawn" {
+  step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
+  echo "$step" | grep -qiF 'confirm'
+  echo "$step" | grep -qiF 'Recommended'
+  echo "$step" | grep -qiF 'Auto Mode'
+  echo "$step" | grep -qiF 'spawn automatically'
+}
+
+# AC-7 (c): the step states the architect runs at opus and that the model_profile
+# / godmode-model resolver must NOT downgrade or suppress it. Pin the opus tier,
+# the resolver-bypass directive, and the "sole" cost-control / "does not
+# downgrade" wording.
+@test "brief design-pass step keeps architect at opus, model_profile must not downgrade it" {
+  step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
+  echo "$step" | grep -qiF 'opus'
+  echo "$step" | grep -qF 'godmode-model'
+  echo "$step" | grep -qiF 'does not downgrade'
+  echo "$step" | grep -qiF 'sole'
+}
+
+# AC-7 (d): the BRIEF.md template carries a `## Architecture` heading with all
+# three parts — Context, Recommended Approach, Tradeoffs. Scope to the section
+# (bounded at the next `## ` heading, exclusive) so the parts are pinned where
+# the template actually lives.
+@test "brief template carries a '## Architecture' section with Context, Recommended Approach, Tradeoffs" {
+  grep -qF '## Architecture' "$BRIEF"
+  section="$(awk '/^## Architecture/{f=1;next} /^## /{f=0} f' "$BRIEF")"
+  echo "$section" | grep -qF '### Context'
+  echo "$section" | grep -qF '### Recommended Approach'
+  echo "$section" | grep -qF '### Tradeoffs'
+}
