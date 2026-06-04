@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-06-04
+
+Mission 04 (unit 1) — onboard code-standards capture. `/onboard` previously
+produced only a *descriptive* cheatsheet; the code-writing surfaces had no
+*prescriptive* guidance for the consumer's own established standards and fell
+back to the generic shipped `rules/godmode-*.md`. This release adds the
+discovery step and artifact that close that gap. (SessionStart injection that
+makes the artifact mechanically load-bearing lands in a later unit.)
+
+### Added
+
+- **`/onboard` Code Standards step** — a new, prescriptive Process step
+  (distinct from the descriptive Convention Analysis) that surfaces **DO / DON'T**
+  entries, each backed by a `file:line` citation, gathered via `@researcher`.
+- **`.planning/STANDARDS.md` artifact format** — a structured, evidence-backed
+  code-standards digest: entries grouped by concern category, marked DO/DON'T,
+  each carrying ≥1 `file:line` citation, with an optional
+  "supplements/overrides godmode rule X" mapping to the generic shipped rules.
+  Written under onboard's existing optional-save convention (confirm
+  interactively, save by default in Auto Mode); greenfield repos with no
+  evidence report "no project-specific standards found" and write nothing.
+
+### Changed
+
+- `skills/onboard/SKILL.md` now documents two distinct artifacts — descriptive
+  `.planning/onboarding.md` (orientation cheatsheet) vs. prescriptive
+  `.planning/STANDARDS.md` (code standards) — written independently.
+
 ## [2.4.0] - 2026-06-03
 
 Mission 03 — worktree hardening. The worktree isolation that makes `/build`
