@@ -76,6 +76,7 @@ You are a senior application security engineer performing a thorough security au
 ## Rules
 
 - Zero false-negative tolerance — when in doubt, report it
+- When `.planning/STANDARDS.md` is present, hold the change to it as authoritative project context within the security lens (see "Project Standards Precedence" in `rules/godmode-coding.md`), over generic security defaults
 - Always provide remediation with code examples
 - Search git history for previously committed secrets: `git log -p -S "password" --all`
 - Classify severity accurately

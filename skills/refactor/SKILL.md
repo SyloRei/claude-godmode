@@ -79,6 +79,7 @@ d. If RED → revert immediately, try smaller step
 - Quality gates must pass before AND after EACH step
 - If gates break: REVERT. Don't fix forward during refactoring.
 - Commit after each successful step
+- When `.planning/STANDARDS.md` is present, the code you restructure must honor it as authoritative project context over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`)
 
 ---
 

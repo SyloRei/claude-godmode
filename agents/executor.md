@@ -64,6 +64,7 @@ Before writing code, produce a concise plan (~10-15 lines):
 - If not, check it out (or create it from `main`).
 
 ### 4. IMPLEMENT
+- When `.planning/STANDARDS.md` is present, treat it as authoritative project context — honor it over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`).
 - Follow existing codebase patterns — detect them, don't impose your own.
 - Write clean, well-typed code. Keep functions <40 lines, files <300 lines.
 - Handle errors explicitly; never swallow them silently.

@@ -44,6 +44,7 @@ Before writing any code, briefly state:
 - Files to modify and approach in 3-5 bullets
 
 ### 3. IMPLEMENT
+- When `.planning/STANDARDS.md` is present, treat it as authoritative project context — honor it over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`).
 - Follow existing codebase patterns exactly
 - Write clean, readable, well-typed code
 - Functions <40 lines, files <300 lines

@@ -70,6 +70,8 @@ For **each** acceptance criterion, go and find the proof — goal-backward:
 
 A criterion is only COVERED if the evidence you gathered demonstrates the brief's observable result — not merely that related code exists.
 
+When `.planning/STANDARDS.md` is present, judge the change against it as authoritative project context over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`).
+
 **Model profile.** Before spawning any review/verifier agent, resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note above shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 ### 3. Fan out the review lenses
