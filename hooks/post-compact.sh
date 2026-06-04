@@ -132,10 +132,16 @@ Refer to CLAUDE.md and rules/godmode-routing.md for the full lifecycle and codin
 ${RULES}"
 
 # Inject the consumer-side .planning/STANDARDS.md (a repo artifact in the project
-# being worked on, NOT a plugin file) — read CWD-relative, only when non-empty.
+# being worked on, NOT a plugin file) — read CWD-relative. Absent, zero-byte, or
+# whitespace-only files all leave STANDARDS="" (output unchanged); a bare `[ -s ]`
+# is true for whitespace-only content, so trim and check for content (AC-5/AC-6).
 STANDARDS=""
-if [ -f .planning/STANDARDS.md ] && [ -s .planning/STANDARDS.md ]; then
+if [ -f .planning/STANDARDS.md ]; then
   STANDARDS=$(cat .planning/STANDARDS.md 2>/dev/null || true)
+  # Treat a whitespace-only file the same as empty/absent (AC-5/AC-6).
+  if [ -z "$(printf '%s' "$STANDARDS" | tr -d '[:space:]')" ]; then
+    STANDARDS=""
+  fi
 fi
 if [ -n "$STANDARDS" ]; then
   BODY="${BODY}
