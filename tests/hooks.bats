@@ -1169,10 +1169,12 @@ make_committed_repo() {
 }
 
 # write_standards_fixture <dir> — create .planning/STANDARDS.md carrying a unique
-# sentinel, a double quote, a backslash, and multiple lines (adversarial encode).
+# sentinel plus the adversarial JSON-encode pair: a double quote and a SINGLE
+# backslash, across multiple lines. printf's `\\` emits one literal backslash;
+# jq --arg must encode that as `\\` in JSON and decode back to one `\` (AC-8).
 write_standards_fixture() {
   mkdir -p "$1/.planning"
-  printf 'first standards line\nGODMODE_STD_SENTINEL_XYZ has a "quote" and a \\\\ backslash\nthird line\n' \
+  printf 'first standards line\nGODMODE_STD_SENTINEL_XYZ has a "quote" and a \\ backslash\nthird line\n' \
     > "$1/.planning/STANDARDS.md"
 }
 
@@ -1195,6 +1197,12 @@ write_standards_fixture() {
   grep -qF 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt"
   # AC-3/AC-6: the standards heading is present.
   grep -qF '# Project code standards' "$cwd/ctx.txt"
+
+  # AC-8: the adversarial special chars survive the jq encode/decode round-trip.
+  # grep -qF matches a fixed string, so the quote and backslash are literal (no
+  # regex). The fixture writes one double-quoted token and a SINGLE backslash.
+  grep -qF 'a "quote" and' "$cwd/ctx.txt"
+  grep -qF 'and a \ backslash' "$cwd/ctx.txt"
 
   # AC-2/AC-6: standards land AFTER the rules block (sentinel line > rules line).
   local rules_line std_line
@@ -1234,6 +1242,23 @@ write_standards_fixture() {
       | grep -qF '# Project code standards'
 }
 
+@test "session-start: omits the standards heading when STANDARDS.md is whitespace-only" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/ss-ws.XXXXXX")"
+  make_committed_repo "$cwd"
+  mkdir -p "$cwd/.planning"
+  # Non-zero bytes but only whitespace: -s is true, so the hook must trim+check
+  # content to treat this as empty (AC-5/AC-6).
+  printf '\n\n   \n' > "$cwd/.planning/STANDARDS.md"
+
+  ( cd "$cwd" && echo '{"hook_event_name":"SessionStart"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SESSION_START" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  # AC-5/AC-6: heading absent.
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'
+}
+
 @test "post-compact: appends non-empty STANDARDS.md after the rules block" {
   local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-present.XXXXXX")"
   # post-compact always emits (CONTEXT is seeded), so no git repo is required.
@@ -1247,6 +1272,11 @@ write_standards_fixture() {
 
   grep -qF 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt"                # AC-1/AC-6
   grep -qF '# Project code standards' "$cwd/ctx.txt"               # AC-3/AC-6
+
+  # AC-8: the adversarial double-quote and SINGLE backslash survive the jq
+  # encode/decode round-trip. grep -qF matches them literally (fixed string).
+  grep -qF 'a "quote" and' "$cwd/ctx.txt"
+  grep -qF 'and a \ backslash' "$cwd/ctx.txt"
 
   local rules_line std_line                                          # AC-2/AC-6
   rules_line="$(grep -n '# Godmode rules' "$cwd/ctx.txt" | head -1 | cut -d: -f1)"
@@ -1272,6 +1302,21 @@ write_standards_fixture() {
   local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-empty.XXXXXX")"
   mkdir -p "$cwd/.planning"
   : > "$cwd/.planning/STANDARDS.md"                                 # zero-byte file
+
+  ( cd "$cwd" && echo '{"hook_event_name":"PostCompact"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$POST_COMPACT" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'                          # AC-5/AC-6
+}
+
+@test "post-compact: omits the standards heading when STANDARDS.md is whitespace-only" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-ws.XXXXXX")"
+  mkdir -p "$cwd/.planning"
+  # Non-zero bytes but only whitespace: the hook must trim+check content, not
+  # rely on a bare -s test (AC-5/AC-6).
+  printf '\n\n   \n' > "$cwd/.planning/STANDARDS.md"
 
   ( cd "$cwd" && echo '{"hook_event_name":"PostCompact"}' \
       | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$POST_COMPACT" ) > "$cwd/out.json"
