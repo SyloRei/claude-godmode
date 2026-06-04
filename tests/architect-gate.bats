@@ -159,3 +159,77 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   step="$(sed -n '/^### 5\. Run the architect design pass/,/^### 6\./p' "$BRIEF")"
   echo "$step" | grep -qiF 'The ordering is fixed'
 }
+
+# --- the architect-in-/plan wiring (unit 3, S2 — advances AC-7) -------------
+#
+# S1 wired skills/plan/SKILL.md to ACT on the Design Risk verdict /brief
+# recorded: a plan-focused design-pass step (`### 2.`) that spawns @architect
+# when the verdict is `yes` (and nothing when `no`/absent), asks for the
+# plan-focused dimensions (implementation order / sequencing / risks) rather than
+# /brief's spec-focused Context/Approach/Tradeoffs, re-invokes every time (never
+# reuses the brief's `## Architecture` to skip the spawn), carries the
+# Auto-Mode-vs-interactive-confirm behavior, keeps the architect at opus (the
+# model_profile resolver must not downgrade it), and feeds a `## Design Notes`
+# PLAN.md template. The cases below pin that wiring against the real plan file so
+# a later reword cannot hollow it without failing a test. Each scopes its greps
+# to the design-pass step (the `### 2.` heading through the `### 3.` heading,
+# inclusive; none of the grep targets match the `### 3.` heading, so the scope is
+# effectively step 2) so a stray match elsewhere in the file cannot mask a
+# regression.
+
+PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
+
+# AC-7: the plan design-pass step spawns @architect on a `yes` verdict, and spawns
+# nothing on `no`/absent. Pin both halves: the @architect spawn co-located with
+# the `yes` condition, AND the fail-cheap no-spawn statement.
+@test "plan design-pass step spawns @architect on verdict yes, nothing on no" {
+  step="$(sed -n '/^### 2\. Run the architect design pass/,/^### 3\./p' "$PLAN_SKILL")"
+  echo "$step" | grep -qF '@architect'
+  echo "$step" | grep -qF '`yes`'
+  # fail-cheap: no/absent/empty/unset verdict spawns nothing
+  echo "$step" | grep -qiF 'spawn **nothing**'
+  echo "$step" | grep -qiF 'Fail-cheap'
+}
+
+# AC-7: the step states it always re-invokes (never reuses the brief's
+# `## Architecture` to skip the spawn) and asks for the plan-focused dimensions.
+# Pin the always-re-invoke directive, the distinctive 'implementation order'
+# framing, and that the brief's `## Architecture` is handed in as context.
+@test "plan design-pass step always re-invokes and asks for plan-focused framing" {
+  step="$(sed -n '/^### 2\. Run the architect design pass/,/^### 3\./p' "$PLAN_SKILL")"
+  echo "$step" | grep -qiF 'always re-invoke'
+  echo "$step" | grep -qiF 'implementation order'
+  echo "$step" | grep -qF '## Architecture'
+}
+
+# AC-7: the step names BOTH branches — an interactive recommendation-backed
+# confirm (Recommended / confirm) AND Auto Mode spawning automatically.
+@test "plan design-pass step names interactive confirm and Auto Mode auto-spawn" {
+  step="$(sed -n '/^### 2\. Run the architect design pass/,/^### 3\./p' "$PLAN_SKILL")"
+  echo "$step" | grep -qiF 'confirm'
+  echo "$step" | grep -qiF 'Recommended'
+  echo "$step" | grep -qiF 'Auto Mode'
+  echo "$step" | grep -qiF 'spawn automatically'
+}
+
+# AC-7: the step states the architect runs at opus and that the model_profile
+# / godmode-model resolver must NOT downgrade or suppress it. Pin the opus tier,
+# the resolver-bypass directive, and the "sole" cost-control / "does not
+# downgrade" wording.
+@test "plan design-pass step keeps architect at opus, model_profile must not downgrade it" {
+  step="$(sed -n '/^### 2\. Run the architect design pass/,/^### 3\./p' "$PLAN_SKILL")"
+  echo "$step" | grep -qiF 'opus'
+  echo "$step" | grep -qF 'godmode-model'
+  echo "$step" | grep -qiF 'does not downgrade'
+  echo "$step" | grep -qiF 'sole'
+}
+
+# AC-7: the PLAN.md template carries a `## Design Notes` heading — the section the
+# plan-focused architect output is distilled into. Scope to the artifact template
+# block (from its `# Plan NN` header onward) so the heading is pinned where the
+# template actually lives, mirroring how case 13 scopes `## Architecture`.
+@test "plan template carries a '## Design Notes' section" {
+  grep -qF '## Design Notes' "$PLAN_SKILL"
+  template="$(sed -n '/^# Plan NN/,$p' "$PLAN_SKILL")"
+  echo "$template" | grep -qF '## Design Notes'
+}
