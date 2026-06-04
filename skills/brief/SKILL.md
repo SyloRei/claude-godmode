@@ -98,7 +98,17 @@ Fill the three required sections:
 - **WHAT** — scope. An explicit **in scope** list and an explicit **out of scope** list. The out-of-scope list is what prevents drift; do not skip it.
 - **SPEC** — the acceptance criteria. Each one **verifiable** (see below). These become the bar `/verify N` checks against.
 
-### 4. Write verifiable acceptance criteria
+### 4. Evaluate the architect gate (Design Risk)
+
+Decide whether this unit warrants an architect design pass. Evaluate the unit against the gate triggers defined in `rules/godmode-routing.md` (`## Architect Gate`) — do not re-invent the criteria here. Then record the result into the `## Design Risk` section of the brief:
+
+- **Verdict** — `yes` if any trigger fires, otherwise **default to `no`**. When no trigger fires, the verdict is `no` and the gate stays off.
+- **Triggers fired** — the trigger(s) from the gate checklist that apply (or `none`).
+- **Rationale** — one line on why this verdict.
+
+`/plan` reads this signal — and, later this mission, `/brief` itself will — to decide whether an architect design pass runs. Recording the decision once here means downstream steps consume a verdict rather than re-reasoning the gate from scratch.
+
+### 5. Write verifiable acceptance criteria
 
 Every criterion must be **checkable** — a reader can run it or observe it and get an unambiguous yes/no. State the trigger and the expected observable result.
 
@@ -120,11 +130,11 @@ If a criterion can't be made verifiable, it isn't a criterion yet — turn it in
 
 Label each criterion sequentially: `AC-1`, `AC-2`, … These IDs are the stable contract `/plan N` (which references them in its steps and verification plan) and `/verify N` (which classifies each by ID) depend on. **When updating a brief, preserve existing AC IDs and append new ones — never renumber**, or you break verification evidence that already cited the old IDs.
 
-### 5. Write the brief artifact
+### 6. Write the brief artifact
 
 Create `${brief_dir}/` if needed and write `BRIEF.md` using the format below. Use Write for a first-time create; use Edit for a surgical update to an existing brief (preserve prior decisions and assumptions).
 
-### 6. Record workflow state
+### 7. Record workflow state
 
 Point the workflow at planning this unit so `/godmode` knows the next command:
 
@@ -157,6 +167,12 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 
 ### Out of scope
 - [Explicitly excluded — what this unit will NOT do.]
+
+## Design Risk
+[Architect gate — see `## Architect Gate` in rules/godmode-routing.md. Default verdict: no.]
+- **Verdict:** no            <!-- yes | no  (default: no) -->
+- **Triggers fired:** [none, or the trigger(s) from the gate checklist that apply]
+- **Rationale:** [one line: why this verdict]
 
 ## Spec — acceptance criteria
 Each criterion is verifiable (a clear trigger and observable result) and carries a stable **`AC-N`** label — these IDs are the references `/plan N` and `/verify N` use.
