@@ -83,6 +83,8 @@ Decompose the brief into small, mechanical steps — one concern each. Each step
 
 A step should be unambiguous enough that an executor needs no extra judgment.
 
+When `.planning/STANDARDS.md` is present, treat it as authoritative project context the plan's steps should respect over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`).
+
 ### 3. Declare dependencies (`dependsOn`)
 
 Every step declares `dependsOn` — the list of step IDs it requires, or `none`. Multiple prerequisites are **comma-separated** in exactly this form: `dependsOn: S1, S2` — so `/build` parses waves unambiguously. Declare a dependency only where a **real** ordering constraint exists; spurious dependencies serialize work that could run in parallel. `/build` reads `dependsOn` to group independent steps into **waves**: every step whose dependencies are already satisfied runs in the same wave.

@@ -138,6 +138,8 @@ Before a step's changes are committed, they **must pass every canonical quality 
 
 The gates are defined in **`config/quality-gates.txt`** — one gate per line. **Read that file; do not hardcode the gate list here.** It is the single source of truth. Pass the resolved gate list to each agent so every step is held to the same bar.
 
+When `.planning/STANDARDS.md` is present, the code each step produces is also held to it as authoritative project context over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`).
+
 Resolve the file across install modes exactly as `/ship` does — plugin mode exposes `${CLAUDE_PLUGIN_ROOT}`; manual mode installs it under `~/.claude/config/`; fall back to a repo-relative path when developing the plugin itself:
 
 ```bash

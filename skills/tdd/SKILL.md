@@ -53,6 +53,7 @@ Break the feature into small behaviors. For each behavior, run one Red-Green-Ref
 - Test behavior, not implementation details
 - Keep tests independent — no shared mutable state
 - Detect and use the project's existing test framework
+- When `.planning/STANDARDS.md` is present, the code you write must honor it as authoritative project context over the generic defaults where it has spoken (see "Project Standards Precedence" in `rules/godmode-coding.md`)
 
 ---
 
