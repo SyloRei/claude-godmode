@@ -1,14 +1,15 @@
 #!/usr/bin/env bats
 #
-# Architect-gate drift coverage (mission 05, unit 1 S3 — advances AC-6).
+# Architect-gate drift coverage (unit 1, S3 — advances AC-6).
 #
 # Pins the unit-1 contract so a later edit cannot silently delete or hollow it:
-#   - rules/godmode-routing.md defines the `## Architect Gate` (S1): the gate
-#     names /brief and /plan as its two readers, states the fail-cheap default
-#     (absent/empty/unset verdict -> treated as `no`), and enumerates the
-#     trigger criteria (data model/schema, API, migration, ...).
-#   - skills/brief/SKILL.md carries the `## Design Risk` signal template (S2)
-#     with its three fields (verdict, triggers fired, rationale).
+#   - rules/godmode-routing.md defines the `## Architect Gate`: the gate names
+#     /brief and /plan as its two readers, states the fail-cheap default
+#     (absent/empty/unset verdict -> treated as `no`), enumerates the trigger
+#     criteria (data model/schema, API, migration, ...), and labels its signal
+#     fields (Verdict, Triggers fired, Rationale).
+#   - skills/brief/SKILL.md carries the `## Design Risk` signal template with its
+#     three fields (Verdict, Triggers fired, Rationale).
 #
 # These are the source-of-truth definitions downstream skills consume; if a
 # reword drops a reader, the default rule, a trigger, or a field, the contract
@@ -20,12 +21,11 @@ load test_helper
 ROUTING="$PLUGIN_ROOT/rules/godmode-routing.md"
 BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
 
-# --- S1: the Architect Gate definition in routing ------------------------
+# --- the Architect Gate definition (routing.md) ---------------------------
 
 # AC-6: the literal gate heading exists — it is the anchor every reader keys on.
 @test "godmode-routing.md defines the literal '## Architect Gate' heading" {
-  run grep -F '## Architect Gate' "$ROUTING"
-  [ "$status" -eq 0 ]
+  grep -qF '## Architect Gate' "$ROUTING"
 }
 
 # AC-6: the gate names BOTH /brief and /plan as its readers. Scope the search to
@@ -38,7 +38,7 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
 }
 
 # AC-6: the gate states the fail-cheap default — an absent/empty/unset verdict is
-# treated as `no`. Anchors on the S1 prose ("default-off and fail-cheap" plus the
+# treated as `no`. Anchors on the prose ("default-off and fail-cheap" plus the
 # absent/empty/unset -> no treatment).
 @test "Architect Gate states the fail-cheap default (absent/empty/unset -> no)" {
   gate="$(sed -n '/## Architect Gate/,$p' "$ROUTING")"
@@ -46,7 +46,7 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$gate" | grep -qiE 'absent, empty, or unset'
 }
 
-# AC-6: the gate enumerates trigger criteria — representative tokens S1 wrote.
+# AC-6: the gate enumerates trigger criteria — representative tokens it wrote.
 @test "Architect Gate enumerates trigger criteria (data model/schema, API, migration)" {
   gate="$(sed -n '/## Architect Gate/,$p' "$ROUTING")"
   echo "$gate" | grep -qiE 'data model|schema'
@@ -54,20 +54,29 @@ BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
   echo "$gate" | grep -qiF 'migration'
 }
 
-# --- S2: the Design Risk signal template in the brief skill ---------------
+# AC-6: the gate's signal-format names all three canonical fields — Verdict,
+# Triggers fired, Rationale. This pins the source-of-truth labels against the
+# brief template (## Design Risk) so the two cannot drift apart.
+@test "Architect Gate signal format names all three fields (Verdict, Triggers fired, Rationale)" {
+  gate="$(sed -n '/## Architect Gate/,$p' "$ROUTING")"
+  echo "$gate" | grep -qF 'Verdict'
+  echo "$gate" | grep -qF 'Triggers fired'
+  echo "$gate" | grep -qF 'Rationale'
+}
+
+# --- the Design Risk signal (brief skill) ---------------------------------
 
 # AC-6: the brief skill carries the literal `## Design Risk` template section.
 @test "brief/SKILL.md carries the literal '## Design Risk' section" {
-  run grep -F '## Design Risk' "$BRIEF"
-  [ "$status" -eq 0 ]
+  grep -qF '## Design Risk' "$BRIEF"
 }
 
-# AC-6: the Design Risk template carries its three fields — verdict, triggers
-# fired, and rationale. Scope to the section so the fields are pinned where the
-# template actually lives.
-@test "Design Risk section carries its three fields (verdict, triggers fired, rationale)" {
-  section="$(sed -n '/## Design Risk/,/^## /p' "$BRIEF")"
-  echo "$section" | grep -qiF 'Verdict'
-  echo "$section" | grep -qiF 'Triggers fired'
-  echo "$section" | grep -qiF 'Rationale'
+# AC-6: the Design Risk template carries its three fields — Verdict, Triggers
+# fired, and Rationale. Scope to the section (hard-bounded at the next `## `
+# heading, exclusive) so the fields are pinned where the template actually lives.
+@test "Design Risk section carries its three fields (Verdict, Triggers fired, Rationale)" {
+  section="$(awk '/^## Design Risk/{f=1;next} /^## /{f=0} f' "$BRIEF")"
+  echo "$section" | grep -qF 'Verdict'
+  echo "$section" | grep -qF 'Triggers fired'
+  echo "$section" | grep -qF 'Rationale'
 }

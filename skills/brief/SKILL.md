@@ -106,7 +106,7 @@ Decide whether this unit warrants an architect design pass. Evaluate the unit ag
 - **Triggers fired** — the trigger(s) from the gate checklist that apply (or `none`).
 - **Rationale** — one line on why this verdict.
 
-`/plan` reads this signal — and, later this mission, `/brief` itself will — to decide whether an architect design pass runs. Recording the decision once here means downstream steps consume a verdict rather than re-reasoning the gate from scratch.
+`/brief` and `/plan` read this signal to decide whether an architect design pass runs. Recording the decision once here means downstream steps consume a verdict rather than re-reasoning the gate from scratch.
 
 ### 5. Write verifiable acceptance criteria
 
