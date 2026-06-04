@@ -78,6 +78,15 @@ if [ -n "$RULES_BIN" ]; then
   RULES=$("$RULES_BIN" 2>/dev/null || true)
 fi
 
+# Capture consumer-side project code standards from .planning/STANDARDS.md.
+# Mirrors the .planning/STATE.md pattern: a literal CWD-relative path, NOT the
+# 3-way plugin/home/repo resolver (this is the repo being worked on, not a
+# shipped artifact). Absent or empty file leaves STANDARDS="" (output unchanged).
+STANDARDS=""
+if [ -f .planning/STANDARDS.md ] && [ -s .planning/STANDARDS.md ]; then
+  STANDARDS=$(cat .planning/STANDARDS.md 2>/dev/null || true)
+fi
+
 # Build context body (real newlines; jq -n encodes them safely below).
 CONTEXT=""
 [ -n "$PROJECT_INFO" ] && CONTEXT="Project: ${PROJECT_INFO}"
@@ -103,6 +112,12 @@ Run /godmode to orient. See rules/godmode-routing.md for skill/agent selection."
 
 # Godmode rules
 ${RULES}"
+  fi
+  if [ -n "$STANDARDS" ]; then
+    BODY="${BODY}
+
+# Project code standards
+${STANDARDS}"
   fi
   jq -n --arg ctx "$BODY" '{
     hookSpecificOutput: {
