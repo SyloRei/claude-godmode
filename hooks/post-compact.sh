@@ -131,6 +131,19 @@ Refer to CLAUDE.md and rules/godmode-routing.md for the full lifecycle and codin
 # Godmode rules
 ${RULES}"
 
+# Inject the consumer-side .planning/STANDARDS.md (a repo artifact in the project
+# being worked on, NOT a plugin file) — read CWD-relative, only when non-empty.
+STANDARDS=""
+if [ -f .planning/STANDARDS.md ] && [ -s .planning/STANDARDS.md ]; then
+  STANDARDS=$(cat .planning/STANDARDS.md 2>/dev/null || true)
+fi
+if [ -n "$STANDARDS" ]; then
+  BODY="${BODY}
+
+# Project code standards
+${STANDARDS}"
+fi
+
 jq -n --arg ctx "$BODY" '{
   hookSpecificOutput: {
     hookEventName: "PostCompact",
