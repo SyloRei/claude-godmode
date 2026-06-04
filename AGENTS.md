@@ -129,6 +129,21 @@ Use detected tools for ALL operations. Never assume npm when pnpm exists.
 - Comments: only where logic isn't self-evident
 - DRY: extract only when pattern repeats 3+ times
 
+## Project Standards Precedence (Canonical — Single Source of Truth)
+
+This is the single source of truth for how the generic rules above relate to a
+codebase's own `.planning/STANDARDS.md`. Other surfaces only point here.
+
+- `.planning/STANDARDS.md` is authoritative project context: codebase-specific
+  conventions discovered by `/onboard` and injected by the SessionStart and
+  post-compact hooks as additional context AFTER these generic rules.
+- It supplements or overrides the generic, language-agnostic rules above
+  wherever the codebase has spoken. On a direct conflict, the project standard
+  wins.
+- When `.planning/STANDARDS.md` is absent or empty, these generic rules govern
+  unchanged — no behavior change for greenfield repos, mirroring the hooks'
+  fail-open behavior.
+
 ## Security Awareness
 
 - Validate all input at system boundaries
