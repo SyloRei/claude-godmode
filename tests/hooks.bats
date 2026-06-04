@@ -17,6 +17,7 @@ PRE="$PLUGIN_ROOT/hooks/pre-tool-use.sh"
 SECRETS="$PLUGIN_ROOT/hooks/pre-tool-use-secrets.sh"
 POST="$PLUGIN_ROOT/hooks/post-tool-use.sh"
 SESSION_START="$PLUGIN_ROOT/hooks/session-start.sh"
+POST_COMPACT="$PLUGIN_ROOT/hooks/post-compact.sh"
 
 setup() {
   make_temp_home
@@ -1130,4 +1131,152 @@ EOF
   [ "$status" -eq 0 ]
   printf '%s' "$output" | jq -r '.hookSpecificOutput.additionalContext' \
     | grep -qF 'Workflow spine:'
+}
+
+# --- session-start.sh + post-compact.sh: STANDARDS.md injection -------------
+# (AC-1, AC-2, AC-3, AC-4, AC-5, AC-6, AC-8, AC-10)
+#
+# Both hooks append a non-empty CWD-relative .planning/STANDARDS.md AFTER the
+# `# Godmode rules` block, under a `# Project code standards` heading; an absent
+# or empty file leaves the output unchanged.
+#
+# Mechanics (see the executor brief's CRITICAL notes):
+#   - The hooks read .planning/STANDARDS.md relative to CWD, so each test runs
+#     the hook from an ISOLATED temp dir under $BATS_TEST_TMPDIR (auto-cleaned),
+#     never the repo tree — no real .planning/ fixture is ever created.
+#   - CLAUDE_PLUGIN_ROOT is exported to $PLUGIN_ROOT so the hooks resolve
+#     bin/godmode-rules / skills / agents from the repo even from the temp CWD,
+#     making the `# Godmode rules` block (the ordering anchor) present.
+#   - session-start only injects when CONTEXT is non-empty, so its temp CWD is a
+#     git repo WITH a commit (an empty repo breaks `git log` -> exit 128). This
+#     mirrors the real consumer scenario and keeps the rules block present for
+#     the absent/empty cases, so the heading-absent assertion is meaningful.
+#   - Hook stdout is written DIRECTLY to a file and decoded with `jq -r` against
+#     the file — never re-echoed through a shell var, which would re-encode the
+#     UTF-8 spine arrows and raise a FALSE control-character jq parse error.
+#   - The sentinel/heading line numbers come from `grep -n` against the decoded
+#     additionalContext, so "appended AFTER rules" is a concrete ordering check.
+
+# make_committed_repo <dir> — init a git repo with one commit so session-start's
+# `git log` succeeds and CONTEXT is non-empty.
+make_committed_repo() {
+  git -C "$1" init -q
+  git -C "$1" config user.email t@example.com
+  git -C "$1" config user.name tester
+  printf 'seed\n' > "$1/seed.txt"
+  git -C "$1" add seed.txt
+  git -C "$1" commit -qm seed
+}
+
+# write_standards_fixture <dir> — create .planning/STANDARDS.md carrying a unique
+# sentinel, a double quote, a backslash, and multiple lines (adversarial encode).
+write_standards_fixture() {
+  mkdir -p "$1/.planning"
+  printf 'first standards line\nGODMODE_STD_SENTINEL_XYZ has a "quote" and a \\\\ backslash\nthird line\n' \
+    > "$1/.planning/STANDARDS.md"
+}
+
+@test "session-start: appends non-empty STANDARDS.md after the rules block" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/ss-present.XXXXXX")"
+  make_committed_repo "$cwd"
+  write_standards_fixture "$cwd"
+
+  # Pipe the hook's stdout DIRECTLY to a file (no re-echo round-trip).
+  ( cd "$cwd" && echo '{"hook_event_name":"SessionStart"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SESSION_START" ) > "$cwd/out.json"
+
+  # AC-8: raw hook output is valid JSON.
+  jq . "$cwd/out.json" > /dev/null
+
+  # Decode additionalContext from the file (not a re-echoed var).
+  jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" > "$cwd/ctx.txt"
+
+  # AC-1/AC-6: the sentinel is present.
+  grep -qF 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt"
+  # AC-3/AC-6: the standards heading is present.
+  grep -qF '# Project code standards' "$cwd/ctx.txt"
+
+  # AC-2/AC-6: standards land AFTER the rules block (sentinel line > rules line).
+  local rules_line std_line
+  rules_line="$(grep -n '# Godmode rules' "$cwd/ctx.txt" | head -1 | cut -d: -f1)"
+  std_line="$(grep -n 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt" | head -1 | cut -d: -f1)"
+  [ -n "$rules_line" ]
+  [ -n "$std_line" ]
+  [ "$std_line" -gt "$rules_line" ]
+}
+
+@test "session-start: omits the standards heading when STANDARDS.md is absent" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/ss-absent.XXXXXX")"
+  make_committed_repo "$cwd"
+  # No .planning/STANDARDS.md created.
+
+  ( cd "$cwd" && echo '{"hook_event_name":"SessionStart"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SESSION_START" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  # AC-4/AC-6: heading absent.
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'
+}
+
+@test "session-start: omits the standards heading when STANDARDS.md is empty" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/ss-empty.XXXXXX")"
+  make_committed_repo "$cwd"
+  mkdir -p "$cwd/.planning"
+  : > "$cwd/.planning/STANDARDS.md"                                 # zero-byte file
+
+  ( cd "$cwd" && echo '{"hook_event_name":"SessionStart"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$SESSION_START" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  # AC-5/AC-6: heading absent.
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'
+}
+
+@test "post-compact: appends non-empty STANDARDS.md after the rules block" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-present.XXXXXX")"
+  # post-compact always emits (CONTEXT is seeded), so no git repo is required.
+  write_standards_fixture "$cwd"
+
+  ( cd "$cwd" && echo '{"hook_event_name":"PostCompact"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$POST_COMPACT" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" > "$cwd/ctx.txt"
+
+  grep -qF 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt"                # AC-1/AC-6
+  grep -qF '# Project code standards' "$cwd/ctx.txt"               # AC-3/AC-6
+
+  local rules_line std_line                                          # AC-2/AC-6
+  rules_line="$(grep -n '# Godmode rules' "$cwd/ctx.txt" | head -1 | cut -d: -f1)"
+  std_line="$(grep -n 'GODMODE_STD_SENTINEL_XYZ' "$cwd/ctx.txt" | head -1 | cut -d: -f1)"
+  [ -n "$rules_line" ]
+  [ -n "$std_line" ]
+  [ "$std_line" -gt "$rules_line" ]
+}
+
+@test "post-compact: omits the standards heading when STANDARDS.md is absent" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-absent.XXXXXX")"
+  # No .planning/STANDARDS.md created.
+
+  ( cd "$cwd" && echo '{"hook_event_name":"PostCompact"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$POST_COMPACT" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'                          # AC-4/AC-6
+}
+
+@test "post-compact: omits the standards heading when STANDARDS.md is empty" {
+  local cwd; cwd="$(mktemp -d "$BATS_TEST_TMPDIR/pc-empty.XXXXXX")"
+  mkdir -p "$cwd/.planning"
+  : > "$cwd/.planning/STANDARDS.md"                                 # zero-byte file
+
+  ( cd "$cwd" && echo '{"hook_event_name":"PostCompact"}' \
+      | CLAUDE_PLUGIN_ROOT="$PLUGIN_ROOT" bash "$POST_COMPACT" ) > "$cwd/out.json"
+
+  jq . "$cwd/out.json" > /dev/null                                  # AC-8
+  ! jq -r '.hookSpecificOutput.additionalContext' "$cwd/out.json" \
+      | grep -qF '# Project code standards'                          # AC-5/AC-6
 }
