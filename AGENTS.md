@@ -358,7 +358,7 @@ Which agent each workflow skill spawns for its heavy lifting:
 | `/onboard` | `@researcher` (cited findings) |
 | `/triage` | `@incident-responder` (timeline reconstruction) |
 | `/profile` | `@perf-engineer` (performance analysis) |
-| `/mission` | `@architect` (roadmap shaping) |
+| `/mission` | — (roadmap shaping is the skill's own work; no agent spawned) |
 
 ## Agent Type Mapping
 
