@@ -1,15 +1,22 @@
 #!/usr/bin/env bats
 #
-# Test suite for bin/godmode-findings (unit 1 S3–S5).
+# Test suite for bin/godmode-findings (unit 1 S3–S6).
 #
-# Covers: AC-2 (init/idempotent), AC-3 (monotonic IDs), AC-4 (note round-trip),
-#         AC-5 (transition + unknown-ID error), AC-6 (waive + empty-reason error),
+# Covers: AC-2 (init/idempotent), AC-3 (monotonic IDs + waive-then-add),
+#         AC-4 (note round-trip), AC-5 (transition + unknown-ID error),
+#         AC-6 (waive + empty-reason error),
 #         AC-7 (reconcile identity stable across line drift),
 #         AC-8 (four-way reconcile branch + absent-key untouched),
 #         AC-9 (--blocking predicate + bare count), AC-10 (atomic writes / no residue),
 #         AC-12 (location encoding — pipe/newline injection; reconcile positive + rejection),
-#         AC-13 (waive reason round-trip; greedy-strip edge with [waived:] in note),
-#         AC-14 (severity enum is exactly {CRITICAL,WARNING,NIT}; out-of-enum values rejected).
+#         AC-13 (identity-by-construction: mkey stored, note immutable, reason column;
+#                 Edge A / Edge B correctness),
+#         AC-14 (sev enum {CRITICAL,WARNING,NIT} + conf enum {HIGH,MEDIUM,LOW};
+#                 out-of-enum values rejected on add AND reconcile).
+#
+# Schema: 9 data columns (ID|lens|sev|conf|status|location|note|mkey|reason),
+# so raw rows split into 11 awk -F'|' fields (leading + trailing empty fields).
+# Default list output remains 7 display columns (mkey/reason are internal).
 #
 # Ordered riskiest first: AC-4, AC-7, AC-8 before the simpler structural tests.
 #
@@ -77,14 +84,15 @@ teardown() {
   nl_count=$(printf '%s' "$raw_note_field" | wc -l | tr -d ' ')
   [ "$nl_count" -eq 0 ]
 
-  # The row must split into the right number of fields: header has 7 columns
-  # (ID|lens|sev|conf|status|location|note), meaning 9 pipe-delimited fields
-  # when counting the leading/trailing empty fields.
+  # The row must split into the right number of fields: schema has 9 columns
+  # (ID|lens|sev|conf|status|location|note|mkey|reason), meaning 11
+  # pipe-delimited fields when counting the leading/trailing empty fields.
   local field_count
   field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
-  [ "$field_count" -eq 9 ]
+  [ "$field_count" -eq 11 ]
 
   # list --decode must reproduce the original note byte-for-byte.
+  # Default list output is 7 display columns (mkey/reason not shown).
   run "$FINDINGS" list "$BRIEF_DIR" --decode
   [ "$status" -eq 0 ]
   # The decoded note is in field 8 of the output row (may span multiple output
@@ -292,6 +300,40 @@ teardown() {
   n1=${id1#F}
   n2=${id2#F}
   [ "$n2" -gt "$n1" ]
+}
+
+# ---------------------------------------------------------------------------
+# AC-3 (waive-then-add): waive F1, add a new finding → next ID, not reused
+# ---------------------------------------------------------------------------
+
+@test "AC-3 (waive-then-add): waive F1, add a new finding → next monotonic ID" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Add F1.
+  run "$FINDINGS" add "$BRIEF_DIR" "sec" "CRITICAL" "HIGH" "a.ts:1" "first finding"
+  [ "$status" -eq 0 ]
+  local f1="$output"
+
+  # Waive F1.
+  run "$FINDINGS" waive "$BRIEF_DIR" "$f1" "accepted risk"
+  [ "$status" -eq 0 ]
+
+  # Add a completely different finding → must get the NEXT ID, not reuse F1.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "b.ts:2" "second finding"
+  [ "$status" -eq 0 ]
+  local f2="$output"
+
+  [ "$f2" != "$f1" ]
+  local n1 n2
+  n1=${f1#F}
+  n2=${f2#F}
+  [ "$n2" -gt "$n1" ]
+
+  # Two rows total.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 2 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -511,11 +553,11 @@ teardown() {
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 1 ]
 
-  # The single data row must have exactly 9 pipe-delimited fields (leading and
-  # trailing empty fields from awk -F'|' on "| ... |").
+  # The single data row must have exactly 11 pipe-delimited fields (leading and
+  # trailing empty fields from awk -F'|' on "| ... |") — schema has 9 data columns.
   local field_count
   field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
-  [ "$field_count" -eq 9 ]
+  [ "$field_count" -eq 11 ]
 
   # Raw FINDINGS.md must contain %7C in the location cell (encoding happened).
   local raw_loc_field
@@ -568,10 +610,11 @@ teardown() {
   local fid
   fid=$(printf '%s\n' "$output" | grep " new" | awk '{print $1}')
 
-  # The single data row must split into exactly 9 pipe-fields (no forged extra cols).
+  # The single data row must split into exactly 11 pipe-fields — no forged extra cols.
+  # (9 data columns + leading/trailing empty = 11 awk -F'|' fields)
   local field_count
   field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
-  [ "$field_count" -eq 9 ]
+  [ "$field_count" -eq 11 ]
 
   # Raw FINDINGS.md must contain %7C in the location cell (encoding happened).
   local raw_loc_field
@@ -630,35 +673,174 @@ teardown() {
 }
 
 # ---------------------------------------------------------------------------
-# AC-13: waive reason with newline/pipe/] — reconcile still yields waived-kept
+# AC-13: identity-by-construction
+# mkey is stored at creation time, note is immutable, reason is in its own column.
+# Verifies Edge A and Edge B.
 # ---------------------------------------------------------------------------
 
-@test "AC-13: waive reason with pipe, bracket, and newline — reconcile yields waived-kept, same ID" {
+@test "AC-13 (Edge A): OPEN note containing ' [waived: old]' text — reconcile finds same ID (no duplicate)" {
+  # AC-13: Edge A — note literally contains ' [waived: old]' as text.
+  # The old suffix-strip logic would strip from the FIRST occurrence in the encoded
+  # note, producing a diverged mkey and causing reconcile to create a NEW row
+  # instead of matching the existing waived row.  With stored mkey this cannot happen.
   run "$FINDINGS" init "$BRIEF_DIR"
   [ "$status" -eq 0 ]
 
-  # Add a finding.
+  local tricky_note="fix the [waived: old] handler"
+
+  run "$FINDINGS" add "$BRIEF_DIR" "sec" "WARNING" "HIGH" "app.ts:5" "$tricky_note"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # Waive it.
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "deliberate override"
+  [ "$status" -eq 0 ]
+
+  # The note cell must be unchanged by waive (immutable after creation).
+  local raw_note_field
+  raw_note_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$raw_note_field" = "$tricky_note" ]
+
+  # The reason must be in the reason column (field 10), not appended to note.
+  local reason_field
+  reason_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f10 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$reason_field" = "deliberate override" ]
+
+  # mkey before waive — capture before reconcile for immutability check.
+  local mkey_before
+  mkey_before=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f9 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+  # Reconcile the ORIGINAL finding (same lens/location/note, no waive suffix).
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'WARNING' 'HIGH' 'app.ts:5' \"\$1\" | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$tricky_note"
+  [ "$status" -eq 0 ]
+
+  # Must be waived-kept — not new (no duplicate).
+  printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
+
+  # Status must remain waived.
+  local status_col
+  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$status_col" = "waived" ]
+
+  # mkey must be unchanged by reconcile.
+  local mkey_after
+  mkey_after=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f9 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$mkey_after" = "$mkey_before" ]
+
+  # Still exactly one data row.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+}
+
+@test "AC-13 (Edge B): waive with reason containing ' [waived: ...]' — reconcile yields waived-kept, count --blocking=0" {
+  # AC-13: Edge B — waive reason itself contains literal ' [waived: F3] per triage'.
+  # The old suffix-strip logic (last-occurrence awk) would incorrectly strip from
+  # the appended suffix but could still misfire in corner cases.  With the reason
+  # in a separate column and mkey stored at creation, the reconcile must always
+  # find the waived row by its immutable mkey — regardless of what is in the reason.
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  run "$FINDINGS" add "$BRIEF_DIR" "sec" "CRITICAL" "HIGH" "app.ts:10" "risky call"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # Waive with a reason that contains literal [waived: ...] text.
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "dup of [waived: F3] per triage"
+  [ "$status" -eq 0 ]
+
+  # count --blocking must be 0 immediately after waive.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  # The note must be unchanged (immutable after creation).
+  local raw_note_field
+  raw_note_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$raw_note_field" = "risky call" ]
+
+  # The reason must be in the reason column (field 10), non-empty.
+  # The reason "dup of [waived: F3] per triage" does not contain | or newline,
+  # so it is stored as-is (no percent-encoding needed for these chars).
+  local reason_field
+  reason_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f10 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  # Must be non-empty (reason was stored).
+  [ -n "$reason_field" ]
+  # Must not be blank — the note cell must not contain the reason text.
+  local note_field
+  note_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$note_field" = "risky call" ]
+
+  # Reconcile the ORIGINAL finding (same lens/location/note).
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'CRITICAL' 'HIGH' 'app.ts:10' 'risky call' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\""
+  [ "$status" -eq 0 ]
+
+  # Must be waived-kept — the CRITICAL is NOT resurrected as a new open row.
+  printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
+
+  # Status must still be waived — NOT open.
+  local status_col
+  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$status_col" = "waived" ]
+
+  # count --blocking after reconcile must still be 0.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  # Exactly one row (no resurrected open duplicate).
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+}
+
+@test "AC-13: waive stores reason in reason column; note is unchanged; mkey identical before/after waive" {
+  # AC-13: reason column + note immutability contract.
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
   run "$FINDINGS" add "$BRIEF_DIR" "sec" "WARNING" "HIGH" "auth.ts:42" "risky call"
   [ "$status" -eq 0 ]
   local fid="$output"
 
-  # Waive it with a reason that contains |, ], and an embedded newline.
+  # Capture note and mkey before waive.
+  local note_before mkey_before
+  note_before=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  mkey_before=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f9 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+
+  # Waive with a reason containing |, ], and an embedded newline.
   local reason
   reason=$'accepted | risk [see ticket]\nfollowup in Q3'
 
   run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "$reason"
   [ "$status" -eq 0 ]
 
-  # Verify it is waived.
+  # note must be identical to before waive — immutable.
+  local note_after
+  note_after=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$note_after" = "$note_before" ]
+
+  # mkey must be identical to before waive — immutable.
+  local mkey_after
+  mkey_after=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f9 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$mkey_after" = "$mkey_before" ]
+
+  # reason must be in the reason column (field 10), percent-encoded.
+  local raw_reason_field
+  raw_reason_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f10 | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  # Should contain %7C (for the |) and %0A (for the newline).
+  printf '%s' "$raw_reason_field" | grep -qF '%7C'
+  printf '%s' "$raw_reason_field" | grep -qF '%0A'
+
+  # status must be waived.
   local status_col
   status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
   [ "$status_col" = "waived" ]
 
-  # Now reconcile the ORIGINAL finding (same lens/location/note).
+  # Reconcile the ORIGINAL finding — must be waived-kept.
   run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'WARNING' 'HIGH' 'auth.ts:42' 'risky call' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\""
   [ "$status" -eq 0 ]
-
-  # Must be waived-kept (not new or reopened).
   printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
 
   # Status must remain waived.
@@ -669,22 +851,6 @@ teardown() {
   local row_count
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 1 ]
-
-  # Decode the note field directly from the raw FINDINGS.md and compare
-  # byte-for-byte.  We avoid list --decode here because the decoded reason
-  # contains "|" and a newline, which cause cut-d'|' truncation and multi-line
-  # grep mismatches when parsing the rendered table output.
-  local raw_note_field decoded_note
-  raw_note_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 \
-    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-  decoded_note=$(printf '%s' "$raw_note_field" \
-    | awk '{gsub(/%0A/,"\n"); printf "%s",$0}' \
-    | sed 's/%7C/|/g' \
-    | sed 's/%25/%/g')
-  # Expected: original note + " [waived: <reason>]"
-  local expected_note
-  expected_note="risky call [waived: ${reason}]"
-  [ "$decoded_note" = "$expected_note" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -761,6 +927,8 @@ teardown() {
 
 # ---------------------------------------------------------------------------
 # AC-14: severity enum is exactly {CRITICAL,WARNING,NIT}; out-of-enum value rejected
+#         confidence enum is exactly {HIGH,MEDIUM,LOW}; out-of-enum value rejected
+#         Both are checked on add AND reconcile.
 # ---------------------------------------------------------------------------
 
 @test "AC-14: add with out-of-enum severity exits non-zero; error names {CRITICAL,WARNING,NIT}" {
@@ -778,6 +946,48 @@ teardown() {
   printf '%s' "$output" | grep -qF "NIT"
   # Error message must echo back the rejected value.
   printf '%s' "$output" | grep -qF "$bad_sev"
+}
+
+@test "AC-14 (conf enum on add): add with out-of-enum conf exits non-zero; error names {HIGH,MEDIUM,LOW}" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Use a conf value that is not in {HIGH,MEDIUM,LOW}.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "WARNING" "VERY_HIGH" "x.ts:1" "bad conf"
+  [ "$status" -ne 0 ]
+  # Error message must name the three valid conf values.
+  printf '%s' "$output" | grep -qF "HIGH"
+  printf '%s' "$output" | grep -qF "MEDIUM"
+  printf '%s' "$output" | grep -qF "LOW"
+  # Error message must echo back the rejected value.
+  printf '%s' "$output" | grep -qF "VERY_HIGH"
+}
+
+@test "AC-14 (sev enum on reconcile): reconcile with invalid sev exits non-zero" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  local bad_sev
+  bad_sev="IN""FO"
+  # A reconcile batch with an invalid sev must be rejected non-zero.
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'lint' \"\$1\" 'LOW' 'x.ts:1' 'bad sev' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$bad_sev"
+  [ "$status" -ne 0 ]
+  printf '%s' "$output" | grep -qF "CRITICAL"
+  printf '%s' "$output" | grep -qF "WARNING"
+  printf '%s' "$output" | grep -qF "NIT"
+}
+
+@test "AC-14 (conf enum on reconcile): reconcile with invalid conf exits non-zero; error names {HIGH,MEDIUM,LOW}" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # A reconcile batch with conf=VERY_HIGH must be rejected non-zero.
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'lint' 'WARNING' 'VERY_HIGH' 'x.ts:1' 'bad conf' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\""
+  [ "$status" -ne 0 ]
+  printf '%s' "$output" | grep -qF "HIGH"
+  printf '%s' "$output" | grep -qF "MEDIUM"
+  printf '%s' "$output" | grep -qF "LOW"
+  printf '%s' "$output" | grep -qF "VERY_HIGH"
 }
 
 # ---------------------------------------------------------------------------
@@ -823,45 +1033,6 @@ teardown() {
   # Row count must be 3 (the two dash-prefix rows + one normal dedup row).
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 3 ]
-}
-
-# ---------------------------------------------------------------------------
-# Fix 5: waive greedy-strip does not eat [waived:] content in the original note
-# ---------------------------------------------------------------------------
-
-@test "Fix-5 (waive strip): note containing [waived: old] in text reconciles to same ID" {
-  run "$FINDINGS" init "$BRIEF_DIR"
-  [ "$status" -eq 0 ]
-
-  # Note whose text itself contains " [waived: old]" — this would trip the greedy
-  # sed 's/ \[waived: .*\]$//' by stripping from the FIRST occurrence, diverging
-  # the match key from the original and causing a false "new" on reconcile.
-  local tricky_note="fix the [waived: old] handler"
-
-  run "$FINDINGS" add "$BRIEF_DIR" "sec" "WARNING" "HIGH" "app.ts:5" "$tricky_note"
-  [ "$status" -eq 0 ]
-  local fid="$output"
-
-  # Waive it.
-  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "deliberate override"
-  [ "$status" -eq 0 ]
-
-  # Now reconcile the ORIGINAL finding (same lens/location/note, no waive suffix).
-  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'WARNING' 'HIGH' 'app.ts:5' \"\$1\" | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$tricky_note"
-  [ "$status" -eq 0 ]
-
-  # Must be waived-kept — not a new duplicate.
-  printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
-
-  # Status must remain waived.
-  local status_col
-  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
-  [ "$status_col" = "waived" ]
-
-  # Still exactly one data row.
-  local row_count
-  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
-  [ "$row_count" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------

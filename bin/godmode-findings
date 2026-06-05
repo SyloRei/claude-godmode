@@ -2,7 +2,8 @@
 # godmode-findings — per-brief findings store.
 # Manages a FINDINGS.md markdown table inside a given brief directory.
 # Each finding has an ID (F1, F2, …), a lens, severity, confidence,
-# status, location, and a note (percent-encoded to survive the table).
+# status, location, a note (percent-encoded), a stored match key (mkey),
+# and a waive reason (percent-encoded).
 #
 # Usage:
 #   godmode-findings init       <brief_dir>
@@ -14,11 +15,15 @@
 #   godmode-findings reconcile  <brief_dir>                   # reads batch from stdin
 #
 # The FINDINGS.md table columns (in order):
-#   ID | lens | sev | conf | status | location | note
+#   ID | lens | sev | conf | status | location | note | mkey | reason
 #
-# All free-text columns (lens, location, note) are percent-encoded on write
-# (% → %25, | → %7C, newline → %0A) so raw pipe characters or newlines can
-# never break the table parser or forge extra rows.
+# Display columns (list output, 7 columns):
+#   ID | lens | sev | conf | status | location | note
+#   mkey and reason are internal columns — never shown in default list output.
+#
+# All free-text columns (lens, location, note, reason) are percent-encoded on
+# write (% → %25, | → %7C, newline → %0A) so raw pipe characters or newlines
+# can never break the table parser or forge extra rows.
 # Enumerated columns (sev, conf) are validated against an allow-list on write
 # and rejected with exit 1 if out-of-range.
 #
@@ -26,8 +31,9 @@
 # where normalised_note = decoded note lowercased and whitespace-collapsed.
 # Line number is intentionally excluded from the match key so the same
 # finding at a shifted line is treated as the same finding.
-# Match key is computed from DECODED lens/location/note so identity is
-# encoding-transparent.
+# Match key is computed ONCE at creation time and stored in the mkey column.
+# Identity lookups read the stored mkey — never recompute from note.
+# Note is immutable after creation.
 #
 # Atomic writes: every mutation writes to <brief_dir>/.FINDINGS.tmp.<PID>
 # then mv-renames over FINDINGS.md (same device → atomic).
@@ -49,8 +55,8 @@ _FINDINGS_TMP=""
 trap 'rm -f "$_FINDINGS_TMP"' EXIT
 
 FINDINGS_FILE="FINDINGS.md"
-HEADER_ROW="| ID | lens | sev | conf | status | location | note |"
-SEP_ROW="|---|---|---|---|---|---|---|"
+HEADER_ROW="| ID | lens | sev | conf | status | location | note | mkey | reason |"
+SEP_ROW="|---|---|---|---|---|---|---|---|---|"
 
 # ---------------------------------------------------------------------------
 # usage
@@ -137,6 +143,8 @@ validate_conf() {
 # The line number in location is intentionally EXCLUDED from the key so that
 # the same finding reported at a shifted line is treated as the same finding.
 # We take basename(location) then strip any trailing ":NNN" line-number suffix.
+# Called ONLY when creating a new finding (add, reconcile new-branch).
+# For existing rows, read the stored mkey column — never call this on them.
 match_key() {
   local lens="$1"
   local location="$2"
@@ -160,50 +168,14 @@ match_key() {
 
 # ---------------------------------------------------------------------------
 # row_match_key <row>
-# Compute the match key for a data row.
-#
-# Strip the " [waived: <enc_reason>]" suffix on the ENCODED note (before
-# decoding) so the strip is always single-line and cannot be confused by a
-# reason that contains a percent-encoded newline (%0A).  Stripping on the
-# encoded form is safe because the suffix delimiter (" [waived: " and "]")
-# only contains ASCII characters that are not percent-encoded.
-# encode_note does NOT encode "]", so raw "]" may appear in the encoded reason.
-# We therefore use awk to find the LAST occurrence of " [waived: " and strip
-# from that position to end of string, rather than a sed pattern that would
-# misfire when the original note itself contains " [waived: ...]" as text.
-#
-# Decode lens and location (now encoded at rest) before passing to match_key.
+# Read the stored mkey from the mkey column (field 9) of an existing row.
+# Identity is stored at creation time — never recomputed from note.
+# The suffix-strip logic has been removed; the mkey column is the source
+# of truth and is immutable after creation.
 # ---------------------------------------------------------------------------
 row_match_key() {
   local rrow="$1"
-  local renc_lens rlens renc_loc rloc renc rnote_stripped
-  renc_lens=$(row_field "$rrow" 3)
-  rlens=$(decode_note "$renc_lens")
-  renc_loc=$(row_field "$rrow" 7)
-  rloc=$(decode_note "$renc_loc")
-  renc=$(row_field "$rrow" 8)
-  # Strip the LAST " [waived: ...]" suffix on the ENCODED note.
-  # encode_note does NOT encode "]", so a raw "]" may appear in the encoded reason
-  # (e.g. reason "see [ticket]" stores as "see [ticket]").  A sed pattern like
-  # [^]]* or greedy .* would both misfire when the original note itself contains
-  # a " [waived: ...]" substring (greedy eats too much; [^]]* stops too early).
-  # Solution: use awk to find the LAST occurrence of " [waived: " in the string
-  # and strip from that position to end of string.  This correctly handles:
-  #   - reasons containing literal "]"
-  #   - original notes containing " [waived: ...]" as text
-  rnote_stripped=$(printf '%s' "$renc" | awk '{
-    pos = 0; start = 1; tmp = $0
-    while (match(tmp, / \[waived: /)) {
-      pos = start + RSTART - 1
-      start = start + RSTART - 1 + RLENGTH
-      tmp = substr($0, start)
-    }
-    if (pos > 0) { printf "%s", substr($0, 1, pos - 1) } else { printf "%s", $0 }
-  }')
-  # Now decode the stripped note for match_key (which expects decoded text).
-  local rrawn
-  rrawn=$(decode_note "$rnote_stripped")
-  match_key "$rlens" "$rloc" "$rrawn"
+  row_field "$rrow" 9
 }
 
 # ---------------------------------------------------------------------------
@@ -257,9 +229,11 @@ read_data_rows() {
 
 # ---------------------------------------------------------------------------
 # parse_row <row> — extract fields from a table row.
-# Prints one field per line in column order: ID lens sev conf status location note
-# Field 2=ID, 3=lens, 4=sev, 5=conf, 6=status, 7=location, 8=note (f8 = last visible)
-# We use cut -d'|' since notes are encoded (no raw |).
+# Prints one field per line in column order:
+#   field 2=ID, 3=lens, 4=sev, 5=conf, 6=status, 7=location, 8=note,
+#   field 9=mkey, 10=reason
+# We use cut -d'|' since all free-text is encoded (no raw |).
+# mkey is a hex sha1 — also |−safe.
 # ---------------------------------------------------------------------------
 row_field() {
   local row="$1"
@@ -321,15 +295,16 @@ cmd_add() {
   mkey=$(match_key "$lens" "$location" "$note")
 
   # Check whether an identical finding (by match key) already exists.
-  # row_match_key decodes lens/location/note from the stored encoded form before
-  # hashing, so the comparison is encoding-transparent.
+  # Read the stored mkey column (field 9) from each existing row — never
+  # recompute from note.  This comparison is encoding-transparent because
+  # mkey is a sha1 hex computed from decoded inputs at creation time.
   local existing_id=""
   local row
   while IFS= read -r row; do
-    local row_key row_id
+    local row_id stored_mkey
     row_id=$(row_field "$row" 2)
-    row_key=$(row_match_key "$row")
-    if [ "$row_key" = "$mkey" ]; then
+    stored_mkey=$(row_match_key "$row")
+    if [ "$stored_mkey" = "$mkey" ]; then
       existing_id="$row_id"
       break
     fi
@@ -351,8 +326,9 @@ cmd_add() {
   enc_note=$(encode_note "$note")
 
   # Build the new row.  sev and conf are validated allow-list values — no encoding needed.
+  # mkey is a hex sha1 — |−safe.  reason starts empty.
   local new_row
-  new_row="| ${new_id} | ${enc_lens} | ${sev} | ${conf} | open | ${enc_location} | ${enc_note} |"
+  new_row="| ${new_id} | ${enc_lens} | ${sev} | ${conf} | open | ${enc_location} | ${enc_note} | ${mkey} |  |"
 
   # Atomic write: append new row to a temp file, then mv over the original.
   # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
@@ -370,6 +346,7 @@ cmd_add() {
 
 # ---------------------------------------------------------------------------
 # cmd_transition <brief_dir> <ID> <open|fixed>
+# Flips status only; never touches note, mkey, or reason.
 # ---------------------------------------------------------------------------
 cmd_transition() {
   if [ "$#" -ne 3 ]; then usage; exit 1; fi
@@ -410,6 +387,7 @@ cmd_transition() {
   fi
 
   # Rebuild the table, updating the matching row's status field (col 6).
+  # mkey (col 9) and reason (col 10) are preserved unchanged.
   # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
   _FINDINGS_TMP="${brief_dir}/.FINDINGS.tmp.$$"
 
@@ -425,14 +403,17 @@ cmd_transition() {
     row_id=$(row_field "$row" 2)
     if [ "$row_id" = "$target_id" ]; then
       # Reconstruct the row with the new status (field 6).
-      local f2 f3 f4 f5 f7 f8
+      # All other fields — including mkey (9) and reason (10) — are unchanged.
+      local f2 f3 f4 f5 f7 f8 f9 f10
       f2=$(row_field "$row" 2)
       f3=$(row_field "$row" 3)
       f4=$(row_field "$row" 4)
       f5=$(row_field "$row" 5)
       f7=$(row_field "$row" 7)
       f8=$(row_field "$row" 8)
-      echo "| ${f2} | ${f3} | ${f4} | ${f5} | ${new_status} | ${f7} | ${f8} |"
+      f9=$(row_field "$row" 9)
+      f10=$(row_field "$row" 10)
+      echo "| ${f2} | ${f3} | ${f4} | ${f5} | ${new_status} | ${f7} | ${f8} | ${f9} | ${f10} |"
     else
       echo "$row"
     fi
@@ -443,6 +424,8 @@ cmd_transition() {
 
 # ---------------------------------------------------------------------------
 # cmd_waive <brief_dir> <ID> <reason>
+# Sets status=waived and stores the encoded reason in the reason column.
+# note and mkey are immutable — never touched.
 # ---------------------------------------------------------------------------
 cmd_waive() {
   if [ "$#" -ne 3 ]; then usage; exit 1; fi
@@ -479,12 +462,12 @@ cmd_waive() {
     exit 1
   fi
 
-  # Encode the reason and build the waive suffix: " [waived: <reason>]"
+  # Encode the reason for storage.  note and mkey are NOT touched.
   local enc_reason
   enc_reason=$(encode_note "$reason")
-  local waive_suffix=" [waived: ${enc_reason}]"
 
-  # Rebuild the table, updating the matching row.
+  # Rebuild the table: set status=waived, write enc_reason into reason column.
+  # note (f8) and mkey (f9) are preserved byte-for-byte.
   # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
   _FINDINGS_TMP="${brief_dir}/.FINDINGS.tmp.$$"
 
@@ -498,14 +481,15 @@ cmd_waive() {
     esac
     row_id=$(row_field "$row" 2)
     if [ "$row_id" = "$target_id" ]; then
-      local f2 f3 f4 f5 f7 f8
+      local f2 f3 f4 f5 f7 f8 f9
       f2=$(row_field "$row" 2)
       f3=$(row_field "$row" 3)
       f4=$(row_field "$row" 4)
       f5=$(row_field "$row" 5)
       f7=$(row_field "$row" 7)
       f8=$(row_field "$row" 8)
-      echo "| ${f2} | ${f3} | ${f4} | ${f5} | waived | ${f7} | ${f8}${waive_suffix} |"
+      f9=$(row_field "$row" 9)
+      echo "| ${f2} | ${f3} | ${f4} | ${f5} | waived | ${f7} | ${f8} | ${f9} | ${enc_reason} |"
     else
       echo "$row"
     fi
@@ -516,6 +500,11 @@ cmd_waive() {
 
 # ---------------------------------------------------------------------------
 # cmd_list <brief_dir> [--open] [--blocking] [--decode]
+# Default output: 7 display columns (ID|lens|sev|conf|status|location|note).
+# mkey and reason are internal — never shown in default output.
+# --decode: decode free-text columns; for waived rows, append decoded reason
+#           to the note cell as " (waived: <reason>)" for human readability.
+#           The stored form is unchanged.
 # ---------------------------------------------------------------------------
 cmd_list() {
   if [ "$#" -lt 1 ]; then usage; exit 1; fi
@@ -568,11 +557,20 @@ cmd_list() {
     fi
 
     # Optionally decode the free-text columns for human-readable output.
+    # For waived rows in --decode mode, append the decoded reason to the note.
     if [ "$do_decode" -eq 1 ]; then
       local display_lens display_loc display_note
       display_lens=$(decode_note "$row_lens")
       display_loc=$(decode_note "$row_loc")
       display_note=$(decode_note "$row_note")
+      if [ "$row_status" = "waived" ]; then
+        local row_reason display_reason
+        row_reason=$(row_field "$row" 10)
+        if [ -n "$row_reason" ]; then
+          display_reason=$(decode_note "$row_reason")
+          display_note="${display_note} (waived: ${display_reason})"
+        fi
+      fi
       echo "| ${row_id} | ${display_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${display_loc} | ${display_note} |"
     else
       echo "| ${row_id} | ${row_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${row_loc} | ${row_note} |"
@@ -607,13 +605,17 @@ cmd_count() {
 # Reads a tab-delimited batch from stdin (one finding per line):
 #   lens <TAB> sev <TAB> conf <TAB> location <TAB> note
 # Applies a four-way branch per incoming finding:
-#   new       → allocate next ID, insert open row
-#   open      → keep ID+status, refresh sev/conf/location
-#   fixed     → reopen (regression), keep ID, refresh sev/conf/location
+#   new       → allocate next ID, insert open row with computed mkey + empty reason
+#   open      → keep ID+status+note+mkey+reason, refresh sev/conf/location
+#   fixed     → reopen (regression), keep ID+note+mkey+reason, refresh sev/conf/location
 #   waived    → leave untouched
 # Rows absent from the incoming batch are left untouched.
 # Writes the resulting table atomically once at the end.
 # Prints "Fn <branch>" for each incoming finding.
+#
+# Identity lookup: for each incoming finding, compute mkey via match_key.
+# Compare against STORED mkey column (field 9) of existing rows.
+# Never recompute mkey from an existing row's note.
 #
 # ID allocation: cur_max is tracked in-batch so successive new findings in one
 # batch get distinct consecutive IDs (F4, F5, …) without re-reading the file.
@@ -636,18 +638,19 @@ cmd_reconcile() {
   batch="$(cat)"
 
   # Build a newline-delimited key→row lookup string for existing rows.
-  # Each line: "<sha1key> TAB <raw_table_row>"
+  # Each line: "<stored_mkey> TAB <raw_table_row>"
+  # We read the stored mkey column (field 9) directly — never recompute from note.
   # Table rows never contain raw tabs, so TAB is unambiguous as a separator.
   local row_lookup=""
   local cur_max=0
-  local rrow rkey rid rnum
+  local rrow rid rnum stored_mkey
   while IFS= read -r rrow; do
-    rkey=$(row_match_key "$rrow")
+    stored_mkey=$(row_match_key "$rrow")
     if [ -z "$row_lookup" ]; then
-      row_lookup="${rkey}	${rrow}"
+      row_lookup="${stored_mkey}	${rrow}"
     else
       row_lookup="${row_lookup}
-${rkey}	${rrow}"
+${stored_mkey}	${rrow}"
     fi
     rid=$(row_field "$rrow" 2)
     case "$rid" in
@@ -663,7 +666,7 @@ ${rkey}	${rrow}"
   # Process each incoming finding.
   # We accumulate:
   #   outcomes    — per-finding outcome lines printed at the end
-  #   mutations   — lines: "<key> TAB <new_row>"  (for existing rows that change)
+  #   mutations   — lines: "<stored_mkey> TAB <new_row>"  (for existing rows that change)
   #   new_rows    — newline-delimited list of brand-new rows to append
   # We also extend row_lookup with newly-allocated rows so a later batch entry
   # can detect a duplicate incoming key even if it was just allocated this run.
@@ -671,7 +674,7 @@ ${rkey}	${rrow}"
   local mutations=""
   local new_rows=""
   local in_lens in_sev in_conf in_location in_note
-  local in_key matched_row ex_id ex_status ex_enc ex_rebuilt
+  local in_key matched_row ex_id ex_status ex_enc_note ex_mkey ex_reason ex_rebuilt
   local lookup_line lookup_key
 
   while IFS="	" read -r in_lens in_sev in_conf in_location in_note \
@@ -682,6 +685,7 @@ ${rkey}	${rrow}"
     validate_sev "$in_sev"
     validate_conf "$in_conf"
 
+    # Compute mkey for the incoming finding from its raw (decoded) inputs.
     in_key=$(match_key "$in_lens" "$in_location" "$in_note")
 
     # Encode free-text fields for storage.
@@ -690,7 +694,7 @@ ${rkey}	${rrow}"
     in_enc_location=$(encode_note "$in_location")
     in_enc_note=$(encode_note "$in_note")
 
-    # Linear scan of row_lookup for a matching key.
+    # Linear scan of row_lookup for a matching stored mkey.
     matched_row=""
     while IFS= read -r lookup_line; do
       [ -n "$lookup_line" ] || continue
@@ -705,9 +709,10 @@ LOOKUP_EOF
 
     if [ -z "$matched_row" ]; then
       # Branch 1: NEW — key not found in existing rows (or prior new rows).
+      # Compute mkey for the new row (same as in_key, which was just computed).
       cur_max=$((cur_max + 1))
       ex_id="F${cur_max}"
-      ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${in_enc_note} |"
+      ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${in_enc_note} | ${in_key} |  |"
       new_rows="${new_rows}${ex_rebuilt}
 "
       # Register in lookup so a duplicate key later in the same batch matches.
@@ -718,12 +723,15 @@ ${in_key}	${ex_rebuilt}"
     else
       ex_id=$(row_field "$matched_row" 2)
       ex_status=$(row_field "$matched_row" 6)
-      ex_enc=$(row_field "$matched_row" 8)
+      # Preserve the existing note, mkey, and reason — never recompute.
+      ex_enc_note=$(row_field "$matched_row" 8)
+      ex_mkey=$(row_field "$matched_row" 9)
+      ex_reason=$(row_field "$matched_row" 10)
 
       case "$ex_status" in
         open)
-          # Branch 2: OPEN — refresh sev/conf/location (encoded), keep status+ID+note.
-          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
+          # Branch 2: OPEN — refresh sev/conf/location (encoded), keep status+ID+note+mkey+reason.
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc_note} | ${ex_mkey} | ${ex_reason} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} recurring
@@ -731,7 +739,8 @@ ${in_key}	${ex_rebuilt}"
           ;;
         fixed)
           # Branch 4: FIXED → reopen (regression); refresh sev/conf/location.
-          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
+          # note, mkey, and reason are preserved.
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc_note} | ${ex_mkey} | ${ex_reason} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} reopened
@@ -744,7 +753,7 @@ ${in_key}	${ex_rebuilt}"
           ;;
         *)
           # Unknown status — treat as open/refresh.
-          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc_note} | ${ex_mkey} | ${ex_reason} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} recurring
@@ -766,6 +775,7 @@ BATCH_EOF
     echo "$SEP_ROW"
 
     # Emit existing rows, applying mutations where the key appears in mutations.
+    # Mutation lookup uses the stored mkey (field 9) of the existing row.
     local emit_row emit_rkey
     local mut_line mut_key
     while IFS= read -r emit_row; do
