@@ -16,13 +16,18 @@
 # The FINDINGS.md table columns (in order):
 #   ID | lens | sev | conf | status | location | note
 #
-# Notes are percent-encoded on write (% → %25, | → %7C, newline → %0A)
-# so raw pipe characters can never break the table parser.
+# All free-text columns (lens, location, note) are percent-encoded on write
+# (% → %25, | → %7C, newline → %0A) so raw pipe characters or newlines can
+# never break the table parser or forge extra rows.
+# Enumerated columns (sev, conf) are validated against an allow-list on write
+# and rejected with exit 1 if out-of-range.
 #
 # Match key for dedup = sha1( lens + 0x1F + basename(location) + 0x1F + normalised_note )
 # where normalised_note = decoded note lowercased and whitespace-collapsed.
 # Line number is intentionally excluded from the match key so the same
 # finding at a shifted line is treated as the same finding.
+# Match key is computed from DECODED lens/location/note so identity is
+# encoding-transparent.
 #
 # Atomic writes: every mutation writes to <brief_dir>/.FINDINGS.tmp.<PID>
 # then mv-renames over FINDINGS.md (same device → atomic).
@@ -31,6 +36,7 @@
 # no ${var^^}, no associative arrays (declare -A), no GNU-only flags.
 # Uses tr for case conversion (not ${var,,}) and awk for cross-platform
 # newline handling in encode_note.
+# In-place edits use the BSD-safe pattern: sed -i.bak 'EXPR' file && rm -f file.bak.
 
 set -euo pipefail
 
@@ -104,8 +110,30 @@ resolve_sha1() {
   fi
 }
 
+# validate_sev <sev> — reject out-of-range severity values.
+validate_sev() {
+  case "$1" in
+    CRITICAL|WARNING|NIT|INFO) return 0 ;;
+    *)
+      printf "error: sev '%s' not in {CRITICAL,WARNING,NIT,INFO}\n" "$1" >&2
+      exit 1
+      ;;
+  esac
+}
+
+# validate_conf <conf> — reject out-of-range confidence values.
+validate_conf() {
+  case "$1" in
+    HIGH|MEDIUM|LOW) return 0 ;;
+    *)
+      printf "error: conf '%s' not in {HIGH,MEDIUM,LOW}\n" "$1" >&2
+      exit 1
+      ;;
+  esac
+}
+
 # match_key <lens> <location> <note>
-# note here is the DECODED note text.
+# All three arguments are DECODED (raw) text — never encoded.
 # The line number in location is intentionally EXCLUDED from the key so that
 # the same finding reported at a shifted line is treated as the same finding.
 # We take basename(location) then strip any trailing ":NNN" line-number suffix.
@@ -132,20 +160,36 @@ match_key() {
 
 # ---------------------------------------------------------------------------
 # row_match_key <row>
-# Compute the match key for a data row, stripping the " [waived: ...]" suffix
-# that cmd_waive appends to the note before hashing.  Using this instead of
-# calling match_key directly ensures waived rows still match their original key.
+# Compute the match key for a data row.
+#
+# Strip the " [waived: <enc_reason>]" suffix on the ENCODED note (before
+# decoding) so the strip is always single-line and cannot be confused by a
+# reason that contains a percent-encoded newline (%0A).  Stripping on the
+# encoded form is safe because the suffix delimiter (" [waived: " and "]")
+# only contains ASCII characters that are not percent-encoded, and the
+# encoded reason itself never contains a literal "]" (it would be left as-is
+# since "]" has no percent-encoding in our scheme — but to be safe the reason
+# goes through encode_note which encodes %, |, and newline only; a raw "]" in
+# the reason is therefore possible.  We strip greedily (last "]") so a reason
+# that contains "]" is handled correctly.
+#
+# Decode lens and location (now encoded at rest) before passing to match_key.
 # ---------------------------------------------------------------------------
 row_match_key() {
   local rrow="$1"
-  local rlens rloc renc rrawn rstripped
-  rlens=$(row_field "$rrow" 3)
-  rloc=$(row_field "$rrow" 7)
+  local renc_lens rlens renc_loc rloc renc rnote_stripped
+  renc_lens=$(row_field "$rrow" 3)
+  rlens=$(decode_note "$renc_lens")
+  renc_loc=$(row_field "$rrow" 7)
+  rloc=$(decode_note "$renc_loc")
   renc=$(row_field "$rrow" 8)
-  rrawn=$(decode_note "$renc")
-  # Strip " [waived: ...]" suffix that cmd_waive appends to the encoded note.
-  rstripped=$(printf '%s' "$rrawn" | sed 's/ \[waived: .*\]$//')
-  match_key "$rlens" "$rloc" "$rstripped"
+  # Strip " [waived: ...]" suffix on the ENCODED note — single-line, safe.
+  # Use sed with a greedy match on the LAST "]" to handle reasons containing "]".
+  rnote_stripped=$(printf '%s' "$renc" | sed 's/ \[waived: .*\]$//')
+  # Now decode the stripped note for match_key (which expects decoded text).
+  local rrawn
+  rrawn=$(decode_note "$rnote_stripped")
+  match_key "$rlens" "$rloc" "$rrawn"
 }
 
 # ---------------------------------------------------------------------------
@@ -253,21 +297,24 @@ cmd_add() {
     exit 1
   fi
 
-  # Compute the match key on the raw (decoded) note.
+  # Validate enumerated columns.
+  validate_sev "$sev"
+  validate_conf "$conf"
+
+  # Compute the match key on the raw (decoded) inputs — lens/location/note are
+  # plain text at this point (not yet encoded).
   local mkey
   mkey=$(match_key "$lens" "$location" "$note")
 
   # Check whether an identical finding (by match key) already exists.
+  # row_match_key decodes lens/location/note from the stored encoded form before
+  # hashing, so the comparison is encoding-transparent.
   local existing_id=""
   local row
   while IFS= read -r row; do
-    local row_lens row_loc row_enc_note row_raw_note row_key row_id
+    local row_key row_id
     row_id=$(row_field "$row" 2)
-    row_lens=$(row_field "$row" 3)
-    row_loc=$(row_field "$row" 7)
-    row_enc_note=$(row_field "$row" 8)
-    row_raw_note=$(decode_note "$row_enc_note")
-    row_key=$(match_key "$row_lens" "$row_loc" "$row_raw_note")
+    row_key=$(row_match_key "$row")
     if [ "$row_key" = "$mkey" ]; then
       existing_id="$row_id"
       break
@@ -283,13 +330,15 @@ cmd_add() {
   local new_id
   new_id=$(next_id "$brief_dir")
 
-  # Encode the note.
-  local enc_note
+  # Encode all free-text columns.
+  local enc_lens enc_location enc_note
+  enc_lens=$(encode_note "$lens")
+  enc_location=$(encode_note "$location")
   enc_note=$(encode_note "$note")
 
-  # Build the new row.
+  # Build the new row.  sev and conf are validated allow-list values — no encoding needed.
   local new_row
-  new_row="| ${new_id} | ${lens} | ${sev} | ${conf} | open | ${location} | ${enc_note} |"
+  new_row="| ${new_id} | ${enc_lens} | ${sev} | ${conf} | open | ${enc_location} | ${enc_note} |"
 
   # Atomic write: append new row to a temp file, then mv over the original.
   # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
@@ -504,13 +553,13 @@ cmd_list() {
       esac
     fi
 
-    # Optionally decode the note for output.
-    local display_note
+    # Optionally decode the free-text columns for human-readable output.
     if [ "$do_decode" -eq 1 ]; then
+      local display_lens display_loc display_note
+      display_lens=$(decode_note "$row_lens")
+      display_loc=$(decode_note "$row_loc")
       display_note=$(decode_note "$row_note")
-      # Re-encode any pipe chars in the decoded note for table display consistency
-      # is NOT required here — list --decode is meant for human consumption.
-      echo "| ${row_id} | ${row_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${row_loc} | ${display_note} |"
+      echo "| ${row_id} | ${display_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${display_loc} | ${display_note} |"
     else
       echo "| ${row_id} | ${row_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${row_loc} | ${row_note} |"
     fi
@@ -615,7 +664,17 @@ ${rkey}	${rrow}"
       || [ -n "$in_lens" ]; do
     [ -n "$in_lens" ] || continue
 
+    # Validate enumerated columns for this batch entry.
+    validate_sev "$in_sev"
+    validate_conf "$in_conf"
+
     in_key=$(match_key "$in_lens" "$in_location" "$in_note")
+
+    # Encode free-text fields for storage.
+    local in_enc_lens in_enc_location in_enc_note
+    in_enc_lens=$(encode_note "$in_lens")
+    in_enc_location=$(encode_note "$in_location")
+    in_enc_note=$(encode_note "$in_note")
 
     # Linear scan of row_lookup for a matching key.
     matched_row=""
@@ -634,8 +693,7 @@ LOOKUP_EOF
       # Branch 1: NEW — key not found in existing rows (or prior new rows).
       cur_max=$((cur_max + 1))
       ex_id="F${cur_max}"
-      ex_enc=$(encode_note "$in_note")
-      ex_rebuilt="| ${ex_id} | ${in_lens} | ${in_sev} | ${in_conf} | open | ${in_location} | ${ex_enc} |"
+      ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${in_enc_note} |"
       new_rows="${new_rows}${ex_rebuilt}
 "
       # Register in lookup so a duplicate key later in the same batch matches.
@@ -650,8 +708,8 @@ ${in_key}	${ex_rebuilt}"
 
       case "$ex_status" in
         open)
-          # Branch 2: OPEN — refresh sev/conf/location, keep status+ID.
-          ex_rebuilt="| ${ex_id} | ${in_lens} | ${in_sev} | ${in_conf} | open | ${in_location} | ${ex_enc} |"
+          # Branch 2: OPEN — refresh sev/conf/location (encoded), keep status+ID+note.
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} recurring
@@ -659,7 +717,7 @@ ${in_key}	${ex_rebuilt}"
           ;;
         fixed)
           # Branch 4: FIXED → reopen (regression); refresh sev/conf/location.
-          ex_rebuilt="| ${ex_id} | ${in_lens} | ${in_sev} | ${in_conf} | open | ${in_location} | ${ex_enc} |"
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} reopened
@@ -672,7 +730,7 @@ ${in_key}	${ex_rebuilt}"
           ;;
         *)
           # Unknown status — treat as open/refresh.
-          ex_rebuilt="| ${ex_id} | ${in_lens} | ${in_sev} | ${in_conf} | open | ${in_location} | ${ex_enc} |"
+          ex_rebuilt="| ${ex_id} | ${in_enc_lens} | ${in_sev} | ${in_conf} | open | ${in_enc_location} | ${ex_enc} |"
           mutations="${mutations}${in_key}	${ex_rebuilt}
 "
           outcomes="${outcomes}${ex_id} recurring

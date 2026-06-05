@@ -24,7 +24,7 @@ FINDINGS="$PLUGIN_ROOT/bin/godmode-findings"
 # ---------------------------------------------------------------------------
 
 setup() {
-  BRIEF_DIR="$(mktemp -d "${BATS_TMPDIR:-/tmp}/godmode-findings.XXXXXX")"
+  BRIEF_DIR="$(mktemp -d "${TMPDIR:-/tmp}/godmode-findings.XXXXXX")"
 }
 
 teardown() {
@@ -170,11 +170,14 @@ teardown() {
   local f_absent="$output"
 
   # Build the reconcile batch: F1 key, F2 key, F3 key, brand-new key.
+  # Use a heredoc so each printf runs in the same command substitution context.
   local batch
-  batch=$(printf '%s\t%s\t%s\t%s\t%s\n' "sec" "CRITICAL" "HIGH" "a.ts:1" "note-f1"
-          printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "MEDIUM" "b.ts:1" "note-f2"
-          printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "LOW" "c.ts:1" "note-f3"
-          printf '%s\t%s\t%s\t%s\t%s\n' "sec" "INFO" "LOW" "e.ts:1" "note-brand-new")
+  batch=$(
+    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "CRITICAL" "HIGH" "a.ts:1" "note-f1"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "MEDIUM" "b.ts:1" "note-f2"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "LOW" "c.ts:1" "note-f3"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "INFO" "LOW" "e.ts:1" "note-brand-new"
+  )
 
   run bash -c "printf '%s' \"\$1\" | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$batch"
   [ "$status" -eq 0 ]
@@ -188,29 +191,30 @@ teardown() {
   # F3: waived → waived-kept — "waived-kept".
   printf '%s\n' "$output" | grep -qF "${f3} waived-kept"
 
-  # Brand-new: allocated as next ID.
+  # Brand-new: allocated as the next ID (F5, since F1–F4 are seeded above).
   printf '%s\n' "$output" | grep -qF " new"
 
-  # Extract F4 (the new one).
-  local f4
-  f4=$(printf '%s\n' "$output" | grep " new" | awk '{print $1}')
+  # Extract the new ID and assert it is F5.
+  local f5
+  f5=$(printf '%s\n' "$output" | grep " new" | awk '{print $1}')
+  [ "$f5" = "F5" ]
 
   # Assert resulting statuses by re-reading the file.
-  local f1_status f2_status f3_status f4_status f_absent_status
+  local f1_status f2_status f3_status f5_status f_absent_status
   f1_status=$(grep "^| ${f1} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
   f2_status=$(grep "^| ${f2} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
   f3_status=$(grep "^| ${f3} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
-  f4_status=$(grep "^| ${f4} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  f5_status=$(grep "^| ${f5} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
   f_absent_status=$(grep "^| ${f_absent} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
 
   [ "$f1_status" = "open" ]
   [ "$f2_status" = "open" ]
   [ "$f3_status" = "waived" ]
-  [ "$f4_status" = "open" ]
+  [ "$f5_status" = "open" ]
   # Absent key untouched (still open, same ID).
   [ "$f_absent_status" = "open" ]
 
-  # Total row count: F1+F2+F3+F4+F_absent = 5.
+  # Total row count: F1+F2+F3+F4(absent)+F5(new) = 5.
   local row_count
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 5 ]
@@ -315,8 +319,10 @@ teardown() {
   # Transition a non-existent ID must fail.
   run "$FINDINGS" transition "$BRIEF_DIR" "F99" fixed
   [ "$status" -ne 0 ]
-  # Error must appear on stderr (captured in $output by bats when combined with run).
-  printf '%s' "$output" | grep -qi "F99"
+  # Error message must name the missing ID.
+  printf '%s' "$output" | grep -qF "F99"
+  # Error message must say "not found".
+  printf '%s' "$output" | grep -qi "not found"
 }
 
 # ---------------------------------------------------------------------------
@@ -472,4 +478,242 @@ teardown() {
   run "$FINDINGS" count "$BRIEF_DIR" --blocking
   [ "$status" -eq 0 ]
   [ "$output" = "0" ]
+}
+
+# ---------------------------------------------------------------------------
+# AC-12: location injection — crafted location cannot forge extra table rows
+# ---------------------------------------------------------------------------
+
+@test "AC-12: location containing pipe+newline does not forge extra rows; count --blocking is 0" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Crafted location containing a pipe, extra table-like content, and a newline.
+  # This is the exact reproduction case from the S4 bug report.
+  local loc
+  loc=$'good.ts:1 | x | x | open | y | z |\n| F77 | evil | CRITICAL | HIGH | open | hacked.ts:1 | forged'
+
+  run "$FINDINGS" add "$BRIEF_DIR" "code-reviewer" "NIT" "LOW" "$loc" "harmless nit"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # count --blocking must be 0 (NIT/LOW is not blocking, and the forged row must
+  # not exist as a real row).
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  # There must be exactly ONE data row in the file.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+
+  # The single data row must have exactly 9 pipe-delimited fields (leading and
+  # trailing empty fields from awk -F'|' on "| ... |").
+  local field_count
+  field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
+  [ "$field_count" -eq 9 ]
+
+  # list --decode must round-trip the crafted location byte-for-byte.
+  run "$FINDINGS" list "$BRIEF_DIR" --decode
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "good.ts:1 | x | x | open | y | z |"
+
+  # The forged ID must NOT appear as a table row.  Note: "F77" may appear as
+  # an encoded substring within the location cell — that is fine.  We check
+  # that no row STARTS with "| F77 " (which would mean it was forged as a real
+  # data row with its own ID column).
+  if grep -qF "| F77 " "$BRIEF_DIR/FINDINGS.md"; then
+    echo "FAIL: forged F77 row appeared as a real data row in FINDINGS.md" >&2
+    return 1
+  fi
+}
+
+@test "AC-12 (reconcile): injected location via reconcile batch does not forge blocking rows" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Crafted location with a newline and forged row content (NIT/LOW — not blocking).
+  # When passed as a batch field containing a newline, the reconcile parser sees two
+  # lines: the first is a valid NIT/LOW entry (not blocking), the second is either
+  # rejected by sev validation (invalid sev) or skipped.  Either way, no CRITICAL/HIGH
+  # forged row must reach the store.
+  local loc
+  loc=$'good.ts:1\n| F77 | evil | NIT | LOW | open | hacked.ts:1 | forged'
+
+  # Reconcile may exit non-zero if the second line fails sev/conf parsing — that
+  # is acceptable: the important invariant is that no forged row appears in the file.
+  bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'code-reviewer' 'NIT' 'LOW' \"\$1\" 'harmless nit' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$loc" || true
+
+  # count --blocking must be 0 (NIT/LOW is not blocking regardless of row count).
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  # Forged ID must not appear as a real data row.
+  if grep -qF "| F77 " "$BRIEF_DIR/FINDINGS.md"; then
+    echo "FAIL: forged F77 row appeared as a real data row in FINDINGS.md" >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# AC-13: waive reason with newline/pipe/] — reconcile still yields waived-kept
+# ---------------------------------------------------------------------------
+
+@test "AC-13: waive reason with pipe, bracket, and newline — reconcile yields waived-kept, same ID" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Add a finding.
+  run "$FINDINGS" add "$BRIEF_DIR" "sec" "WARNING" "HIGH" "auth.ts:42" "risky call"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # Waive it with a reason that contains |, ], and an embedded newline.
+  local reason
+  reason=$'accepted | risk [see ticket]\nfollowup in Q3'
+
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "$reason"
+  [ "$status" -eq 0 ]
+
+  # Verify it is waived.
+  local status_col
+  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$status_col" = "waived" ]
+
+  # Now reconcile the ORIGINAL finding (same lens/location/note).
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'WARNING' 'HIGH' 'auth.ts:42' 'risky call' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\""
+  [ "$status" -eq 0 ]
+
+  # Must be waived-kept (not new or reopened).
+  printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
+
+  # Status must remain waived.
+  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$status_col" = "waived" ]
+
+  # Still exactly one data row.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+
+  # list --decode must render the reason readably (decoded).
+  run "$FINDINGS" list "$BRIEF_DIR" --decode
+  [ "$status" -eq 0 ]
+  # The decoded note must contain the waive suffix with the decoded reason.
+  printf '%s\n' "$output" | grep -qF "waived:"
+}
+
+# ---------------------------------------------------------------------------
+# AC-10 (extended): no residue after transition, waive, and reconcile
+# ---------------------------------------------------------------------------
+
+@test "AC-10 (extended): no temp residue after transition, waive, and reconcile" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "WARNING" "MEDIUM" "r.ts:1" "residue check"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # After transition.
+  run "$FINDINGS" transition "$BRIEF_DIR" "$fid" fixed
+  [ "$status" -eq 0 ]
+  [ -z "$(find "$BRIEF_DIR" -name '.FINDINGS.tmp.*' 2>/dev/null)" ]
+  [ -z "$(find "$BRIEF_DIR" -name '*.bak' 2>/dev/null)" ]
+
+  # After waive (re-open first so waive can target an open finding).
+  run "$FINDINGS" transition "$BRIEF_DIR" "$fid" open
+  [ "$status" -eq 0 ]
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "deliberate"
+  [ "$status" -eq 0 ]
+  [ -z "$(find "$BRIEF_DIR" -name '.FINDINGS.tmp.*' 2>/dev/null)" ]
+  [ -z "$(find "$BRIEF_DIR" -name '*.bak' 2>/dev/null)" ]
+
+  # Add another finding then reconcile.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "r.ts:2" "second"
+  [ "$status" -eq 0 ]
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' lint NIT LOW r.ts:2 second | \"$FINDINGS\" reconcile \"$BRIEF_DIR\""
+  [ "$status" -eq 0 ]
+  [ -z "$(find "$BRIEF_DIR" -name '.FINDINGS.tmp.*' 2>/dev/null)" ]
+  [ -z "$(find "$BRIEF_DIR" -name '*.bak' 2>/dev/null)" ]
+}
+
+# ---------------------------------------------------------------------------
+# AC-3 (extended): ID not reused after transition to fixed
+# ---------------------------------------------------------------------------
+
+@test "AC-3 (extended): ID not reused after F1 is fixed and a new finding is added" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Add F1.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "a.ts:1" "first"
+  [ "$status" -eq 0 ]
+  local f1="$output"
+
+  # Transition F1 to fixed.
+  run "$FINDINGS" transition "$BRIEF_DIR" "$f1" fixed
+  [ "$status" -eq 0 ]
+
+  # Add a new, different finding.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "b.ts:1" "second"
+  [ "$status" -eq 0 ]
+  local f2="$output"
+
+  # f2 must be a NEW ID distinct from f1 — not a reused F1.
+  [ "$f2" != "$f1" ]
+
+  # f2 must be F-next (numerically greater).
+  local n1 n2
+  n1=${f1#F}
+  n2=${f2#F}
+  [ "$n2" -gt "$n1" ]
+
+  # Two rows total.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 2 ]
+}
+
+# ---------------------------------------------------------------------------
+# list --open filter (currently untested)
+# ---------------------------------------------------------------------------
+
+@test "list --open returns only open findings; closed/waived excluded" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # A: open.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "a.ts:1" "open finding"
+  [ "$status" -eq 0 ]
+  local fa="$output"
+
+  # B: fixed.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "WARNING" "MEDIUM" "b.ts:1" "fixed finding"
+  [ "$status" -eq 0 ]
+  local fb="$output"
+  run "$FINDINGS" transition "$BRIEF_DIR" "$fb" fixed
+  [ "$status" -eq 0 ]
+
+  # C: waived.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "c.ts:1" "waived finding"
+  [ "$status" -eq 0 ]
+  local fc="$output"
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fc" "deliberate"
+  [ "$status" -eq 0 ]
+
+  # list --open must contain A only.
+  run "$FINDINGS" list "$BRIEF_DIR" --open
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "| ${fa} |"
+  if printf '%s\n' "$output" | grep -qF "| ${fb} |"; then
+    echo "FAIL: fixed finding should not appear in --open list" >&2
+    return 1
+  fi
+  if printf '%s\n' "$output" | grep -qF "| ${fc} |"; then
+    echo "FAIL: waived finding should not appear in --open list" >&2
+    return 1
+  fi
 }
