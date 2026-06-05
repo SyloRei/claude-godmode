@@ -281,3 +281,52 @@ AGENTS="$PLUGIN_ROOT/AGENTS.md"
   echo "$row" | grep -qiv 'architect'
   ! echo "$map" | grep -qiE '/mission.*@architect'
 }
+
+# --- the reconciled /brief + /plan delegation rows (unit 5, S4 — advances AC-8, AC-9) ---
+#
+# The same `## Skill → Agent delegation map` that falsely paired /mission with
+# @architect ALSO, before this unit, listed /brief and /plan WITHOUT @architect —
+# omitting the gated design pass S1–S3 wired in. S1 reconciled the routing rule's
+# /brief and /plan rows to name `@architect` with its "gated on Design Risk"
+# qualifier, and S2 regenerated AGENTS.md so its mirror carries the same rows. The
+# two cases below pin that reconciled state so neither row can silently regress to
+# its stale, @architect-less form in EITHER the source rule or the generated
+# mirror. They are the inverse of the unit-4 /mission pins: PRESENCE assertions
+# (each row MUST name @architect AND carry the gating qualifier), using the same
+# exclusive-bound section extraction and cell-anchored row isolation. Each row is
+# guarded non-empty so a row rename cannot vacuously pass. Read-only greps; nothing
+# is mutated. (AC-9 keeps this change confined to the test file.)
+
+# AC-8: the routing rule's delegation-map /brief and /plan rows each name
+# @architect AND carry the gating qualifier (design risk / gated). Scope to the map
+# section (exclusive of the heading and the next section's heading), then isolate
+# each row by its full cell anchor (`| `/brief N`` / `| `/plan N``) so a sibling
+# can't fold in and a stray @architect elsewhere can't mask a
+# regression. Non-empty guard catches a row rename; the @architect + qualifier
+# greps catch a revert to the stale, architect-less form.
+@test "routing delegation map: /brief and /plan rows name gated @architect" {
+  map="$(awk '/^## Skill → Agent delegation map/{f=1;next} /^## /{f=0} f' "$ROUTING")"
+  brief_row="$(echo "$map" | grep -F '| `/brief N`')"
+  plan_row="$(echo "$map" | grep -F '| `/plan N`')"
+  [ -n "$brief_row" ]
+  [ -n "$plan_row" ]
+  echo "$brief_row" | grep -qF '@architect'
+  echo "$brief_row" | grep -qiE 'design risk|gated'
+  echo "$plan_row" | grep -qF '@architect'
+  echo "$plan_row" | grep -qiE 'design risk|gated'
+}
+
+# AC-8: the AGENTS.md mirror of the delegation map must carry the SAME reconciled
+# /brief and /plan rows — a stale regen dropping @architect from either row is
+# caught here. Same scoping discipline as the routing case.
+@test "AGENTS.md delegation map mirror: /brief and /plan rows name gated @architect" {
+  map="$(awk '/^## Skill → Agent delegation map/{f=1;next} /^## /{f=0} f' "$AGENTS")"
+  brief_row="$(echo "$map" | grep -F '| `/brief N`')"
+  plan_row="$(echo "$map" | grep -F '| `/plan N`')"
+  [ -n "$brief_row" ]
+  [ -n "$plan_row" ]
+  echo "$brief_row" | grep -qF '@architect'
+  echo "$brief_row" | grep -qiE 'design risk|gated'
+  echo "$plan_row" | grep -qF '@architect'
+  echo "$plan_row" | grep -qiE 'design risk|gated'
+}
