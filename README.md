@@ -197,6 +197,12 @@ You:    /ship
 Claude: [runs quality gates, pushes, creates PR, returns URL]
 ```
 
+### Architect in the loop
+
+Both `/brief` and `/plan` can spawn `@architect` (opus) for a **gated** design pass, so a load-bearing design decision is made deliberately rather than improvised mid-build. In `/brief` the pass is **spec-focused** -- it works through Context, Recommended Approach, and Tradeoffs, and lands its verdict in the brief's `## Architecture` section. In `/plan` the pass is **plan-focused** -- it reasons about implementation order, sequencing, and risks, and writes them into `PLAN.md`'s `## Design Notes`.
+
+The pass is **gated on the brief's `## Design Risk` signal**: trivial units skip it entirely, so you pay nothing extra for work that doesn't warrant an architect. Only when the signal is raised does the design step run, keeping it fail-cheap by default and present exactly when the unit earns it.
+
 ## Missions
 
 A **mission** is a named episodic feature cycle -- one initiative, from charter to merged PR. You finish one mission, then start the next under a fresh name. Running [`/mission`](#skills) with a feature name create-or-switches to that mission and makes it the active context for the rest of the spine (`/brief N → /plan N → /build N → /verify N → /ship`).
