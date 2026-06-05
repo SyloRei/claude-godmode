@@ -57,8 +57,8 @@ Which agent each workflow skill spawns for its heavy lifting:
 
 | Skill | Delegates to |
 |---|---|
-| `/brief N` | `@researcher` (context), `@spec-reviewer` (brief sanity) |
-| `/plan N` | `@planner` (authoring), `@spec-reviewer` (plan vs brief) |
+| `/brief N` | `@researcher` (context), `@architect` (design pass — gated on Design Risk), `@spec-reviewer` (brief sanity) |
+| `/plan N` | `@planner` (authoring), `@architect` (plan-focused design pass — gated on Design Risk), `@spec-reviewer` (plan vs brief) |
 | `/build N` | `@executor` (implement), `@test-writer` (tests), `@code-reviewer` (diff vs plan) |
 | `/verify N` | `@verifier` (goal-backward coverage) |
 | `/ship` | `/verify` (5-lens review final pass), `@security-auditor` (secret/vuln scan) |
@@ -68,7 +68,7 @@ Which agent each workflow skill spawns for its heavy lifting:
 | `/onboard` | `@researcher` (cited findings) |
 | `/triage` | `@incident-responder` (timeline reconstruction) |
 | `/profile` | `@perf-engineer` (performance analysis) |
-| `/mission` | `@architect` (roadmap shaping) |
+| `/mission` | — (roadmap shaping is the skill's own work; no agent spawned) |
 
 ## Agent Type Mapping
 
@@ -111,3 +111,44 @@ with `WebFetch` and `WebSearch` access.
 Different domains, established conventions:
 - Code review (`@code-reviewer`, `@spec-reviewer`, and the `/verify` lenses): CRITICAL / WARNING / NIT
 - Security audit (`@security-auditor`): CRITICAL / HIGH / MEDIUM / LOW
+
+## Architect Gate
+
+`@architect` (opus, advisory) is the strongest design reasoner in the roster, but
+running it on every unit breaks the cost budget. The Architect Gate is the single
+source of truth for **when** a unit warrants an architect pass: it runs only on
+non-trivial units. This section **defines** the gate; `/brief` and `/plan` are its
+two readers (the unit that wires each skill to act on it is separate from this
+definition). The gate exists so an architect pass is reserved for design-heavy
+work and adds nothing to trivial, localized changes.
+
+**Trigger criteria.** Evaluate the unit against this checklist. **Design-risk
+verdict = `yes` if any one trigger fires**; if none fire, the verdict is `no`.
+
+| # | Trigger |
+|---|---|
+| 1 | A new system, service, or component is introduced. |
+| 2 | A cross-cutting change touching ≥3 modules/surfaces, or a shared contract. |
+| 3 | A new or changed data model, schema, or persistent format. |
+| 4 | A new or changed public API, interface, or CLI contract. |
+| 5 | A migration (schema, dependency, or framework). |
+| 6 | A security- or auth-sensitive surface. |
+| 7 | A performance-critical path with non-obvious tradeoffs. |
+| 8 | Multiple viable approaches that diverge materially (a real design fork). |
+
+**Override.** The brief author or the user may **force** the verdict to `yes` or
+`no` regardless of which triggers fire — recording a one-line reason for the
+override. An override is authoritative over the checklist result.
+
+**Signal format.** `/brief` records the gate outcome as a `## Design Risk` section
+in each `BRIEF.md`, with exactly three fields:
+
+- **Verdict** — `yes` or `no` (default: `no`).
+- **Triggers fired** — which checklist item(s) drove a `yes`, or the override.
+- **Rationale** — a one-line reason for the recorded verdict.
+
+**Readers + default / fail-cheap.** `/brief` and `/plan` are the **two readers**
+of this signal. The gate is
+**default-off and fail-cheap**: an absent, empty, or unset Design Risk verdict is
+treated as `no` — no architect pass runs, it adds no cost, and it never blocks
+work. Trivial units stay cheap and unblocked with zero extra effort.
