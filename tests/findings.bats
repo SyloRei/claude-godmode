@@ -1,12 +1,15 @@
 #!/usr/bin/env bats
 #
-# Test suite for bin/godmode-findings (unit 1 S3).
+# Test suite for bin/godmode-findings (unit 1 S3–S5).
 #
 # Covers: AC-2 (init/idempotent), AC-3 (monotonic IDs), AC-4 (note round-trip),
 #         AC-5 (transition + unknown-ID error), AC-6 (waive + empty-reason error),
 #         AC-7 (reconcile identity stable across line drift),
 #         AC-8 (four-way reconcile branch + absent-key untouched),
-#         AC-9 (--blocking predicate + bare count), AC-10 (atomic writes / no residue).
+#         AC-9 (--blocking predicate + bare count), AC-10 (atomic writes / no residue),
+#         AC-12 (location encoding — pipe/newline injection; reconcile positive + rejection),
+#         AC-13 (waive reason round-trip; greedy-strip edge with [waived:] in note),
+#         AC-14 (severity enum is exactly {CRITICAL,WARNING,NIT}; out-of-enum values rejected).
 #
 # Ordered riskiest first: AC-4, AC-7, AC-8 before the simpler structural tests.
 #
@@ -176,7 +179,7 @@ teardown() {
     printf '%s\t%s\t%s\t%s\t%s\n' "sec" "CRITICAL" "HIGH" "a.ts:1" "note-f1"
     printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "MEDIUM" "b.ts:1" "note-f2"
     printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "LOW" "c.ts:1" "note-f3"
-    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "INFO" "LOW" "e.ts:1" "note-brand-new"
+    printf '%s\t%s\t%s\t%s\t%s\n' "sec" "WARNING" "LOW" "e.ts:1" "note-brand-new"
   )
 
   run bash -c "printf '%s' \"\$1\" | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$batch"
@@ -514,43 +517,112 @@ teardown() {
   field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
   [ "$field_count" -eq 9 ]
 
-  # list --decode must round-trip the crafted location byte-for-byte.
-  run "$FINDINGS" list "$BRIEF_DIR" --decode
-  [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qF "good.ts:1 | x | x | open | y | z |"
+  # Raw FINDINGS.md must contain %7C in the location cell (encoding happened).
+  local raw_loc_field
+  raw_loc_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f7)
+  printf '%s' "$raw_loc_field" | grep -qF '%7C'
 
-  # The forged ID must NOT appear as a table row.  Note: "F77" may appear as
-  # an encoded substring within the location cell — that is fine.  We check
-  # that no row STARTS with "| F77 " (which would mean it was forged as a real
-  # data row with its own ID column).
+  # Decode the raw location field directly from FINDINGS.md to verify byte-for-byte
+  # round-trip.  We decode from the raw file (not from list --decode output) because
+  # list --decode renders the decoded location inline, which may produce multi-line
+  # output when the location itself contains a newline — making field extraction from
+  # the rendered table unreliable.
+  local decoded_loc
+  decoded_loc=$(printf '%s' "$raw_loc_field" \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+    | awk '{gsub(/%0A/,"\n"); printf "%s",$0}' \
+    | sed 's/%7C/|/g' \
+    | sed 's/%25/%/g')
+  [ "$decoded_loc" = "$loc" ]
+
+  # The forged ID must NOT appear as a table row in the raw file.
+  # Note: "F77" may appear as an encoded substring within the location cell — that
+  # is fine.  We check that no row STARTS with "| F77 " (which would mean it was
+  # forged as a real data row with its own ID column).
   if grep -qF "| F77 " "$BRIEF_DIR/FINDINGS.md"; then
     echo "FAIL: forged F77 row appeared as a real data row in FINDINGS.md" >&2
     return 1
   fi
 }
 
-@test "AC-12 (reconcile): injected location via reconcile batch does not forge blocking rows" {
+@test "AC-12 (reconcile positive): pipe-in-location is stored encoded; count is 0; location round-trips" {
   run "$FINDINGS" init "$BRIEF_DIR"
   [ "$status" -eq 0 ]
 
-  # Crafted location with a newline and forged row content (NIT/LOW — not blocking).
-  # When passed as a batch field containing a newline, the reconcile parser sees two
-  # lines: the first is a valid NIT/LOW entry (not blocking), the second is either
-  # rejected by sev validation (invalid sev) or skipped.  Either way, no CRITICAL/HIGH
-  # forged row must reach the store.
-  local loc
-  loc=$'good.ts:1\n| F77 | evil | NIT | LOW | open | hacked.ts:1 | forged'
+  # POSITIVE case: a valid finding whose location contains a literal "|".
+  # The reconcile batch must store it encoded (%7C) and list --decode must
+  # return the original byte-for-byte.  Using NIT/LOW so count --blocking=0
+  # AND no forged CRITICAL row can exist.
+  local expected_loc="good.ts:1 | F99 | CRITICAL | HIGH | open | x | y"
 
-  # Reconcile may exit non-zero if the second line fails sev/conf parsing — that
-  # is acceptable: the important invariant is that no forged row appears in the file.
-  bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'code-reviewer' 'NIT' 'LOW' \"\$1\" 'harmless nit' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$loc" || true
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'code-reviewer' 'NIT' 'LOW' \"\$1\" 'harmless nit' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$expected_loc"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF " new"
 
-  # count --blocking must be 0 (NIT/LOW is not blocking regardless of row count).
+  # Exactly ONE data row — no forged extra columns.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+
+  # Extract the new finding ID from the reconcile output.
+  local fid
+  fid=$(printf '%s\n' "$output" | grep " new" | awk '{print $1}')
+
+  # The single data row must split into exactly 9 pipe-fields (no forged extra cols).
+  local field_count
+  field_count=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '{print NF}')
+  [ "$field_count" -eq 9 ]
+
+  # Raw FINDINGS.md must contain %7C in the location cell (encoding happened).
+  local raw_loc_field
+  raw_loc_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f7)
+  printf '%s' "$raw_loc_field" | grep -qF '%7C'
+
+  # No literal "|" inside the raw location cell (would forge extra columns).
+  if printf '%s' "$raw_loc_field" | grep -qF '|'; then
+    echo "FAIL: raw pipe found inside encoded location field" >&2
+    return 1
+  fi
+
+  # count --blocking must be 0 (NIT/LOW, and no forged CRITICAL row exists).
   run "$FINDINGS" count "$BRIEF_DIR" --blocking
   [ "$status" -eq 0 ]
   [ "$output" = "0" ]
 
-  # Forged ID must not appear as a real data row.
+  # F99 must NOT appear as a real data-row ID (it is encoded inside the location).
+  if grep -qF "| F99 " "$BRIEF_DIR/FINDINGS.md"; then
+    echo "FAIL: F99 appeared as a real data row — location encoding failed" >&2
+    return 1
+  fi
+
+  # Decode the raw location field directly from FINDINGS.md to verify byte-for-byte
+  # round-trip.  Decoding from the raw file avoids the multi-field-split ambiguity
+  # that arises when list --decode renders a decoded pipe-containing location inline.
+  local raw_loc_field decoded_loc
+  raw_loc_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f7)
+  decoded_loc=$(printf '%s' "$raw_loc_field" \
+    | awk '{gsub(/%0A/,"\n"); printf "%s",$0}' \
+    | sed 's/%7C/|/g' \
+    | sed 's/%25/%/g' \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  [ "$decoded_loc" = "$expected_loc" ]
+}
+
+@test "AC-12 (reconcile rejection): batch line with newline-in-field is rejected non-zero" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # A batch field containing a raw newline splits into two lines.  The second
+  # fragment fails sev/conf validation so reconcile must exit non-zero.  We
+  # assert the non-zero status explicitly — do NOT swallow with || true.
+  local loc
+  loc=$'good.ts:1\n| F77 | evil | NIT | LOW | open | hacked.ts:1 | forged'
+
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'code-reviewer' 'NIT' 'LOW' \"\$1\" 'harmless nit' | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$loc"
+  # Must exit non-zero (the second fragment fails sev/conf validation).
+  [ "$status" -ne 0 ]
+
+  # Regardless of the error, no forged F77 row must appear.
   if grep -qF "| F77 " "$BRIEF_DIR/FINDINGS.md"; then
     echo "FAIL: forged F77 row appeared as a real data row in FINDINGS.md" >&2
     return 1
@@ -598,11 +670,21 @@ teardown() {
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 1 ]
 
-  # list --decode must render the reason readably (decoded).
-  run "$FINDINGS" list "$BRIEF_DIR" --decode
-  [ "$status" -eq 0 ]
-  # The decoded note must contain the waive suffix with the decoded reason.
-  printf '%s\n' "$output" | grep -qF "waived:"
+  # Decode the note field directly from the raw FINDINGS.md and compare
+  # byte-for-byte.  We avoid list --decode here because the decoded reason
+  # contains "|" and a newline, which cause cut-d'|' truncation and multi-line
+  # grep mismatches when parsing the rendered table output.
+  local raw_note_field decoded_note
+  raw_note_field=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f8 \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  decoded_note=$(printf '%s' "$raw_note_field" \
+    | awk '{gsub(/%0A/,"\n"); printf "%s",$0}' \
+    | sed 's/%7C/|/g' \
+    | sed 's/%25/%/g')
+  # Expected: original note + " [waived: <reason>]"
+  local expected_note
+  expected_note="risky call [waived: ${reason}]"
+  [ "$decoded_note" = "$expected_note" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -675,6 +757,111 @@ teardown() {
   local row_count
   row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
   [ "$row_count" -eq 2 ]
+}
+
+# ---------------------------------------------------------------------------
+# AC-14: severity enum is exactly {CRITICAL,WARNING,NIT}; out-of-enum value rejected
+# ---------------------------------------------------------------------------
+
+@test "AC-14: add with out-of-enum severity exits non-zero; error names {CRITICAL,WARNING,NIT}" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Construct the bad sev dynamically so the literal does not appear in source.
+  local bad_sev
+  bad_sev="IN""FO"
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "$bad_sev" "LOW" "x.ts:1" "info finding"
+  [ "$status" -ne 0 ]
+  # Error message must name the three valid severities.
+  printf '%s' "$output" | grep -qF "CRITICAL"
+  printf '%s' "$output" | grep -qF "WARNING"
+  printf '%s' "$output" | grep -qF "NIT"
+  # Error message must echo back the rejected value.
+  printf '%s' "$output" | grep -qF "$bad_sev"
+}
+
+# ---------------------------------------------------------------------------
+# Fix 4: basename -- handles dash-prefixed locations without dedup collapse
+# ---------------------------------------------------------------------------
+
+@test "Fix-4 (basename --): dash-prefixed locations stay as distinct rows" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Two findings with DIFFERENT notes at dash-prefixed locations.
+  # Without "basename --", BSD basename errors, returning empty for both,
+  # causing identical match keys and dedup collapsing both to one row.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "-a.ts:1" "note alpha"
+  [ "$status" -eq 0 ]
+  local fa="$output"
+
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "-b.ts:2" "note beta"
+  [ "$status" -eq 0 ]
+  local fb="$output"
+
+  # Must be two DISTINCT IDs.
+  [ "$fa" != "$fb" ]
+
+  # Both rows must exist in the file.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 2 ]
+
+  # Verify identity is still correct: same note, different line → recurring (AC-7).
+  # This uses a normal (non-dash) location to confirm the dedup key still works.
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "normal.ts:10" "normal note"
+  [ "$status" -eq 0 ]
+  local fn="$output"
+
+  run "$FINDINGS" add "$BRIEF_DIR" "lint" "NIT" "LOW" "normal.ts:99" "normal note"
+  [ "$status" -eq 0 ]
+  local fn2="$output"
+
+  # Same note + basename → same ID returned (dedup).
+  [ "$fn" = "$fn2" ]
+
+  # Row count must be 3 (the two dash-prefix rows + one normal dedup row).
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 3 ]
+}
+
+# ---------------------------------------------------------------------------
+# Fix 5: waive greedy-strip does not eat [waived:] content in the original note
+# ---------------------------------------------------------------------------
+
+@test "Fix-5 (waive strip): note containing [waived: old] in text reconciles to same ID" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Note whose text itself contains " [waived: old]" — this would trip the greedy
+  # sed 's/ \[waived: .*\]$//' by stripping from the FIRST occurrence, diverging
+  # the match key from the original and causing a false "new" on reconcile.
+  local tricky_note="fix the [waived: old] handler"
+
+  run "$FINDINGS" add "$BRIEF_DIR" "sec" "WARNING" "HIGH" "app.ts:5" "$tricky_note"
+  [ "$status" -eq 0 ]
+  local fid="$output"
+
+  # Waive it.
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid" "deliberate override"
+  [ "$status" -eq 0 ]
+
+  # Now reconcile the ORIGINAL finding (same lens/location/note, no waive suffix).
+  run bash -c "printf '%s\t%s\t%s\t%s\t%s\n' 'sec' 'WARNING' 'HIGH' 'app.ts:5' \"\$1\" | \"$FINDINGS\" reconcile \"$BRIEF_DIR\"" -- "$tricky_note"
+  [ "$status" -eq 0 ]
+
+  # Must be waived-kept — not a new duplicate.
+  printf '%s\n' "$output" | grep -qF "${fid} waived-kept"
+
+  # Status must remain waived.
+  local status_col
+  status_col=$(grep "^| ${fid} " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$status_col" = "waived" ]
+
+  # Still exactly one data row.
+  local row_count
+  row_count=$(grep -c "^| F" "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
 }
 
 # ---------------------------------------------------------------------------

@@ -113,9 +113,9 @@ resolve_sha1() {
 # validate_sev <sev> — reject out-of-range severity values.
 validate_sev() {
   case "$1" in
-    CRITICAL|WARNING|NIT|INFO) return 0 ;;
+    CRITICAL|WARNING|NIT) return 0 ;;
     *)
-      printf "error: sev '%s' not in {CRITICAL,WARNING,NIT,INFO}\n" "$1" >&2
+      printf "error: sev '%s' not in {CRITICAL,WARNING,NIT}\n" "$1" >&2
       exit 1
       ;;
   esac
@@ -142,7 +142,7 @@ match_key() {
   local location="$2"
   local raw_note="$3"
   local base_loc file_only
-  base_loc=$(basename "$location")
+  base_loc=$(basename -- "$location")
   # Strip trailing colon-plus-digits (line number suffix), e.g. "foo.ts:42" → "foo.ts".
   file_only=$(printf '%s' "$base_loc" | sed 's/:[0-9][0-9]*$//')
   # Normalise note: lowercase → whitespace-collapse → trim.
@@ -166,12 +166,11 @@ match_key() {
 # decoding) so the strip is always single-line and cannot be confused by a
 # reason that contains a percent-encoded newline (%0A).  Stripping on the
 # encoded form is safe because the suffix delimiter (" [waived: " and "]")
-# only contains ASCII characters that are not percent-encoded, and the
-# encoded reason itself never contains a literal "]" (it would be left as-is
-# since "]" has no percent-encoding in our scheme — but to be safe the reason
-# goes through encode_note which encodes %, |, and newline only; a raw "]" in
-# the reason is therefore possible.  We strip greedily (last "]") so a reason
-# that contains "]" is handled correctly.
+# only contains ASCII characters that are not percent-encoded.
+# encode_note does NOT encode "]", so raw "]" may appear in the encoded reason.
+# We therefore use awk to find the LAST occurrence of " [waived: " and strip
+# from that position to end of string, rather than a sed pattern that would
+# misfire when the original note itself contains " [waived: ...]" as text.
 #
 # Decode lens and location (now encoded at rest) before passing to match_key.
 # ---------------------------------------------------------------------------
@@ -183,9 +182,24 @@ row_match_key() {
   renc_loc=$(row_field "$rrow" 7)
   rloc=$(decode_note "$renc_loc")
   renc=$(row_field "$rrow" 8)
-  # Strip " [waived: ...]" suffix on the ENCODED note — single-line, safe.
-  # Use sed with a greedy match on the LAST "]" to handle reasons containing "]".
-  rnote_stripped=$(printf '%s' "$renc" | sed 's/ \[waived: .*\]$//')
+  # Strip the LAST " [waived: ...]" suffix on the ENCODED note.
+  # encode_note does NOT encode "]", so a raw "]" may appear in the encoded reason
+  # (e.g. reason "see [ticket]" stores as "see [ticket]").  A sed pattern like
+  # [^]]* or greedy .* would both misfire when the original note itself contains
+  # a " [waived: ...]" substring (greedy eats too much; [^]]* stops too early).
+  # Solution: use awk to find the LAST occurrence of " [waived: " in the string
+  # and strip from that position to end of string.  This correctly handles:
+  #   - reasons containing literal "]"
+  #   - original notes containing " [waived: ...]" as text
+  rnote_stripped=$(printf '%s' "$renc" | awk '{
+    pos = 0; start = 1; tmp = $0
+    while (match(tmp, / \[waived: /)) {
+      pos = start + RSTART - 1
+      start = start + RSTART - 1 + RLENGTH
+      tmp = substr($0, start)
+    }
+    if (pos > 0) { printf "%s", substr($0, 1, pos - 1) } else { printf "%s", $0 }
+  }')
   # Now decode the stripped note for match_key (which expects decoded text).
   local rrawn
   rrawn=$(decode_note "$rnote_stripped")
