@@ -57,8 +57,8 @@ Which agent each workflow skill spawns for its heavy lifting:
 
 | Skill | Delegates to |
 |---|---|
-| `/brief N` | `@researcher` (context), `@spec-reviewer` (brief sanity) |
-| `/plan N` | `@planner` (authoring), `@spec-reviewer` (plan vs brief) |
+| `/brief N` | `@researcher` (context), `@architect` (design pass — gated on Design Risk), `@spec-reviewer` (brief sanity) |
+| `/plan N` | `@planner` (authoring), `@architect` (plan-focused design pass — gated on Design Risk), `@spec-reviewer` (plan vs brief) |
 | `/build N` | `@executor` (implement), `@test-writer` (tests), `@code-reviewer` (diff vs plan) |
 | `/verify N` | `@verifier` (goal-backward coverage) |
 | `/ship` | `/verify` (5-lens review final pass), `@security-auditor` (secret/vuln scan) |
