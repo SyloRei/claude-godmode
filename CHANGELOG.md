@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-06-06
+
+Mission 05 — architect in the loop. `@architect` existed as a specialist but was
+never wired into the spine, so design-heavy units went from brief straight to
+plan with no dedicated design step. This release makes `@architect` a gated,
+load-bearing part of `/brief` and `/plan`: it is spawned only when a unit is
+flagged as design-risky, keeping cost down on routine work while giving complex
+units an explicit architecture pass before implementation.
+
+### Added
+
+- **Architect Gate** — a canonical section in the routing rule (mirrored into
+  `AGENTS.md`) defining when `@architect` is engaged: only on a `Design Risk =
+  yes` signal, not by default.
+- **Design Risk signal** — a new field in the `/brief` skill template and
+  process step that flags whether a unit warrants a dedicated design pass.
+- **`@architect` in `/brief`** — when `Design Risk = yes`, `/brief` spawns
+  `@architect` to produce design context before the brief is finalized.
+- **`@architect` in `/plan`** — when `Design Risk = yes`, `/plan` spawns a
+  plan-focused `@architect` pass so the tactical plan is grounded in the
+  architecture, not just the brief.
+
+### Fixed
+
+- **False `/mission` delegation row** — the routing/`AGENTS.md` delegation table
+  incorrectly listed `/mission` as delegating to `@architect`; corrected so the
+  gated `@architect` rows appear only on `/brief` and `/plan`.
+
 ## [2.5.0] - 2026-06-04
 
 Mission 04 (unit 1) — onboard code-standards capture. `/onboard` previously
