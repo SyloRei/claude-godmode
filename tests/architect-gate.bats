@@ -21,7 +21,7 @@ load test_helper
 ROUTING="$PLUGIN_ROOT/rules/godmode-routing.md"
 BRIEF="$PLUGIN_ROOT/skills/brief/SKILL.md"
 PLAN_SKILL="$PLUGIN_ROOT/skills/plan/SKILL.md"
-AGENTS_MD="$PLUGIN_ROOT/AGENTS.md"
+AGENTS="$PLUGIN_ROOT/AGENTS.md"
 
 # --- the Architect Gate definition (routing.md) ---------------------------
 
@@ -244,38 +244,40 @@ AGENTS_MD="$PLUGIN_ROOT/AGENTS.md"
 # --- the reconciled /mission delegation row (unit 4, S3 — advances AC-6, AC-7) ---
 #
 # A prior draft of the `## Skill → Agent delegation map` falsely paired `/mission`
-# with `@architect (roadmap shaping)` — but roadmap shaping is the /mission skill's
-# own work and spawns no agent. S1 corrected the routing rule's row to
-# `— (roadmap shaping is the skill's own work; no agent spawned)` and S2 regenerated
-# AGENTS.md so its mirrored table carries the same corrected row. The two cases
-# below pin that reconciled state so the false row cannot silently reappear in
-# EITHER the source rule or the generated mirror: each extracts the delegation-map
-# section, isolates the single `/mission` row within it, and asserts that row
-# carries no `architect` (case-insensitive). Read-only greps; nothing is mutated.
+# with `@architect` (roadmap shaping) — but roadmap shaping is the /mission skill's
+# own work and spawns no agent. S1 corrected the routing rule's row to name no
+# agent, and S2 regenerated AGENTS.md so its mirrored table carries the same
+# corrected row. The two cases below pin that reconciled state so the false row
+# cannot silently reappear in EITHER the source rule or the generated mirror: each
+# extracts the delegation-map section (bounded at the next `## ` heading, exclusive,
+# matching the Design Risk case above), isolates the single `/mission` table row
+# within it, and asserts that row names no `architect` (case-insensitive). Read-only
+# greps; nothing is mutated.
 
 # AC-6: the routing rule's delegation-map `/mission` row spawns no agent — it must
-# not name `architect`. Scope to the map section, then isolate the `/mission` row
-# (the only `/mission`-containing line in the section) so a `/mission` mention
-# elsewhere can't mask a regression and an unrelated `architect` row can't trip a
-# false failure. Also assert the section as a whole never pairs `/mission` with the
-# false `@architect (roadmap shaping)` token.
+# not name `architect`. Scope to the map section (exclusive of the heading and the
+# next section's heading), then isolate the `/mission` table row by its cell anchor
+# (`| `/mission``) so a `/mission`-prefixed sibling like `/mission-extended` can't
+# fold into the match and an unrelated `architect` row elsewhere can't trip a false
+# failure. Then assert the section never pairs `/mission` with `@architect` at all —
+# any reworded reintroduction (with or without the original parenthetical) is caught.
 @test "routing delegation map: /mission row carries no @architect" {
-  map="$(sed -n '/## Skill → Agent delegation map/,/^## /p' "$ROUTING")"
-  row="$(echo "$map" | grep -F '/mission')"
-  # exactly the one /mission row, and it names no architect
+  map="$(awk '/^## Skill → Agent delegation map/{f=1;next} /^## /{f=0} f' "$ROUTING")"
+  row="$(echo "$map" | grep -F '| `/mission`')"
+  # exactly the one /mission table row, and it names no architect
   [ -n "$row" ]
   echo "$row" | grep -qiv 'architect'
-  # the false pairing must not appear anywhere in the map section
-  ! echo "$map" | grep -qiE '/mission.*@architect \(roadmap shaping\)'
+  # no reworded false pairing anywhere in the map section
+  ! echo "$map" | grep -qiE '/mission.*@architect'
 }
 
 # AC-7: the AGENTS.md mirror of the delegation map must carry the SAME corrected
-# `/mission` row — a stale regen reintroducing the false `@architect (roadmap
-# shaping)` pairing is caught here. Same scoping discipline as the routing case.
+# `/mission` row — a stale regen reintroducing a `/mission`→`@architect` pairing is
+# caught here. Same scoping discipline as the routing case.
 @test "AGENTS.md delegation map mirror: /mission row carries no @architect" {
-  map="$(sed -n '/## Skill → Agent delegation map/,/^## /p' "$AGENTS_MD")"
-  row="$(echo "$map" | grep -F '/mission')"
+  map="$(awk '/^## Skill → Agent delegation map/{f=1;next} /^## /{f=0} f' "$AGENTS")"
+  row="$(echo "$map" | grep -F '| `/mission`')"
   [ -n "$row" ]
   echo "$row" | grep -qiv 'architect'
-  ! echo "$map" | grep -qiE '/mission.*@architect \(roadmap shaping\)'
+  ! echo "$map" | grep -qiE '/mission.*@architect'
 }
