@@ -1,0 +1,573 @@
+#!/usr/bin/env bash
+# godmode-findings — per-brief findings store.
+# Manages a FINDINGS.md markdown table inside a given brief directory.
+# Each finding has an ID (F1, F2, …), a lens, severity, confidence,
+# status, location, and a note (percent-encoded to survive the table).
+#
+# Usage:
+#   godmode-findings init       <brief_dir>
+#   godmode-findings add        <brief_dir> <lens> <sev> <conf> <location> <note>
+#   godmode-findings transition <brief_dir> <ID> <open|fixed>
+#   godmode-findings waive      <brief_dir> <ID> <reason>
+#   godmode-findings list       <brief_dir> [--open] [--blocking] [--decode]
+#   godmode-findings count      <brief_dir> --blocking
+#   godmode-findings reconcile  <brief_dir> <findings_json>   # not yet implemented
+#
+# The FINDINGS.md table columns (in order):
+#   ID | lens | sev | conf | status | location | note
+#
+# Notes are percent-encoded on write (% → %25, | → %7C, newline → %0A)
+# so raw pipe characters can never break the table parser.
+#
+# Match key for dedup = sha1( lens + 0x1F + basename(location) + 0x1F + normalised_note )
+# where normalised_note = decoded note lowercased and whitespace-collapsed.
+# Line number is intentionally excluded from the match key so the same
+# finding at a shifted line is treated as the same finding.
+#
+# Atomic writes: every mutation writes to <brief_dir>/.FINDINGS.tmp.<PID>
+# then mv-renames over FINDINGS.md (same device → atomic).
+#
+# Bash 3.2 compatible. No mapfile/readarray, no [[ -v ]], no ${var,,},
+# no ${var^^}, no associative arrays (declare -A), no GNU-only flags.
+# Uses tr for case conversion (not ${var,,}) and awk for cross-platform
+# newline handling in encode_note.
+
+set -euo pipefail
+
+# Global temp-file path used by the EXIT trap.  Each mutation function sets
+# this before creating the file so the trap can clean it up on unexpected exit.
+# The function clears it after a successful mv so the trap is a no-op on the
+# normal path.  Using a global avoids the bash 3.2 issue where a trap set
+# inside a function fires at script exit, when the local variable is gone.
+_FINDINGS_TMP=""
+trap 'rm -f "$_FINDINGS_TMP"' EXIT
+
+FINDINGS_FILE="FINDINGS.md"
+HEADER_ROW="| ID | lens | sev | conf | status | location | note |"
+SEP_ROW="|---|---|---|---|---|---|---|"
+
+# ---------------------------------------------------------------------------
+# usage
+# ---------------------------------------------------------------------------
+usage() {
+  echo "usage: godmode-findings init       <brief_dir>" >&2
+  echo "       godmode-findings add        <brief_dir> <lens> <sev> <conf> <location> <note>" >&2
+  echo "       godmode-findings transition <brief_dir> <ID> <open|fixed>" >&2
+  echo "       godmode-findings waive      <brief_dir> <ID> <reason>" >&2
+  echo "       godmode-findings list       <brief_dir> [--open] [--blocking] [--decode]" >&2
+  echo "       godmode-findings count      <brief_dir> --blocking" >&2
+  echo "       godmode-findings reconcile  <brief_dir> <findings_json>" >&2
+}
+
+# ---------------------------------------------------------------------------
+# Percent-encoding helpers
+# Encode ORDER is LOAD-BEARING:
+#   1. % → %25  (must be first so we don't double-encode later replacements)
+#   2. | → %7C
+#   3. newline → %0A  (awk handles multi-line input portably on BSD+GNU)
+# Decode is the strict reverse:
+#   1. %0A → newline
+#   2. %7C → |
+#   3. %25 → %  (must be last)
+# ---------------------------------------------------------------------------
+encode_note() {
+  # Use awk so multi-line notes work identically on BSD/macOS and GNU/Linux.
+  # ORS="" suppresses awk's own newlines; we emit the literal string %0A
+  # between input lines.  Use print with a string literal to avoid awk
+  # treating %0A as a printf format specifier.
+  printf '%s' "$1" | awk 'BEGIN{ORS=""} {gsub(/%/,"%25"); gsub(/\|/,"%7C"); if(NR>1) print "%0A"; printf "%s",$0}'
+}
+
+decode_note() {
+  # BSD-safe sed: avoid the GNU -e 's/\n//' form.  Use awk for the %0A step.
+  printf '%s' "$1" \
+    | awk '{gsub(/%0A/,"\n"); printf "%s",$0}' \
+    | sed 's/%7C/|/g' \
+    | sed 's/%25/%/g'
+}
+
+# ---------------------------------------------------------------------------
+# SHA-1 tool — resolved once at first call, cached in SHA1_CMD.
+# ---------------------------------------------------------------------------
+SHA1_CMD=""
+resolve_sha1() {
+  if [ -n "$SHA1_CMD" ]; then
+    return 0
+  fi
+  if command -v shasum > /dev/null 2>&1; then
+    SHA1_CMD="shasum -a 1"
+  elif command -v sha1sum > /dev/null 2>&1; then
+    SHA1_CMD="sha1sum"
+  else
+    echo "error: neither 'shasum' nor 'sha1sum' found; cannot compute match keys" >&2
+    exit 1
+  fi
+}
+
+# match_key <lens> <location> <note>
+# note here is the DECODED note text.
+# The line number in location is intentionally EXCLUDED from the key so that
+# the same finding reported at a shifted line is treated as the same finding.
+# We take basename(location) then strip any trailing ":NNN" line-number suffix.
+match_key() {
+  local lens="$1"
+  local location="$2"
+  local raw_note="$3"
+  local base_loc file_only
+  base_loc=$(basename "$location")
+  # Strip trailing colon-plus-digits (line number suffix), e.g. "foo.ts:42" → "foo.ts".
+  file_only=$(printf '%s' "$base_loc" | sed 's/:[0-9][0-9]*$//')
+  # Normalise note: lowercase → whitespace-collapse → trim.
+  local norm_note
+  norm_note=$(printf '%s' "$raw_note" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr -s '[:space:]' ' ' \
+    | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+  # Unit separator 0x1F between fields.
+  local payload
+  payload=$(printf '%s\037%s\037%s' "$lens" "$file_only" "$norm_note")
+  resolve_sha1
+  printf '%s' "$payload" | $SHA1_CMD | awk '{print $1}'
+}
+
+# ---------------------------------------------------------------------------
+# findings_file <brief_dir> — print the path to FINDINGS.md
+# ---------------------------------------------------------------------------
+findings_file() {
+  printf '%s/%s' "$1" "$FINDINGS_FILE"
+}
+
+# ---------------------------------------------------------------------------
+# next_id <brief_dir> — print the next Fn ID (e.g. F3).
+# Reads all ID-column values and returns max+1.  Empty table → F1.
+# ---------------------------------------------------------------------------
+next_id() {
+  local ffile
+  ffile=$(findings_file "$1")
+  local max=0
+  local id_val num
+  # grep may return nothing if no data rows; || true prevents set -e abort.
+  while IFS= read -r id_val; do
+    # Strip leading/trailing whitespace and the 'F' prefix.
+    id_val=$(printf '%s' "$id_val" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
+    case "$id_val" in
+      F[0-9]*)
+        num=${id_val#F}
+        if [ "$num" -gt "$max" ] 2>/dev/null; then
+          max="$num"
+        fi
+        ;;
+    esac
+  done < <(grep -v '^|[-| ]*$' "$ffile" 2>/dev/null | grep '^|' | grep -v '^ *| *ID' | cut -d'|' -f2 || true)
+  printf 'F%d\n' "$((max + 1))"
+}
+
+# ---------------------------------------------------------------------------
+# read_data_rows <brief_dir> — print only the data rows (no header, no sep).
+# Each line is a raw table row like "| F1 | lens | ... |".
+# ---------------------------------------------------------------------------
+read_data_rows() {
+  local ffile
+  ffile=$(findings_file "$1")
+  if [ ! -f "$ffile" ]; then
+    return 0
+  fi
+  # Skip the header row (contains " ID ") and the separator row (contains ---).
+  grep '^|' "$ffile" \
+    | grep -v '^ *| *ID *|' \
+    | grep -v '^|[-| ]*$' \
+    || true
+}
+
+# ---------------------------------------------------------------------------
+# parse_row <row> — extract fields from a table row.
+# Prints one field per line in column order: ID lens sev conf status location note
+# Field 2=ID, 3=lens, 4=sev, 5=conf, 6=status, 7=location, 8=note (f8 = last visible)
+# We use cut -d'|' since notes are encoded (no raw |).
+# ---------------------------------------------------------------------------
+row_field() {
+  local row="$1"
+  local n="$2"
+  printf '%s' "$row" | cut -d'|' -f"$n" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//'
+}
+
+# ---------------------------------------------------------------------------
+# cmd_init <brief_dir>
+# ---------------------------------------------------------------------------
+cmd_init() {
+  if [ "$#" -ne 1 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  local ffile
+  ffile=$(findings_file "$brief_dir")
+
+  if [ ! -d "$brief_dir" ]; then
+    echo "error: brief_dir '$brief_dir' does not exist" >&2
+    exit 1
+  fi
+
+  # Idempotent: only create if absent.
+  if [ -f "$ffile" ]; then
+    return 0
+  fi
+
+  {
+    echo "$HEADER_ROW"
+    echo "$SEP_ROW"
+  } > "$ffile"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_add <brief_dir> <lens> <sev> <conf> <location> <note>
+# ---------------------------------------------------------------------------
+cmd_add() {
+  if [ "$#" -ne 6 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  local lens="$2"
+  local sev="$3"
+  local conf="$4"
+  local location="$5"
+  local note="$6"
+  local ffile
+  ffile=$(findings_file "$brief_dir")
+
+  if [ ! -f "$ffile" ]; then
+    echo "error: FINDINGS.md not found in '$brief_dir'; run 'init' first" >&2
+    exit 1
+  fi
+
+  # Compute the match key on the raw (decoded) note.
+  local mkey
+  mkey=$(match_key "$lens" "$location" "$note")
+
+  # Check whether an identical finding (by match key) already exists.
+  local existing_id=""
+  local row
+  while IFS= read -r row; do
+    local row_lens row_loc row_enc_note row_raw_note row_key row_id
+    row_id=$(row_field "$row" 2)
+    row_lens=$(row_field "$row" 3)
+    row_loc=$(row_field "$row" 7)
+    row_enc_note=$(row_field "$row" 8)
+    row_raw_note=$(decode_note "$row_enc_note")
+    row_key=$(match_key "$row_lens" "$row_loc" "$row_raw_note")
+    if [ "$row_key" = "$mkey" ]; then
+      existing_id="$row_id"
+      break
+    fi
+  done < <(read_data_rows "$brief_dir")
+
+  if [ -n "$existing_id" ]; then
+    printf '%s\n' "$existing_id"
+    return 0
+  fi
+
+  # Allocate the next ID.
+  local new_id
+  new_id=$(next_id "$brief_dir")
+
+  # Encode the note.
+  local enc_note
+  enc_note=$(encode_note "$note")
+
+  # Build the new row.
+  local new_row
+  new_row="| ${new_id} | ${lens} | ${sev} | ${conf} | open | ${location} | ${enc_note} |"
+
+  # Atomic write: append new row to a temp file, then mv over the original.
+  # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
+  _FINDINGS_TMP="${brief_dir}/.FINDINGS.tmp.$$"
+
+  {
+    cat "$ffile"
+    echo "$new_row"
+  } > "$_FINDINGS_TMP"
+  mv "$_FINDINGS_TMP" "$ffile"
+  _FINDINGS_TMP=""
+
+  printf '%s\n' "$new_id"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_transition <brief_dir> <ID> <open|fixed>
+# ---------------------------------------------------------------------------
+cmd_transition() {
+  if [ "$#" -ne 3 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  local target_id="$2"
+  local new_status="$3"
+  local ffile
+  ffile=$(findings_file "$brief_dir")
+
+  case "$new_status" in
+    open|fixed) ;;
+    *)
+      echo "error: status must be 'open' or 'fixed'" >&2
+      exit 1
+      ;;
+  esac
+
+  if [ ! -f "$ffile" ]; then
+    echo "error: FINDINGS.md not found in '$brief_dir'" >&2
+    exit 1
+  fi
+
+  # Verify the ID exists.
+  local found=0
+  local row
+  while IFS= read -r row; do
+    local row_id
+    row_id=$(row_field "$row" 2)
+    if [ "$row_id" = "$target_id" ]; then
+      found=1
+      break
+    fi
+  done < <(read_data_rows "$brief_dir")
+
+  if [ "$found" -eq 0 ]; then
+    echo "error: ID '$target_id' not found in FINDINGS.md" >&2
+    exit 1
+  fi
+
+  # Rebuild the table, updating the matching row's status field (col 6).
+  # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
+  _FINDINGS_TMP="${brief_dir}/.FINDINGS.tmp.$$"
+
+  while IFS= read -r row; do
+    local row_id
+    # Detect header / separator rows and pass them through unchanged.
+    case "$row" in
+      *" ID "*|*"---|"*)
+        echo "$row"
+        continue
+        ;;
+    esac
+    row_id=$(row_field "$row" 2)
+    if [ "$row_id" = "$target_id" ]; then
+      # Reconstruct the row with the new status (field 6).
+      local f2 f3 f4 f5 f7 f8
+      f2=$(row_field "$row" 2)
+      f3=$(row_field "$row" 3)
+      f4=$(row_field "$row" 4)
+      f5=$(row_field "$row" 5)
+      f7=$(row_field "$row" 7)
+      f8=$(row_field "$row" 8)
+      echo "| ${f2} | ${f3} | ${f4} | ${f5} | ${new_status} | ${f7} | ${f8} |"
+    else
+      echo "$row"
+    fi
+  done < "$ffile" > "$_FINDINGS_TMP"
+  mv "$_FINDINGS_TMP" "$ffile"
+  _FINDINGS_TMP=""
+}
+
+# ---------------------------------------------------------------------------
+# cmd_waive <brief_dir> <ID> <reason>
+# ---------------------------------------------------------------------------
+cmd_waive() {
+  if [ "$#" -ne 3 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  local target_id="$2"
+  local reason="$3"
+  local ffile
+  ffile=$(findings_file "$brief_dir")
+
+  if [ -z "$reason" ]; then
+    echo "error: waive reason must not be empty" >&2
+    exit 1
+  fi
+
+  if [ ! -f "$ffile" ]; then
+    echo "error: FINDINGS.md not found in '$brief_dir'" >&2
+    exit 1
+  fi
+
+  # Verify the ID exists.
+  local found=0
+  local row
+  while IFS= read -r row; do
+    local row_id
+    row_id=$(row_field "$row" 2)
+    if [ "$row_id" = "$target_id" ]; then
+      found=1
+      break
+    fi
+  done < <(read_data_rows "$brief_dir")
+
+  if [ "$found" -eq 0 ]; then
+    echo "error: ID '$target_id' not found in FINDINGS.md" >&2
+    exit 1
+  fi
+
+  # Encode the reason and build the waive suffix: " [waived: <reason>]"
+  local enc_reason
+  enc_reason=$(encode_note "$reason")
+  local waive_suffix=" [waived: ${enc_reason}]"
+
+  # Rebuild the table, updating the matching row.
+  # _FINDINGS_TMP is global so the EXIT trap can clean it up on unexpected exit.
+  _FINDINGS_TMP="${brief_dir}/.FINDINGS.tmp.$$"
+
+  while IFS= read -r row; do
+    local row_id
+    case "$row" in
+      *" ID "*|*"---|"*)
+        echo "$row"
+        continue
+        ;;
+    esac
+    row_id=$(row_field "$row" 2)
+    if [ "$row_id" = "$target_id" ]; then
+      local f2 f3 f4 f5 f7 f8
+      f2=$(row_field "$row" 2)
+      f3=$(row_field "$row" 3)
+      f4=$(row_field "$row" 4)
+      f5=$(row_field "$row" 5)
+      f7=$(row_field "$row" 7)
+      f8=$(row_field "$row" 8)
+      echo "| ${f2} | ${f3} | ${f4} | ${f5} | waived | ${f7} | ${f8}${waive_suffix} |"
+    else
+      echo "$row"
+    fi
+  done < "$ffile" > "$_FINDINGS_TMP"
+  mv "$_FINDINGS_TMP" "$ffile"
+  _FINDINGS_TMP=""
+}
+
+# ---------------------------------------------------------------------------
+# cmd_list <brief_dir> [--open] [--blocking] [--decode]
+# ---------------------------------------------------------------------------
+cmd_list() {
+  if [ "$#" -lt 1 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  shift
+
+  local filter_open=0
+  local filter_blocking=0
+  local do_decode=0
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --open)     filter_open=1     ;;
+      --blocking) filter_blocking=1 ;;
+      --decode)   do_decode=1       ;;
+      *)
+        echo "error: unknown flag '$1'" >&2
+        usage
+        exit 1
+        ;;
+    esac
+    shift
+  done
+
+  local row
+  while IFS= read -r row; do
+    local row_id row_lens row_sev row_conf row_status row_loc row_note
+    row_id=$(row_field "$row" 2)
+    row_lens=$(row_field "$row" 3)
+    row_sev=$(row_field "$row" 4)
+    row_conf=$(row_field "$row" 5)
+    row_status=$(row_field "$row" 6)
+    row_loc=$(row_field "$row" 7)
+    row_note=$(row_field "$row" 8)
+
+    # Apply --open filter.
+    if [ "$filter_open" -eq 1 ] && [ "$row_status" != "open" ]; then
+      continue
+    fi
+
+    # Apply --blocking filter: open AND (sev==CRITICAL OR conf==HIGH).
+    if [ "$filter_blocking" -eq 1 ]; then
+      if [ "$row_status" != "open" ]; then
+        continue
+      fi
+      case "$row_sev:$row_conf" in
+        CRITICAL:*|*:HIGH) ;;
+        *) continue ;;
+      esac
+    fi
+
+    # Optionally decode the note for output.
+    local display_note
+    if [ "$do_decode" -eq 1 ]; then
+      display_note=$(decode_note "$row_note")
+      # Re-encode any pipe chars in the decoded note for table display consistency
+      # is NOT required here — list --decode is meant for human consumption.
+      echo "| ${row_id} | ${row_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${row_loc} | ${display_note} |"
+    else
+      echo "| ${row_id} | ${row_lens} | ${row_sev} | ${row_conf} | ${row_status} | ${row_loc} | ${row_note} |"
+    fi
+  done < <(read_data_rows "$brief_dir")
+}
+
+# ---------------------------------------------------------------------------
+# cmd_count <brief_dir> --blocking
+# ---------------------------------------------------------------------------
+cmd_count() {
+  if [ "$#" -ne 2 ]; then usage; exit 1; fi
+  local brief_dir="$1"
+  local flag="$2"
+
+  if [ "$flag" != "--blocking" ]; then
+    echo "error: count requires --blocking flag" >&2
+    usage
+    exit 1
+  fi
+
+  local n=0
+  local row
+  while IFS= read -r row; do
+    n=$((n + 1))
+  done < <(cmd_list "$brief_dir" --blocking)
+  printf '%d\n' "$n"
+}
+
+# ---------------------------------------------------------------------------
+# cmd_reconcile — not yet implemented (reserved for a later step)
+# ---------------------------------------------------------------------------
+cmd_reconcile() {
+  echo "error: reconcile is not yet implemented" >&2
+  exit 1
+}
+
+# ---------------------------------------------------------------------------
+# main
+# ---------------------------------------------------------------------------
+main() {
+  if [ "$#" -lt 1 ]; then
+    usage
+    exit 1
+  fi
+
+  local sub="$1"
+  shift
+
+  case "$sub" in
+    init)
+      cmd_init "$@"
+      ;;
+    add)
+      cmd_add "$@"
+      ;;
+    transition)
+      cmd_transition "$@"
+      ;;
+    waive)
+      cmd_waive "$@"
+      ;;
+    list)
+      cmd_list "$@"
+      ;;
+    count)
+      cmd_count "$@"
+      ;;
+    reconcile)
+      cmd_reconcile "$@"
+      ;;
+    *)
+      usage
+      exit 1
+      ;;
+  esac
+}
+
+main "$@"
