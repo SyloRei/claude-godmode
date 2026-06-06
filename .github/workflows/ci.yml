@@ -104,6 +104,11 @@ jobs:
       - name: agents-drift gate
         run: ./scripts/check-agents-drift.sh
 
+      # FINDINGS.md schema + helper-parity gate: locks the findings store
+      # on-disk format and validates the committed fixtures.
+      - name: findings gate
+        run: ./scripts/check-findings.sh
+
       # bats smoke suite.
       - name: bats
         run: bats tests/
