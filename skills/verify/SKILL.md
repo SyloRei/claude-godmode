@@ -135,12 +135,14 @@ Before persisting, subject the blocking-eligible findings to adversarial confirm
 
 **Step 1 — Mechanical pre-filter (UNCONDITIONAL — runs in every profile including budget).**
 
-For each blocking-eligible finding, check whether its `location` (`file:line`) falls within this unit's diff (the same `git diff` for the unit's commits already gathered in §3). If the finding's file/line is NOT present in the diff:
+For each blocking-eligible finding, check whether its `location`'s **file** appears anywhere in this unit's diff (the same `git diff` for the unit's commits already gathered in §3). If the finding's **file** does NOT appear in the diff at all:
 
 - DROP the finding with reason `out-of-diff`.
 - Do NOT spawn a skeptic for it.
 
-This pre-filter is cheap and unconditional. It removes stale line-number artifacts from the confirmation batch regardless of the active model profile.
+A finding whose file IS in the diff (regardless of whether the exact line number matches) MUST pass through to the skeptic. The pre-filter removes hallucinated or wrong-file anchors — NOT drifted line numbers within a changed file. Line-level questions (e.g. an adjacent or shifted line in a file that IS in the diff) are adjudicated by the skeptic, not the pre-filter.
+
+This pre-filter is cheap and unconditional. It removes stale wrong-file artifacts from the confirmation batch regardless of the active model profile.
 
 **Step 2 — Per-profile skeptic spawn.**
 
@@ -148,7 +150,7 @@ Resolve `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}` (the same way §2 does
 
 - **quality** — confirm ALL blocking-eligible findings that survived the pre-filter.
 - **balanced** — confirm only findings with `severity = CRITICAL` (skip HIGH-confidence WARNINGs).
-- **budget** — SKIP the skeptic spawn entirely. The pre-filter (Step 1) still ran; proceed directly to Step 3 with the pre-filter survivors as-is.
+- **budget** — SKIP the skeptic spawn entirely. The pre-filter survivors pass through to the persist step **unchanged** (treated as UPHELD; no verdict step runs).
 
 For each finding selected by the profile policy, spawn **exactly one** `@finding-skeptic` via the Agent tool (the same way §3 dispatches lenses), with its model resolved via:
 
@@ -157,7 +159,7 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 skeptic_model=$("$gm/godmode-model" finding-skeptic)
 ```
 
-Pass the agent: (a) the single finding record (`lens`, `severity`, `confidence`, `location`, `note`), and (b) the unit diff. The skeptic is read-only. It returns exactly one verdict and one reason sentence.
+Pass `skeptic_model` as the Agent tool's `model` parameter when spawning `@finding-skeptic` (mirroring how §3 passes per-lens models). Pass the agent: (a) the single finding record (`lens`, `severity`, `confidence`, `location`, `note`), and (b) the unit diff. The skeptic is read-only. It returns exactly one verdict and one reason sentence.
 
 Findings NOT selected by the profile policy (e.g. HIGH-conf WARNINGs in balanced, or all survivors in budget) pass through to Step 3 unchanged.
 

@@ -141,33 +141,171 @@ reconcile_batch() {
   [ "$f1_status" = "open" ]
 }
 
-@test "AC-7 (not-real companion): an identity never reconciled is absent from list" {
+@test "AC-7 (drop-vs-downgrade contrast): downgraded finding persists in list; omitted finding is absent" {
   run "$FINDINGS" init "$BRIEF_DIR"
   [ "$status" -eq 0 ]
 
-  # Seed one finding.
+  # Seed finding A (CRITICAL/HIGH) and finding B is simply never submitted.
+  local batchfile1
+  batchfile1="$BRIEF_DIR/batch1.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "security-auditor" "CRITICAL" "HIGH" "auth.ts:42" "sql injection risk" \
+    > "$batchfile1"
+
+  reconcile_batch "$batchfile1"
+  [ "$status" -eq 0 ]
+
+  # Re-reconcile finding A at lower sev/conf (downgrade action) — B is omitted entirely.
+  local batchfile2
+  batchfile2="$BRIEF_DIR/batch2.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "security-auditor" "WARNING" "MEDIUM" "auth.ts:42" "sql injection risk" \
+    > "$batchfile2"
+
+  reconcile_batch "$batchfile2"
+  [ "$status" -eq 0 ]
+
+  # Finding A (downgraded) must still be present in plain list — persisted, not dropped.
+  run "$FINDINGS" list "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "auth.ts"
+
+  # Finding B (omitted — the "drop" case) must be ABSENT from the store.
+  # B's identity: code-reviewer / never submitted note.
+  if printf '%s\n' "$output" | grep -qF "xss in output"; then
+    echo "FAIL: omitted finding B 'xss in output' appeared in list" >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# AC-5 (non-CRITICAL downgrade): REFUTED-over-rated on a non-CRITICAL finding
+# sets conf→MEDIUM only; severity is UNCHANGED (distinct from CRITICAL branch).
+#
+# §4b Step 3 contract: non-CRITICAL over-rated → conf→MEDIUM, sev unchanged.
+# ---------------------------------------------------------------------------
+
+@test "AC-5 (non-CRITICAL downgrade step 1): WARNING/HIGH finding appears in --blocking, count=1" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
   local batchfile
   batchfile="$BRIEF_DIR/batch1.tsv"
   printf '%s\t%s\t%s\t%s\t%s\n' \
-    "security-auditor" "CRITICAL" "HIGH" "auth.ts:42" "sql injection risk" \
+    "code-reviewer" "WARNING" "HIGH" "api.ts:17" "xss in output" \
     > "$batchfile"
 
   reconcile_batch "$batchfile"
   [ "$status" -eq 0 ]
 
-  # An identity that was NEVER reconciled must not appear in the store.
-  run "$FINDINGS" list "$BRIEF_DIR"
+  printf '%s\n' "$output" | grep -qF "F1 new"
+
+  run "$FINDINGS" list "$BRIEF_DIR" --blocking
   [ "$status" -eq 0 ]
-  if printf '%s\n' "$output" | grep -qF "code-reviewer"; then
-    echo "FAIL: unreported lens 'code-reviewer' appeared in list" >&2
+  printf '%s\n' "$output" | grep -qF "F1"
+
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "1" ]
+}
+
+@test "AC-5 (non-CRITICAL downgrade step 2): re-reconcile at WARNING/MEDIUM drops from --blocking, sev stays WARNING, conf now MEDIUM" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Seed the WARNING/HIGH finding (blocking via HIGH confidence).
+  local batchfile1
+  batchfile1="$BRIEF_DIR/batch1.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "code-reviewer" "WARNING" "HIGH" "api.ts:17" "xss in output" \
+    > "$batchfile1"
+
+  reconcile_batch "$batchfile1"
+  [ "$status" -eq 0 ]
+
+  # Re-reconcile same identity (same lens + basename + note) at WARNING/MEDIUM.
+  # This is the non-CRITICAL over-rated downgrade: conf→MEDIUM, sev UNCHANGED.
+  local batchfile2
+  batchfile2="$BRIEF_DIR/batch2.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "code-reviewer" "WARNING" "MEDIUM" "api.ts:17" "xss in output" \
+    > "$batchfile2"
+
+  reconcile_batch "$batchfile2"
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" | grep -qF "F1 recurring"
+
+  # Must no longer be blocking.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  run "$FINDINGS" list "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qF "F1"; then
+    echo "FAIL: F1 still in --blocking after non-CRITICAL downgrade to MEDIUM conf" >&2
     return 1
   fi
 
-  # The specific never-reported note must not appear either.
-  if printf '%s\n' "$output" | grep -qF "never reported finding"; then
-    echo "FAIL: unreported note appeared in list" >&2
+  # Plain list must show F1 still present with sev=WARNING (NOT demoted to NIT).
+  run "$FINDINGS" list "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "F1"
+
+  local f1_row
+  f1_row=$(printf '%s\n' "$output" | grep "^| F1 ")
+  [ -n "$f1_row" ]
+
+  local f1_sev f1_conf f1_status
+  f1_sev=$(printf '%s\n' "$f1_row" | cut -d'|' -f4 | tr -d ' ')
+  f1_conf=$(printf '%s\n' "$f1_row" | cut -d'|' -f5 | tr -d ' ')
+  f1_status=$(printf '%s\n' "$f1_row" | cut -d'|' -f6 | tr -d ' ')
+
+  # Severity must remain WARNING — non-CRITICAL branch only touches conf.
+  [ "$f1_sev" = "WARNING" ]
+  # Confidence must be refreshed to MEDIUM.
+  [ "$f1_conf" = "MEDIUM" ]
+  [ "$f1_status" = "open" ]
+}
+
+# ---------------------------------------------------------------------------
+# AC-7 (predicate boundary): a WARNING/MEDIUM finding is NOT blocking-eligible
+# (neither CRITICAL nor HIGH-conf) so it must be absent from --blocking but
+# present in plain list.  Pins that the --blocking predicate excludes it.
+# ---------------------------------------------------------------------------
+
+@test "AC-7 (predicate boundary): WARNING/MEDIUM finding is outside --blocking but present in plain list" {
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  local batchfile
+  batchfile="$BRIEF_DIR/batch1.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "convention-reviewer" "WARNING" "MEDIUM" "util.ts:5" "inconsistent naming" \
+    > "$batchfile"
+
+  reconcile_batch "$batchfile"
+  [ "$status" -eq 0 ]
+
+  printf '%s\n' "$output" | grep -qF "F1 new"
+
+  # Must NOT appear in --blocking (neither CRITICAL nor HIGH-conf).
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "0" ]
+
+  run "$FINDINGS" list "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  if printf '%s\n' "$output" | grep -qF "F1"; then
+    echo "FAIL: WARNING/MEDIUM finding F1 incorrectly appears in --blocking" >&2
     return 1
   fi
+
+  # Must appear in plain list — the finding was persisted.
+  run "$FINDINGS" list "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF "F1"
 }
 
 # ---------------------------------------------------------------------------
