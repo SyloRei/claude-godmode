@@ -10,7 +10,7 @@
 #   godmode-state done has <step>
 #   godmode-state done list
 #
-# Keys: active_unit | status | next_command | mission_id | mission_name
+# Keys: active_unit | status | next_command | mission_id | mission_name | open_blocking
 #
 # The done-set (steps completed for the active unit) is encoded INSIDE the
 # `status` value after a " | done: " marker, e.g. "building 5 | done: S1,S2".
@@ -31,7 +31,7 @@ usage() {
   echo "       godmode-state done add <step>" >&2
   echo "       godmode-state done has <step>" >&2
   echo "       godmode-state done list" >&2
-  echo "keys:  active_unit | status | next_command | mission_id | mission_name" >&2
+  echo "keys:  active_unit | status | next_command | mission_id | mission_name | open_blocking" >&2
 }
 
 # Marker that separates the status label from the encoded done-set.
@@ -40,7 +40,7 @@ DONE_MARKER=" | done: "
 # Validate that a key is one of the supported state keys.
 valid_key() {
   case "$1" in
-    active_unit|status|next_command|mission_id|mission_name) return 0 ;;
+    active_unit|status|next_command|mission_id|mission_name|open_blocking) return 0 ;;
     *) return 1 ;;
   esac
 }
