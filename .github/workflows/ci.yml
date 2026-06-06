@@ -20,6 +20,11 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # Full history (not the default shallow depth-1 clone): the frozen-helper
+        # tests pin bin/godmode-findings against historical unit base commits and
+        # their parents (e.g. "$sha~1"), which only exist with the full log.
+        with:
+          fetch-depth: 0
 
       # shellcheck pinned to v0.11.0 for a reproducible, documented rule set.
       # Ubuntu's apt package floats to an older version whose rules differ, so
@@ -103,6 +108,10 @@ jobs:
       # tracked file drifts from what bin/godmode-agents would regenerate.
       - name: agents-drift gate
         run: ./scripts/check-agents-drift.sh
+
+      # FINDINGS.md schema + helper-parity gate (validates committed fixtures).
+      - name: findings gate
+        run: ./scripts/check-findings.sh
 
       # bats smoke suite.
       - name: bats

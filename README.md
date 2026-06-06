@@ -203,6 +203,16 @@ Both `/brief` and `/plan` can spawn `@architect` (opus) for a **gated** design p
 
 The pass is **gated on the brief's `## Design Risk` signal**: trivial units skip it entirely, so you pay nothing extra for work that doesn't warrant an architect. Only when the signal is raised does the design step run, keeping it fail-cheap by default and present exactly when the unit earns it.
 
+### Findings
+
+`/verify` doesn't just print problems and forget them -- it records them. The development loop after a brief is built is **findings → fixing findings**: `/verify` finds, `/build N --fix` fixes, `/verify` confirms, and `/ship` refuses to merge until the blocking ones are gone.
+
+Each brief gets a tracked `FINDINGS.md` artifact at `.planning/missions/<id>/briefs/NN-*/FINDINGS.md`, owned by the deterministic `bin/godmode-findings` helper (columns: ID, lens, sev, conf, status, location, note). Every finding carries a **stable ID across re-runs**, so you can talk about "F3" today and have it still be F3 next week.
+
+- **`/verify`** persists and reconciles findings across runs rather than re-printing a fresh list each time. A recurring problem keeps its ID, anything you waived stays waived, and a previously-fixed finding gets re-checked and reopened if it's still present. Each run reports the new / recurring / closed delta. Findings are run through an adversarial skeptic pass before they're recorded, so the set lands near-zero false positives.
+- **`/build N --fix`** consumes the open findings and dispatches worktree-isolated fix agents (one atomic commit each), marking each fixed as it lands. Re-running `/verify` then confirms the fix actually closed the finding.
+- **`/ship`** carries a **load-bearing blocking gate**: an unwaived CRITICAL (or high-confidence) open finding blocks the ship exactly the way an uncovered acceptance criterion does. The only escape hatch is an explicit, **reason-required waive** -- you mark a genuine false positive as waived, with a reason, and it stays waived on future runs.
+
 ## Missions
 
 A **mission** is a named episodic feature cycle -- one initiative, from charter to merged PR. You finish one mission, then start the next under a fresh name. Running [`/mission`](#skills) with a feature name create-or-switches to that mission and makes it the active context for the rest of the spine (`/brief N → /plan N → /build N → /verify N → /ship`).

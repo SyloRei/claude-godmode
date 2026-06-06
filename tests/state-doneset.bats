@@ -139,3 +139,65 @@ teardown() {
   [ "$status" -eq 0 ]
   [[ "$output" == "building 5"* ]]
 }
+
+@test "S5: open_blocking round-trips — set then get returns the value (exit 0)" {
+  # /verify (unit 5 S2, AC-7) writes open_blocking; /ship (S4, AC-13) reads it.
+  # The advisory key must accept a set and echo it back on get.
+  run "$STATE" set open_blocking 3
+  [ "$status" -eq 0 ]
+
+  run "$STATE" get open_blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "3" ]
+}
+
+@test "S5: open_blocking is advisory — get on fresh state is empty and exits 0" {
+  # /ship reads open_blocking as a fail-closed tripwire; on a state file that
+  # never set it the read must be empty (not "unknown key") and exit 0, exactly
+  # like the other optional keys (mission_id/mission_name) when unset.
+  run "$STATE" get open_blocking
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "S5: the allow-list stays closed — an unknown key still errors" {
+  # Adding open_blocking must not make the allow-list permissive: a genuinely
+  # unknown key must still be rejected non-zero.
+  run "$STATE" set bogus 1
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown key 'bogus'"* ]]
+
+  run "$STATE" get bogus
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unknown key 'bogus'"* ]]
+}
+
+@test "S5: open_blocking is a separate key — does not corrupt the done-set" {
+  # open_blocking lives on its own line; it must not bleed into the status/
+  # done-set encoding, and writing it must not disturb an existing done-set.
+  run "$STATE" set status "building 5"
+  [ "$status" -eq 0 ]
+  run "$STATE" "done" add S1
+  [ "$status" -eq 0 ]
+  run "$STATE" set open_blocking 2
+  [ "$status" -eq 0 ]
+
+  # The done-set still reads S1...
+  run "$STATE" "done" list
+  [ "$status" -eq 0 ]
+  [ "$output" = "S1" ]
+
+  # ...the status line still carries the "building 5 | done: S1" form...
+  run "$STATE" get status
+  [ "$status" -eq 0 ]
+  [[ "$output" == "building 5"*"| done:"*"S1"* ]]
+
+  # ...and open_blocking reads back its own value, on its own line.
+  run "$STATE" get open_blocking
+  [ "$status" -eq 0 ]
+  [ "$output" = "2" ]
+  run grep -c '^open_blocking:' .planning/STATE.md
+  [ "$output" = "1" ]
+  run grep -c '^status:' .planning/STATE.md
+  [ "$output" = "1" ]
+}

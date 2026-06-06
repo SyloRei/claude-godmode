@@ -12,7 +12,9 @@ node_modules/
 .planning/
 
 # Generated hook test fixtures (sourced from setup script)
-tests/fixtures/
+tests/fixtures/*
+# Committed schema fixtures (findings validator inputs) — keep tracked
+!tests/fixtures/findings/
 
 # Local design notes
 IDEA.md

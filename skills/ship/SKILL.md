@@ -3,7 +3,7 @@ name: ship
 description: "Run every canonical quality gate, push the branch, and open a pull request — release in one command. Use when: ship it, ready to ship, create the PR, push and open a PR."
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*godmode-findings*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
 ---
 
 # Ship
@@ -16,7 +16,7 @@ Take a verified work unit to a pull request: run the canonical quality gates, th
 
 ## Flags
 
-- **`--no-push`** (aliases: `--dry-run`, `--local`) — run every quality gate and prepare git readiness (commit), then **stop before the push and the PR**. Draft and print the PR title/body for review, but do **not** run `git push` or `gh pr create`, and do **not** record `status=shipped`. Use this to land a verified, committed, gate-green branch locally without publishing it.
+- **`--no-push`** (aliases: `--dry-run`, `--local`) — run every quality gate **and the findings gate (Step 1b)**, prepare git readiness (commit), then **stop before the push and the PR**. Draft and print the PR title/body for review, but do **not** run `git push` or `gh pr create`, and do **not** record `status=shipped`. Use this to land a verified, committed, gate-green branch locally without publishing it. `--no-push` does **not** exempt the findings gate any more than it exempts the quality gates: open blocking findings BLOCK `--no-push` too (no commit), exactly as they BLOCK a normal ship.
 
 When `--no-push` is set the confirmation prompt is moot — there is nothing side-effecting to confirm — so skip it and run the gates and git readiness straight through.
 
@@ -26,7 +26,7 @@ When `--no-push` is set the confirmation prompt is moot — there is nothing sid
 
 `/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then wait for explicit confirmation before pushing.
 
-**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (below) is never skipped, in either mode.
+**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (Step 1) **and the findings gate (Step 1b)** are never skipped, in either mode — Auto Mode skips only the confirmation, never a BLOCK. (The findings gate's waive escape is inherently conversational, so it still requires an explicit user-named ID + reason even under Auto Mode; Auto Mode never auto-waives.)
 
 ---
 
@@ -82,6 +82,102 @@ Quality gates (from config/quality-gates.txt):
 **Model profile.** Before spawning `@writer` (or any agent), resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note above shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 Re-run all gates after any fix until every one passes.
+
+---
+
+## Step 1b: Findings gate (load-bearing — blocks the ship)
+
+Runs **only after** the Step 1 quality gates all pass, and **before** Step 2 git readiness. The verification loop persists confirmed, blocking findings to a tracked `FINDINGS.md` (via `/verify`); this gate is the door where they become load-bearing. An open, blocking finding blocks `/ship` exactly as a failing quality gate does — `FINDINGS.md` is enforcement, not advisory paperwork.
+
+**Resolve the brief dir (same resolution `/ship` already uses for the PR body).** Find the active unit and mission, then glob the brief directory — the same dir that holds `FINDINGS.md`. Follow the repo's **one-resolver-per-helper** idiom (as `/verify` Step 6 does): resolve `$gm` against the helper each block actually calls. This block calls `godmode-state`, so it probes `godmode-state`; assert `$gm` is non-empty before any helper call — an empty resolver means the helper dir was not found, and the gate **fails closed** (BLOCK) rather than running an unresolved path:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+[ -n "$gm" ] || { echo "error: godmode helpers not found — BLOCK (fail-closed)" >&2; exit 1; }
+active_unit=$("$gm/godmode-state" get active_unit)
+mission_id=$("$gm/godmode-state" get mission_id)
+NN=$(printf '%02d' "$active_unit" 2>/dev/null)
+brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
+```
+
+**The skip-vs-block decision is a single shell predicate — never model judgment.** The gate's applicability and its block both turn on one deterministic shell decision that co-locates the explicit `[ -f "$brief_dir/FINDINGS.md" ]` file test with the `count` read. Do **not** phrase the skip as a prose "or it holds no `FINDINGS.md`" model check — make it the shell predicate below.
+
+```bash
+# Resolve the findings helper against its own probe (one-resolver-per-helper).
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+[ -n "$gm" ] || { echo "error: godmode helpers not found — BLOCK (fail-closed)" >&2; exit 1; }
+
+if [ -z "$brief_dir" ]; then
+  # No active-unit brief dir → standalone change, nothing to gate on → SKIP.
+  : skip_findings_gate
+elif [ -f "$brief_dir/FINDINGS.md" ]; then
+  # The store exists → read the live blocking count, the gate's sole truth.
+  count_status=0
+  open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking) || count_status=$?
+  # Fail closed unless the count succeeded AND is a clean non-negative integer
+  # AND equals 0. A non-zero exit, a garbled/empty value (e.g. a resolver miss),
+  # or any value > 0 all collapse to one BLOCK predicate — never fail-open.
+  if [ "$count_status" -ne 0 ] || ! printf '%s' "$open_blocking" | grep -qE '^[0-9]+$' || [ "$open_blocking" -gt 0 ]; then
+    : BLOCK   # see the Decision below
+  else
+    : pass    # open_blocking == 0, count clean → gate passes
+  fi
+else
+  # FINDINGS.md is ABSENT. Because .planning/ is gitignored/local-only, an absent
+  # store is reachable in normal use (fresh clone, wiped local state) — and the
+  # frozen helper's `count --blocking` returns 0/exit-0 for an absent store, so a
+  # count read here would fail OPEN. Corroborate against the verify-recorded
+  # advisory tripwire instead: if verify recorded open_blocking > 0 but the store
+  # is now gone, it was LOST after verification found blockers → BLOCK.
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  [ -n "$gm" ] || { echo "error: godmode-state not found — BLOCK (fail-closed)" >&2; exit 1; }
+  prior_blocking=$("$gm/godmode-state" get open_blocking 2>/dev/null)
+  if printf '%s' "$prior_blocking" | grep -qE '^[0-9]+$' && [ "$prior_blocking" -gt 0 ]; then
+    : BLOCK   # store was lost after verify recorded blockers — fail closed
+  else
+    # open_blocking unset/0 and no FINDINGS.md → a unit not yet verified → SKIP.
+    : skip_findings_gate
+  fi
+fi
+```
+
+The blocking predicate (`status==open AND (sev==CRITICAL OR conf==HIGH)`) is the frozen helper's authoritative definition — never re-derived here. This gate trusts the **live** count it just read as its **pass-decision source of truth**. It does **not** read the verify-recorded `open_blocking` state key to decide a *pass*: that key is **advisory only** (it lets `/godmode` surface the right next command), and a `/build N --fix` since the last `/verify` could have left it stale.
+
+**The `open_blocking` tripwire only ever *adds* a BLOCK — it never suppresses one — so the gate stays AC-9-consistent.** `open_blocking` is consulted in exactly one place: the **absent-`FINDINGS.md`** branch, purely as a fail-closed tripwire that can turn a would-be skip into a BLOCK. It is never used as the count that decides a pass; when a `FINDINGS.md` exists, the live `count` is the only source and `open_blocking` is not read at all. So this missing-store corroboration can only strengthen the gate, never weaken it.
+
+**Not applicable → skip (the legitimate cases).** The gate is skipped only when there is genuinely nothing to gate on: **no** active-unit `brief_dir` (a standalone change — consistent with `/ship` already omitting the PR's **Brief** section), **or** a `brief_dir` whose recorded `open_blocking` is unset/`0` and which has no `FINDINGS.md` (a unit not yet verified). Every other path reaches the BLOCK-or-pass decision below.
+
+**Fail-closed, collapsed into one predicate.** The store-exists branch fails **closed** unless the `count` exited 0 **and** its output is a clean `^[0-9]+$` integer **and** that integer is `0`. A non-zero exit (store unreadable/corrupt), a non-numeric/empty `count` (a garbled value or resolver miss), or any value `> 0` all collapse into the single BLOCK predicate above — treat the gate as **BLOCKED** and report the error; the gate never ships past a store it cannot cleanly read. The absent-store branch fails closed via the `open_blocking` tripwire as described above.
+
+**Decision:**
+
+- **Gate passes** → only when the store exists, `count` succeeded, its output is a clean integer, and `open_blocking == 0` → proceed to Step 2. (Or the legitimate skip cases above.)
+- **BLOCK** → any of: `count` exited non-zero; `count` output is non-numeric/empty; live `open_blocking > 0`; or `FINDINGS.md` absent while the recorded `open_blocking > 0`. A BLOCK carries the same hard semantics as a failing quality gate: do **not** commit, do **not** `git push`, do **not** `gh pr create`, do **not** record `status=shipped`, and never `--no-verify` or otherwise bypass. **This BLOCK applies in both normal and `--no-push` mode** — `--no-push` does not exempt the findings gate any more than it exempts the quality gates (under `--no-push` the BLOCK means: do not even commit).
+
+On BLOCK, report the blocking findings so the user can act:
+
+```bash
+"$gm/godmode-findings" list "$brief_dir" --open --blocking --decode
+```
+
+**The two escapes.** When blocked, present exactly two ways forward:
+
+1. **Fix** — run `/build N --fix` to mechanically resolve the open findings, then re-`/verify` and re-`/ship`.
+2. **Waive** — if a blocking finding is a genuine false positive, waive it (reason required).
+
+**The waive is conversational — `/ship` never auto-waives.** `/ship` does **not** waive anything on its own and never invents or supplies a reason. **Only** when the user explicitly names a specific finding ID **and** a reason does `/ship` run the waive:
+
+```bash
+"$gm/godmode-findings" waive "$brief_dir" "<ID-the-user-named>" "<reason-the-user-gave>"
+```
+
+The helper rejects an empty reason (non-zero exit) — so a waive without a user-supplied reason cannot succeed. After each waive, **re-read the live count in the same invocation** and proceed the moment it reaches 0:
+
+```bash
+open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
+```
+
+A multi-finding block clears by repeating this conversational waive per finding (or by `/build N --fix`) — there is no bulk-waive. Once the live count reaches 0, the gate passes and `/ship` proceeds to Step 2. Until then, the ship stays blocked.
 
 ---
 
