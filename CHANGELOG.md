@@ -7,6 +7,45 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-06-06
+
+Mission 06 — verification phase. `/verify` previously emitted findings that
+vanished the moment the run ended: nothing tracked them across runs, nothing
+forced them to be fixed, and nothing stopped a release with open issues. This
+release turns verification into a closed loop — findings are persisted to a
+tracked, per-brief store, reconciled across runs with stable IDs, optionally
+stress-tested by an adversarial skeptic, fixed through a dedicated `/build`
+mode, and finally gated at `/ship` so a blocking finding cannot ship silently.
+
+### Added
+
+- **Tracked findings store** — a per-brief `FINDINGS.md` backed by the new
+  deterministic `bin/godmode-findings` helper. Findings now survive between
+  runs instead of living only in a single `/verify` transcript.
+- **Findings persistence + reconciliation in `/verify`** — `/verify` writes
+  each finding to the store with a stable ID and reconciles against prior runs,
+  classifying every prior finding as recurring, fixed, or waived so repeated
+  runs build on each other rather than starting from scratch.
+- **Adversarial finding confirmation** — an optional `@finding-skeptic` pass
+  that challenges blocking findings before they are recorded, reducing
+  false-positive noise (profile-gated; skipped under the budget profile).
+- **`/build N --fix` fix loop** — a findings-driven build mode that reads the
+  brief's open findings, groups them by file, fixes them, and marks them fixed
+  in the store once the fixes merge back.
+- **`/ship` blocking findings gate** — `/ship` now performs a live count of
+  open blocking findings and refuses to ship while any remain, with a
+  reason-required conversational waive for the explicit override path.
+- **`scripts/check-findings.sh` CI gate** — validates the `FINDINGS.md` schema
+  and `bin/godmode-findings` helper parity, running on Ubuntu and macOS.
+
+### Changed
+
+- **`/verify`** no longer produces throwaway findings — it persists and
+  reconciles them across runs and reports recurring/fixed/waived status, so you
+  can see what a previous verification already flagged.
+- **`/ship`** no longer ships unconditionally — it blocks on open blocking
+  findings unless you explicitly waive them with a stated reason.
+
 ## [2.6.0] - 2026-06-06
 
 Mission 05 — architect in the loop. `@architect` existed as a specialist but was
