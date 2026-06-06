@@ -3,7 +3,7 @@ name: ship
 description: "Run every canonical quality gate, push the branch, and open a pull request — release in one command. Use when: ship it, ready to ship, create the PR, push and open a PR."
 user-invocable: true
 disable-model-invocation: true
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gh *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*godmode-findings*), Bash(*/skills/ship/scripts/gates.sh*), Bash(skills/ship/scripts/gates.sh*)
 ---
 
 # Ship
@@ -16,7 +16,7 @@ Take a verified work unit to a pull request: run the canonical quality gates, th
 
 ## Flags
 
-- **`--no-push`** (aliases: `--dry-run`, `--local`) — run every quality gate and prepare git readiness (commit), then **stop before the push and the PR**. Draft and print the PR title/body for review, but do **not** run `git push` or `gh pr create`, and do **not** record `status=shipped`. Use this to land a verified, committed, gate-green branch locally without publishing it.
+- **`--no-push`** (aliases: `--dry-run`, `--local`) — run every quality gate **and the findings gate (Step 1b)**, prepare git readiness (commit), then **stop before the push and the PR**. Draft and print the PR title/body for review, but do **not** run `git push` or `gh pr create`, and do **not** record `status=shipped`. Use this to land a verified, committed, gate-green branch locally without publishing it. `--no-push` does **not** exempt the findings gate any more than it exempts the quality gates: open blocking findings BLOCK `--no-push` too (no commit), exactly as they BLOCK a normal ship.
 
 When `--no-push` is set the confirmation prompt is moot — there is nothing side-effecting to confirm — so skip it and run the gates and git readiness straight through.
 
@@ -26,7 +26,7 @@ When `--no-push` is set the confirmation prompt is moot — there is nothing sid
 
 `/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then wait for explicit confirmation before pushing.
 
-**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (below) is never skipped, in either mode.
+**Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (Step 1) **and the findings gate (Step 1b)** are never skipped, in either mode — Auto Mode skips only the confirmation, never a BLOCK. (The findings gate's waive escape is inherently conversational, so it still requires an explicit user-named ID + reason even under Auto Mode; Auto Mode never auto-waives.)
 
 ---
 
@@ -82,6 +82,65 @@ Quality gates (from config/quality-gates.txt):
 **Model profile.** Before spawning `@writer` (or any agent), resolve the active model profile from `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}`, then call the resolver `"$gm/godmode-model" <agent>` (resolve `$gm` as the **Resolving the godmode helpers** note above shows) to obtain the model for that agent under the active profile. Pass that model to the Agent tool's `model` override at spawn time. The resolver also reports the agent's effort, but **`effort` is frontmatter-only and is NOT set at spawn** (platform limitation — effort cannot be overridden when spawning an agent), so override **only** `model`; effort stays whatever the agent's frontmatter declares.
 
 Re-run all gates after any fix until every one passes.
+
+---
+
+## Step 1b: Findings gate (load-bearing — blocks the ship)
+
+Runs **only after** the Step 1 quality gates all pass, and **before** Step 2 git readiness. The verification loop persists confirmed, blocking findings to a tracked `FINDINGS.md` (via `/verify`); this gate is the door where they become load-bearing. An open, blocking finding blocks `/ship` exactly as a failing quality gate does — `FINDINGS.md` is enforcement, not advisory paperwork.
+
+**Resolve the brief dir (same resolution `/ship` already uses for the PR body).** Find the active unit and mission, then glob the brief directory — the same dir that holds `FINDINGS.md`:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+active_unit=$("$gm/godmode-state" get active_unit)
+mission_id=$("$gm/godmode-state" get mission_id)
+NN=$(printf '%02d' "$active_unit" 2>/dev/null)
+brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
+```
+
+**Not applicable → skip.** If no active-unit `brief_dir` resolves, or it holds no `FINDINGS.md`, there are no findings to gate on: skip Step 1b and proceed to Step 2. This is the standalone-change case — consistent with `/ship` already omitting the PR's **Brief** section when there is no brief.
+
+**Read the live blocking count — the gate's sole source of truth.** When a `brief_dir` with a `FINDINGS.md` resolves, read the count of open, blocking findings *now*, at gate time:
+
+```bash
+open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
+count_status=$?
+```
+
+The blocking predicate (`status==open AND (sev==CRITICAL OR conf==HIGH)`) is the frozen helper's authoritative definition — never re-derived here. This gate trusts the **live** count it just read. It does **not** read the verify-recorded `open_blocking` state key for the block decision: that key is **advisory only** (it lets `/godmode` surface the right next command), and a `/build N --fix` since the last `/verify` could have left it stale. The gate always computes its own count.
+
+**Fail-closed.** If `count` exits non-zero (`count_status` != 0 — store unreadable or corrupt), treat the gate as **BLOCKED** and report the error. Never ship past a findings store you cannot read.
+
+**Decision:**
+
+- **`open_blocking == 0`** (and `count` succeeded) → the findings gate passes; proceed to Step 2.
+- **`open_blocking > 0`** (or `count` failed) → **BLOCK**, with the same hard semantics as a failing quality gate: do **not** commit, do **not** `git push`, do **not** `gh pr create`, do **not** record `status=shipped`, and never `--no-verify` or otherwise bypass. **This BLOCK applies in both normal and `--no-push` mode** — `--no-push` does not exempt the findings gate any more than it exempts the quality gates (under `--no-push` the BLOCK means: do not even commit).
+
+On BLOCK, report the blocking findings so the user can act:
+
+```bash
+"$gm/godmode-findings" list "$brief_dir" --open --blocking --decode
+```
+
+**The two escapes.** When blocked, present exactly two ways forward:
+
+1. **Fix** — run `/build N --fix` to mechanically resolve the open findings, then re-`/verify` and re-`/ship`.
+2. **Waive** — if a blocking finding is a genuine false positive, waive it (reason required).
+
+**The waive is conversational — `/ship` never auto-waives.** `/ship` does **not** waive anything on its own and never invents or supplies a reason. **Only** when the user explicitly names a specific finding ID **and** a reason does `/ship` run the waive:
+
+```bash
+"$gm/godmode-findings" waive "$brief_dir" "<ID-the-user-named>" "<reason-the-user-gave>"
+```
+
+The helper rejects an empty reason (non-zero exit) — so a waive without a user-supplied reason cannot succeed. After each waive, **re-read the live count in the same invocation** and proceed the moment it reaches 0:
+
+```bash
+open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
+```
+
+A multi-finding block clears by repeating this conversational waive per finding (or by `/build N --fix`) — there is no bulk-waive. Once the live count reaches 0, the gate passes and `/ship` proceeds to Step 2. Until then, the ship stays blocked.
 
 ---
 
