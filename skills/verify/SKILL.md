@@ -129,6 +129,52 @@ After all lenses return, merge their findings into one set:
 
 The `@verifier` lens does not feed this findings set — its output drives the AC-coverage verdict in §5 (Classify) instead.
 
+### 4b. Confirm the blocking findings
+
+Before persisting, subject the blocking-eligible findings to adversarial confirmation. A finding is **blocking-eligible** when its `severity` is `CRITICAL` OR its `confidence` is `HIGH` — exactly the predicate `godmode-findings --blocking` uses. All other findings (neither CRITICAL nor HIGH-confidence) are non-blocking and pass straight through to the persist step unchanged.
+
+**Step 1 — Mechanical pre-filter (UNCONDITIONAL — runs in every profile including budget).**
+
+For each blocking-eligible finding, check whether its `location` (`file:line`) falls within this unit's diff (the same `git diff` for the unit's commits already gathered in §3). If the finding's file/line is NOT present in the diff:
+
+- DROP the finding with reason `out-of-diff`.
+- Do NOT spawn a skeptic for it.
+
+This pre-filter is cheap and unconditional. It removes stale line-number artifacts from the confirmation batch regardless of the active model profile.
+
+**Step 2 — Per-profile skeptic spawn.**
+
+Resolve `${CLAUDE_PLUGIN_OPTION_MODEL_PROFILE:-balanced}` (the same way §2 does) and apply the profile policy:
+
+- **quality** — confirm ALL blocking-eligible findings that survived the pre-filter.
+- **balanced** — confirm only findings with `severity = CRITICAL` (skip HIGH-confidence WARNINGs).
+- **budget** — SKIP the skeptic spawn entirely. The pre-filter (Step 1) still ran; proceed directly to Step 3 with the pre-filter survivors as-is.
+
+For each finding selected by the profile policy, spawn **exactly one** `@finding-skeptic` via the Agent tool (the same way §3 dispatches lenses), with its model resolved via:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-model" ] && { echo "$c/bin"; break; }; done)
+skeptic_model=$("$gm/godmode-model" finding-skeptic)
+```
+
+Pass the agent: (a) the single finding record (`lens`, `severity`, `confidence`, `location`, `note`), and (b) the unit diff. The skeptic is read-only. It returns exactly one verdict and one reason sentence.
+
+Findings NOT selected by the profile policy (e.g. HIGH-conf WARNINGs in balanced, or all survivors in budget) pass through to Step 3 unchanged.
+
+**Step 3 — Verdict → action.**
+
+Apply the following state machine to each skeptic verdict:
+
+| Verdict | Action |
+|---|---|
+| **UPHELD** | Finding passes through UNCHANGED (original `sev`/`conf`) into the reconcile batch. |
+| **REFUTED — not real** | DROP the finding — it is NOT added to the reconcile batch at all. |
+| **REFUTED — over-rated** | DOWNGRADE (soft-kill): the finding is persisted but exits `--blocking`. For a **non-CRITICAL** finding, set `conf → MEDIUM`. For a **CRITICAL** finding, set `sev → WARNING` AND `conf → MEDIUM`. The downgraded finding IS added to the reconcile batch with its new `sev`/`conf` — it stays visible in `FINDINGS.md` and the report. |
+
+**Default-UPHOLD:** Demote a finding ONLY on an affirmative, evidence-backed refutation. If the skeptic is uncertain, if evidence is ambiguous, or if the skeptic cannot locate the cited code, the verdict MUST be UPHELD. (The `@finding-skeptic` agent enforces this rule internally; the state machine here honors it: ambiguity → UPHELD → pass through unchanged.)
+
+**Result:** the batch fed to `reconcile` below carries the POST-confirmation `sev`/`conf` for every finding. Because `reconcile` refreshes severity and confidence on a recurring match, no separate `godmode-findings` command is needed — the updated values flow through automatically.
+
 **Persist findings.** After merging and deduplicating the five code-quality lens findings (the post-dedup filtered set — `@verifier`'s AC-coverage output is NOT included here), persist them via `godmode-findings`:
 
 ```bash
