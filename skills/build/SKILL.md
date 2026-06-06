@@ -3,9 +3,9 @@ name: build
 description: "Execute a plan in dependency-ordered waves — run independent steps concurrently in isolated worktrees, one atomic, quality-gated commit per step. Use when: build N, execute the plan for N, run the build for roadmap unit N."
 user-invocable: true
 disable-model-invocation: true
-argument-hint: [N]
-arguments: [N]
-allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*godmode-worktree*)
+argument-hint: [N] [--fix]
+arguments: [N, --fix, --all]
+allowed-tools: Read, Glob, Grep, Bash(git *), Bash(gm=*), Bash(*godmode-state*), Bash(*godmode-model*), Bash(*godmode-worktree*), Bash(*godmode-findings*)
 ---
 
 # Build
@@ -283,6 +283,96 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 ```
 
 This lets `/godmode` tell the user the build is done and what to do next. On a later `/build $N`, Step 1 sees `build complete | unit: $N` (with `active_unit` matching `$N`) and reports there is nothing to build, offering `/verify $N`.
+
+---
+
+## Step 8: Fix mode (--fix)
+
+`/build $N --fix` runs the **fix flow** instead of the plan flow: it reads the open findings `/verify $N` recorded for the unit and dispatches one fix agent per affected file to resolve them. The plan flow (Steps 2–7) and the fix flow are **two distinct modes of the same skill** — the flag selects which one runs.
+
+### 8a — Invocation and exclusivity
+
+`--fix` and the plan flow are **mutually exclusive in a single invocation**:
+
+- **`/build $N`** (no flag) is the plan flow, exactly as Steps 2–7 describe — **unchanged**.
+- **`/build $N --fix`** is the fix flow. When `--fix` is present, run the fix flow described in this step and **SKIP the plan execution of Steps 2–7 entirely** — do not derive waves from `dependsOn`, do not read `PLAN.md` for steps. The fix flow reads `${brief_dir}/FINDINGS.md` (resolved via the helper, below), **not** `PLAN.md`.
+
+Resolve `$brief_dir` exactly as Step 1 does (it is independent of which flow runs): zero-pad `$N` to `NN`, read `mission_id` from state, glob `.planning/missions/${mission_id}/briefs/${NN}-*`. If no `brief_dir` resolves, stop and tell the user to run `/plan $N` first. Resolve `$gm` exactly as the **Resolving the godmode helpers** note in Step 1 shows.
+
+### 8b — The target set
+
+The target is the **open, blocking** subset of findings — the same subset that gates `/ship`. Never re-derive that predicate skill-side; always read it through the helper:
+
+```bash
+# Default target: open AND blocking (the subset /ship blocks on).
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+targets=$("$gm/godmode-findings" list "$brief_dir" --open --blocking --decode)
+```
+
+`--all` widens the target to **every open finding**, blocking or not, by dropping `--blocking`:
+
+```bash
+# With --all: every open finding, not just the blocking subset.
+targets=$("$gm/godmode-findings" list "$brief_dir" --open --decode)
+```
+
+`--decode` is always passed so each record's free-text columns (lens, location, note) are human-readable for the fix agent. The helper owns the open/blocking predicate — the fix flow only consumes its output.
+
+### 8c — Group by file into buckets (one concurrent wave)
+
+Group the target findings into **buckets, one per file**. The file key for a finding is its `location` **basename with any trailing `:NNN` line suffix stripped** — identical to the file component of the store's match key, so two findings on the same file (e.g. `auth.ts:10` and `auth.ts:99`) always land in **exactly one bucket** (`auth.ts`).
+
+Dispatch **one fix agent per bucket**, and dispatch all buckets as a **single concurrent wave** — there is only ever one wave in the fix flow. Because each bucket owns a **disjoint set of files**, and every agent works in its own isolated worktree, **same-file merge conflicts are impossible by construction**. This reconstructs the plan flow's file-disjoint invariant from each finding's `location` rather than from a step's `dependsOn`.
+
+### 8d — Dispatch each bucket to a fix agent
+
+For each bucket, dispatch **one worktree-isolated `@executor`** (resolve and pass its model exactly as the **Model profile** note under Step 3 shows). Reap orphaned worktrees first with `godmode-worktree cleanup`, exactly as Step 3's wave-start sweep does. Give each agent:
+
+- the **full decoded finding records for its file** — `ID, lens, sev, conf, location, note` from `list --decode` — one record per finding in the bucket;
+- the **create-first first action**: the orchestrator captures the build-branch HEAD ref on the build branch *before* dispatch (`build_ref=$(git rev-parse HEAD)`) and hands it to the agent as its `<build-ref>`, with the instruction that the agent's **first action inside its worktree** is `"$gm/godmode-worktree" create "<build-ref>"` — the same orchestrator-captures-ref / agent-creates-first contract Step 3 defines;
+- the **per-step quality gates** from `config/quality-gates.txt` (Step 4), resolved and passed exactly as the plan flow does;
+- the instruction to make the **minimal change that resolves each finding in the bucket**, run the gates, and on green make **exactly one atomic commit** for the file. There is no plan step to cite, so the message cites the **finding IDs**:
+
+  ```
+  fix: unit $N — <summary> <file> (F3, F7)
+  ```
+
+  **Never `--no-verify`. Never bypass a gate.** The agent does not push and does not merge; it returns its worktree branch name and commit hash.
+
+### 8e — Mark fixed (orchestrator only)
+
+The fix **agent only implements, gates, and commits its file — it NEVER calls `godmode-findings`**; marking a finding fixed is the **orchestrator's** job, done in the canonical checkout **after** that bucket's commit merges back, one `transition` per finding ID in the bucket:
+
+```bash
+# Orchestrator, in the canonical checkout, AFTER the bucket's commit merged back.
+# For each finding ID resolved by this bucket:
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-findings" transition "$brief_dir" "$finding_id" fixed
+```
+
+This split is load-bearing: `.planning/` is gitignored and local-only, so it is **unreachable from an isolated worktree** — an agent could not write the store even if it tried — and concurrent agents would **race the store's atomic write**. The orchestrator owns the store; the agents own the code.
+
+### 8f — Failure isolation
+
+A bucket whose agent's gates fail, whose finding cannot be fixed, or that **conflicts on mergeback** has **none of its findings transitioned** — they stay `open`. Reap and report that one bucket's worktree through the **same Step 5b reap/report ladder** the plan flow uses (`godmode-worktree mergeback` exit code, then targeted `godmode-worktree cleanup <id>` on failure). Every other bucket is **unaffected** and proceeds normally — buckets are independent by construction (8c).
+
+### 8g — Optimistic; trust verify
+
+The fix flow does **not** re-run the verify lenses to confirm a finding is gone — it is optimistic. The next `/verify $N` reconcile reopens any `fixed` finding that recurs. `/build` is the **only writer of `open` → `fixed`**; `/verify` never closes a finding (it only reopens via reconcile).
+
+### 8h — Resumability and no clobber
+
+Resumability comes from the **`fixed` status itself**, not from a done-set. A re-run of `/build $N --fix` re-reads `list --open [--blocking]` (8b), which **excludes findings already transitioned to `fixed`**, so a re-run targets only the still-open findings — already-fixed work is never redone. There is **no done-set** in the fix flow.
+
+The fix flow **MUST NOT** write `build complete | unit: $N` to `status` — that label is the plan flow's Step 7 completion marker, and writing it from the fix flow would corrupt plan-flow resumability (Step 1 would wrongly report the plan as built). The fix flow leaves `status` alone; it **may** set `next_command` to `/verify $N` so `/godmode` points the user forward.
+
+### 8i — Empty target set
+
+If the target set (8b) is **empty**, report "no blocking findings to fix" (or "no open findings to fix" under `--all`) and **stop** — dispatch nothing, reap nothing, transition nothing.
+
+### 8j — Confirm and Auto Mode
+
+The fix flow inherits the **confirm-before-each-wave** behavior and the **Auto Mode** exception **verbatim** from the top of this skill: before the single fix wave dispatches, show its buckets (file, the findings in each, the agent dispatched) and wait for confirmation — unless `## Auto Mode Active` is in context, in which case dispatch on the default choices. The per-step quality-gate block is **never** skipped, in either mode.
 
 ---
 
