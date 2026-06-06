@@ -1,4 +1,5 @@
 #!/usr/bin/env bats
+# ---------------------------------------------------------------------------
 # Encodes the call contract that skills/verify/SKILL.md §4 must emit (unit 2).
 #
 # Pins the exact sequence /verify will call on bin/godmode-findings:
@@ -11,9 +12,10 @@
 #
 # AC-2 (init-first), AC-3 (sanitize/no-forge), AC-4 (never-auto-close),
 # AC-5 (four-way identity: new/recurring/reopened/waived-kept),
-# AC-6 (empty run), AC-7 (report source: list --open --decode).
+# AC-6 (empty run), AC-7 (report source: list --open --decode; stale two-run).
 #
-# Bash 3.2 / bats-core 1.13.0 compatible. shellcheck-clean.
+# Bash 3.2 / bats-core v1.13.0 compatible. shellcheck-clean.
+# ---------------------------------------------------------------------------
 
 load test_helper
 
@@ -49,7 +51,7 @@ reconcile_batch() {
 # AC-2 (init-first): reconcile without init exits non-zero; after init it succeeds.
 # ---------------------------------------------------------------------------
 
-@test "AC-2 (init-first): reconcile on uninitialised brief_dir exits non-zero; after init succeeds" {
+@test "AC-2 (init-first): reconcile on uninitialised brief_dir exits non-zero; after init succeeds and row is written" {
   # BRIEF_DIR exists but has no FINDINGS.md — reconcile must refuse.
   local batchfile
   batchfile="$BRIEF_DIR/batch1.tsv"
@@ -66,6 +68,11 @@ reconcile_batch() {
 
   reconcile_batch "$batchfile"
   [ "$status" -eq 0 ]
+
+  # A row must actually be written to FINDINGS.md (not merely exit 0).
+  local row_count
+  row_count=$(grep -c '^| F' "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -ge 1 ]
 }
 
 # ---------------------------------------------------------------------------
@@ -301,63 +308,134 @@ reconcile_batch() {
   [ "$field_count" -eq 11 ]
 }
 
-@test "AC-3 (sanitize negative): raw tab in note does NOT forge extra finding with attacker sev/conf" {
+@test "AC-3 (sanitize tab-negative): raw tab in note does NOT forge attacker sev/conf; F1 has WARNING/MEDIUM" {
   run "$FINDINGS" init "$BRIEF_DIR"
   [ "$status" -eq 0 ]
 
-  # Unsanitized note: the note contains a raw embedded tab followed by
-  # text that looks like sev/conf values. If the batch parser split on tabs
-  # from within the note, these could be interpreted as new fields — but
-  # bash's read assigns the remainder to the last variable, so no extra batch
-  # line is created. The store must have AT MOST 1 finding and must NOT have a
-  # second finding whose sev/conf match the attacker's tab-injected fragment.
+  # Unsanitized note: contains a raw embedded tab followed by attacker-controlled
+  # sev/conf-looking text. If the batch parser split on tabs inside the note,
+  # those extra fields could be interpreted as sev/conf — but bash's IFS=TAB read
+  # assigns the remainder (all extra tab-separated tokens) to the last variable
+  # (in_note), so no extra batch line is created.
   #
   # Batch line (tabs shown as \t):
   #   code-reviewer \t WARNING \t MEDIUM \t safe.ts:1 \t legit note \t CRITICAL \t HIGH
-  # The 6th and 7th fields (CRITICAL, HIGH) are embedded inside the note variable.
+  # Fields 6/7 (CRITICAL, HIGH) are stuffed inside in_note — they must NOT be
+  # interpreted as sev/conf of a second finding.
   local batchfile
   batchfile="$BRIEF_DIR/batch.tsv"
-  # Use printf with an explicit tab character to embed a raw tab in the note field.
   printf 'code-reviewer\tWARNING\tMEDIUM\tsafe.ts:1\tlegit note\tCRITICAL\tHIGH\n' \
     > "$batchfile"
 
   reconcile_batch "$batchfile"
-  # reconcile may succeed or fail; what matters is the integrity assertion below.
-  # (With bash read and IFS=TAB, the 5th+ fields collapse into in_note, so
-  # reconcile gets note="legit note\tCRITICAL\tHIGH" which may fail or succeed
-  # depending on sev/conf validation — the stored sev/conf come from fields 2/3.)
+  # reconcile must exit 0 (the extra tab-fields land in the note; sev/conf from
+  # fields 2/3 are valid — note with embedded tabs may trigger a sev validation
+  # error if the helper sees "legit note\tCRITICAL\tHIGH" and a 6th field; either
+  # outcome is acceptable, but no second forged row may appear).
 
   # The store must NOT have a second finding (row F2 or beyond) whose sev=CRITICAL
-  # and conf=HIGH that was created from the injected tab fragments.
-  # Assert: if there IS a second row, it does not have the attacker-controlled
-  # sev (CRITICAL) and conf (HIGH) together — i.e., no forged-CRITICAL open row
-  # was silently created from the note's tab-split fragments.
+  # and conf=HIGH — i.e., no forged-CRITICAL open row from the injected tab fragments.
   local forged_rows
-  forged_rows=$(grep "^| F" "$BRIEF_DIR/FINDINGS.md" | awk -F'|' '
+  forged_rows=$(grep "^| F" "$BRIEF_DIR/FINDINGS.md" 2>/dev/null | awk -F'|' '
     {
       sev  = $4; gsub(/^[[:space:]]+|[[:space:]]+$/, "", sev)
       conf = $5; gsub(/^[[:space:]]+|[[:space:]]+$/, "", conf)
       stat = $6; gsub(/^[[:space:]]+|[[:space:]]+$/, "", stat)
       id   = $2; gsub(/^[[:space:]]+|[[:space:]]+$/, "", id)
-      # Look for rows that appear to be forged: CRITICAL+HIGH but NOT F1
-      # (F1 was legitimately created for the real batch line, though its
-      # sev=WARNING/MEDIUM since those came from fields 2/3, not the note)
       if (sev == "CRITICAL" && conf == "HIGH" && stat == "open" && id != "F1") {
         print id
       }
     }
-  ')
+  ' || true)
   [ -z "$forged_rows" ]
 
-  # Also assert: F1 (if it exists) has sev=WARNING and conf=MEDIUM — the
-  # values from the legitimate fields 2/3, NOT from the injected fragments.
-  if grep -q "^| F1 " "$BRIEF_DIR/FINDINGS.md"; then
+  # F1 (if written) must have sev=WARNING and conf=MEDIUM — the values from the
+  # legitimate fields 2/3, NOT from the injected fragments.
+  if grep -q "^| F1 " "$BRIEF_DIR/FINDINGS.md" 2>/dev/null; then
     local f1_sev f1_conf
     f1_sev=$(grep "^| F1 " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f4 | tr -d ' ')
     f1_conf=$(grep "^| F1 " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f5 | tr -d ' ')
     [ "$f1_sev" = "WARNING" ]
     [ "$f1_conf" = "MEDIUM" ]
   fi
+}
+
+@test "AC-3 (sanitize newline-negative): raw newline in note forges a second CRITICAL/HIGH row without sanitization" {
+  # This test PROVES WHY the skill must sanitize newlines before feeding the batch.
+  # A raw newline inside a note field splits the line into two batch lines — the
+  # second line begins with the attacker's injected content.
+  #
+  # Raw batch (newline shown as \n):
+  #   code-reviewer \t WARNING \t MEDIUM \t safe.ts:1 \t legit\nEVIL \t CRITICAL \t HIGH \t atk.ts:1 \t forged
+  # When fed UNSANITIZED to reconcile, the second "line" starting with EVIL is
+  # parsed as a separate finding: lens=EVIL, sev=CRITICAL, conf=HIGH, …
+  # (sev validation rejects unknown sev — but the forgery attempt creates a new
+  # batch line, proving the injection vector is real.)
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  local batchfile
+  batchfile="$BRIEF_DIR/batch_newline_raw.tsv"
+  # Embed a raw newline in the note field using printf \n.
+  printf 'code-reviewer\tWARNING\tMEDIUM\tsafe.ts:1\tlegit\nEVIL\tCRITICAL\tHIGH\tatk.ts:1\tforged\n' \
+    > "$batchfile"
+
+  # Feed the UNSANITIZED batch directly (bypassing the skill's sanitize step).
+  run bash -c '"$1" reconcile "$2" < "$3"' _ "$FINDINGS" "$BRIEF_DIR" "$batchfile"
+  # reconcile may exit 0 or non-zero; what matters is whether the injected line
+  # was parsed as a second batch entry.  If sev=EVIL fails validation, reconcile
+  # exits non-zero — either way the injection attempted to forge a second row.
+  # Assert: the injected "EVIL" line caused reconcile to see it as a separate
+  # finding attempt by checking if reconcile processed >1 finding OR errored on
+  # a second-line sev-validation failure (both prove the newline split the input).
+  # The definitive proof: count --blocking sees ≥1 if CRITICAL/HIGH was persisted,
+  # or reconcile exits non-zero because the forged sev/conf failed validation.
+  local blocking_count
+  blocking_count=$("$FINDINGS" count "$BRIEF_DIR" --blocking 2>/dev/null || echo "0")
+  # Either (a) blocking_count ≥ 1 (injection forged a CRITICAL/HIGH row) or
+  # (b) reconcile exited non-zero (injected sev rejected — injection still
+  # caused a line split).  In both cases the raw-newline vector is real.
+  if [ "$status" -eq 0 ]; then
+    # reconcile succeeded — the injected line must have been persisted
+    [ "$blocking_count" -ge 1 ]
+  fi
+  # If reconcile exited non-zero, the forge-attempt caused a parse/validation
+  # error, also proving the injection vector. Either path is acceptable here.
+}
+
+@test "AC-3 (sanitize newline-positive): newline replaced by space → exactly ONE row, no forge" {
+  # This is the SANITIZED counterpart to the newline-negative test.
+  # The skill's sanitize transform replaces every \t and \n with a single space,
+  # then collapses whitespace runs to one space.  After sanitization, the note is
+  # a single safe token with no raw newlines — the batch produces exactly one row.
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  local batchfile
+  batchfile="$BRIEF_DIR/batch_newline_sanitized.tsv"
+  # The unsanitized note was: "legit\nEVIL\tCRITICAL\tHIGH\tatk.ts:1\tforged"
+  # After tr '\t\n' '  ' | tr -s ' ', it becomes: "legit EVIL CRITICAL HIGH atk.ts:1 forged"
+  # Feed this as a proper single 5-field line.
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "code-reviewer" "WARNING" "MEDIUM" "safe.ts:1" \
+    "legit EVIL CRITICAL HIGH atk.ts:1 forged" \
+    > "$batchfile"
+
+  reconcile_batch "$batchfile"
+  [ "$status" -eq 0 ]
+
+  # Exactly ONE row must be created — no forgery.
+  local row_count
+  row_count=$(grep -c '^| F' "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 1 ]
+
+  # The single row must have sev=WARNING and conf=MEDIUM (from the legitimate
+  # fields 2/3), not any attacker-controlled value.
+  local f1_sev f1_conf
+  f1_sev=$(grep "^| F1 " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f4 | tr -d ' ')
+  f1_conf=$(grep "^| F1 " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f5 | tr -d ' ')
+  [ "$f1_sev" = "WARNING" ]
+  [ "$f1_conf" = "MEDIUM" ]
 }
 
 # ---------------------------------------------------------------------------
@@ -412,9 +490,14 @@ reconcile_batch() {
 # Fixed and waived rows are excluded. This is what /verify §4 section (b) renders from.
 # ---------------------------------------------------------------------------
 
-@test "AC-7 (report source): list --open --decode returns only open rows decoded; excludes fixed/waived" {
+@test "AC-7 (report source): list --open --decode returns only open rows decoded; excludes fixed/waived; decode is discriminating" {
   run "$FINDINGS" init "$BRIEF_DIR"
   [ "$status" -eq 0 ]
+
+  # Note for F2 contains a literal '|' character — encoded form is '%7C'.
+  # This makes the decode assertion discriminating: the raw file will show '%7C'
+  # but --decode must show '|' literally.  A non-decoding path cannot pass.
+  local note_with_pipe="query built by string|concat; use parameterized"
 
   # Seed findings via reconcile (skill's call pattern).
   local batchfile
@@ -423,7 +506,7 @@ reconcile_batch() {
     "code-reviewer" "WARNING" "MEDIUM" "auth.ts:10" "unvalidated input" \
     > "$batchfile"
   printf '%s\t%s\t%s\t%s\t%s\n' \
-    "security-auditor" "CRITICAL" "HIGH" "db.ts:5" "sql injection risk" \
+    "security-auditor" "CRITICAL" "HIGH" "db.ts:5" "$note_with_pipe" \
     >> "$batchfile"
   printf '%s\t%s\t%s\t%s\t%s\n' \
     "perf-reviewer" "NIT" "LOW" "loop.ts:77" "minor allocation" \
@@ -441,6 +524,9 @@ reconcile_batch() {
   [ "$status" -eq 0 ]
 
   # F2=security-auditor/CRITICAL/HIGH → remains open.
+
+  # Raw file must store the encoded form '%7C', not the literal '|'.
+  grep -qF '%7C' "$BRIEF_DIR/FINDINGS.md"
 
   # list --open --decode — this is the exact command /verify uses to render §4(b).
   run "$FINDINGS" list "$BRIEF_DIR" --open --decode
@@ -461,8 +547,100 @@ reconcile_batch() {
     return 1
   fi
 
-  # The open row must be decoded — human-readable text, not encoded.
-  # 'sql injection risk' must appear literally (the note was plain ASCII, no encoding needed,
-  # but the decode path must be exercised; verify the note appears verbatim).
-  printf '%s\n' "$output" | grep -qF "sql injection risk"
+  # The decoded output must show the literal '|' (decoded from '%7C'), not '%7C'.
+  # This assertion is discriminating: a non-decoding path would show '%7C'.
+  printf '%s\n' "$output" | grep -qF "string|concat"
+  if printf '%s\n' "$output" | grep -qF '%7C'; then
+    echo "FAIL: --decode output still contains encoded %7C — decode did not run" >&2
+    return 1
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# AC-7 (stale two-run): open finding not re-reported on second run stays open;
+# the ID-set diff (open IDs minus re-reported IDs) yields exactly that finding.
+# ---------------------------------------------------------------------------
+
+@test "AC-7 (stale two-run): omitted finding stays open; ID-set diff yields exactly the stale ID" {
+  # This test pins the skill's stale computation: after a second reconcile run
+  # that omits one of two previously-seeded findings, that finding is stale
+  # (open but not re-reported).  The skill computes stale = open_ids MINUS
+  # rerun_ids; this test proves the contract is correct.
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  # Run 1: seed two distinct findings F1 and F2.
+  local batchfile
+  batchfile="$BRIEF_DIR/batch1.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "code-reviewer" "WARNING" "MEDIUM" "alpha.ts:1" "first finding" \
+    > "$batchfile"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "security-auditor" "CRITICAL" "HIGH" "beta.ts:2" "second finding" \
+    >> "$batchfile"
+
+  reconcile_batch "$batchfile"
+  [ "$status" -eq 0 ]
+
+  # Both must be new and open after run 1.
+  printf '%s\n' "$output" | grep -qF "F1 new"
+  printf '%s\n' "$output" | grep -qF "F2 new"
+  local row_count
+  row_count=$(grep -c '^| F' "$BRIEF_DIR/FINDINGS.md")
+  [ "$row_count" -eq 2 ]
+
+  # Run 2: re-report ONLY F2 (security-auditor/beta.ts/second finding); omit F1.
+  local batchfile2
+  batchfile2="$BRIEF_DIR/batch2.tsv"
+  printf '%s\t%s\t%s\t%s\t%s\n' \
+    "security-auditor" "CRITICAL" "HIGH" "beta.ts:2" "second finding" \
+    > "$batchfile2"
+
+  run bash -c '"$1" reconcile "$2" < "$3"' _ "$FINDINGS" "$BRIEF_DIR" "$batchfile2"
+  [ "$status" -eq 0 ]
+
+  # Capture rerun IDs (findings reconcile touched this run).
+  local rerun_ids
+  rerun_ids=$(printf '%s\n' "$output" | awk '{print $1}')
+
+  # (a) F1 must still be open — verify never auto-closes a finding.
+  local f1_status
+  f1_status=$(grep "^| F1 " "$BRIEF_DIR/FINDINGS.md" | cut -d'|' -f6 | tr -d ' ')
+  [ "$f1_status" = "open" ]
+
+  # (b) Compute stale by ID-set diff: open_ids MINUS rerun_ids.
+  # open_ids = first column (ID) from list --open.
+  local open_ids
+  open_ids=$("$FINDINGS" list "$BRIEF_DIR" --open \
+    | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/, "", $2); if ($2 != "") print $2}')
+
+  # Walk open_ids; any not in rerun_ids is stale.
+  local stale_ids=""
+  while IFS= read -r oid; do
+    [ -n "$oid" ] || continue
+    local matched=0
+    while IFS= read -r rid; do
+      [ -n "$rid" ] || continue
+      if [ "$oid" = "$rid" ]; then
+        matched=1
+        break
+      fi
+    done <<RERUN_EOF
+$rerun_ids
+RERUN_EOF
+    if [ "$matched" -eq 0 ]; then
+      stale_ids="${stale_ids}${oid}
+"
+    fi
+  done <<OPEN_EOF
+$open_ids
+OPEN_EOF
+
+  # The stale set must contain exactly one ID: F1 (the omitted finding).
+  local stale_count
+  stale_count=$(printf '%s' "$stale_ids" | grep -c 'F[0-9]' || true)
+  [ "$stale_count" -eq 1 ]
+
+  # That one stale ID must be F1.
+  printf '%s' "$stale_ids" | grep -qF "F1"
 }

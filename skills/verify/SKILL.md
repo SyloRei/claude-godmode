@@ -132,7 +132,7 @@ The `@verifier` lens does not feed this findings set — its output drives the A
 **Persist findings.** After merging and deduplicating the five code-quality lens findings (the post-dedup filtered set — `@verifier`'s AC-coverage output is NOT included here), persist them via `godmode-findings`:
 
 ```bash
-gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
 
 # Step 1: init unconditionally — idempotent; reconcile errors if FINDINGS.md is absent.
 "$gm/godmode-findings" init "$brief_dir"
@@ -145,15 +145,15 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 # or split a line. The helper percent-encodes on write; sanitize is the
 # source-side guard. This whitespace-collapse matches the helper's own
 # match-key normalization, so it does NOT perturb cross-run identity.
-batch_file=$(mktemp)
-while IFS= read -r finding; do
+batch_file=$(mktemp "${TMPDIR:-/tmp}/verify-findings.XXXXXX")
+while IFS= read -r finding; do  # merged_findings = in-memory post-dedup finding set (placeholder)
   lens=$(     printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
   sev=$(      printf '%s' "$finding" | ...)
   conf=$(     printf '%s' "$finding" | ...)
   location=$( printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
   note=$(     printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
   printf '%s\t%s\t%s\t%s\t%s\n' "$lens" "$sev" "$conf" "$location" "$note"
-done < merged_findings >> "$batch_file"
+done < "$merged_findings" >> "$batch_file"
 
 # Step 3: feed the batch to reconcile; capture outcome lines (new/recurring/reopened/waived-kept).
 # A non-zero reconcile exit MUST surface as an error — do NOT silently fall back
@@ -168,16 +168,36 @@ rm -f "$batch_file"
 
 **Empty merged set:** still run `init` (idempotent); feed an empty batch to `reconcile` or skip it — but **never** clear or rewrite `FINDINGS.md` from scratch. A clean run must not wipe prior findings.
 
-**Compute stale.** `reconcile` emits one outcome word per finding on stdout — exactly the four words `new`, `recurring`, `reopened`, or `waived-kept`. The word `stale` is NOT emitted by the helper; it is computed skill-side. After `reconcile` returns, diff this run's incoming finding match-set against the currently open findings:
+**Compute stale.** `reconcile` emits one outcome word per finding on stdout — exactly the four words `new`, `recurring`, `reopened`, or `waived-kept`. The word `stale` is NOT emitted by the helper; it is computed skill-side. After `reconcile` returns, compute stale by diffing the IDs reconcile re-reported this run against the IDs currently open in the store:
 
 ```bash
-# Open findings before this reconcile run (identity keys: lens+basename+note).
-open_before=$("$gm/godmode-findings" list "$brief_dir" --open)
+# Parse the IDs reconcile touched this run (one per "Fn <outcome>" line).
+rerun_ids=$(printf '%s\n' "$reconcile_output" | awk '{print $1}')
 
-# Any open row whose identity was NOT in this run's batch is stale.
-# It stays open — /verify never closes a finding.
-# Count stale rows by comparing open_before identities against the batch set.
-stale_count=0  # compute by diffing open_before against the batch identity set
+# IDs of all findings still open AFTER this reconcile run.
+# (reconcile never auto-closes; open findings not in this batch stay open = stale.)
+open_ids=$("$gm/godmode-findings" list "$brief_dir" --open | awk -F'|' '{gsub(/^[[:space:]]+|[[:space:]]+$/,"",$2); print $2}')
+
+# stale = open IDs that reconcile did NOT touch this run.
+stale_count=0
+while IFS= read -r oid; do
+  [ -n "$oid" ] || continue
+  matched=0
+  while IFS= read -r rid; do
+    [ -n "$rid" ] || continue
+    if [ "$oid" = "$rid" ]; then
+      matched=1
+      break
+    fi
+  done <<RERUN_EOF
+$rerun_ids
+RERUN_EOF
+  if [ "$matched" -eq 0 ]; then
+    stale_count=$((stale_count + 1))
+  fi
+done <<OPEN_EOF
+$open_ids
+OPEN_EOF
 ```
 
 **Count reconcile outcomes** from `$reconcile_output` for the delta summary in §output:
