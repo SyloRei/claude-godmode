@@ -263,7 +263,21 @@ Assign COVERED / PARTIAL / MISSING to each criterion under the strictness rule a
 
 ### 6. Record workflow state
 
-If — and only if — **every** criterion is COVERED, point the workflow at shipping:
+"Done" has **two independent axes**: AC-coverage (do the goals hold?) and the findings gate (are there open blocking findings?). `next_command=/ship` is correct **only when both are clear**. So this step first records the live open-blocking count, then branches the handoff three ways.
+
+**Record `open_blocking` on every run.** After `reconcile` (above), read the live open-blocking count from the store — the same `--blocking` predicate `/ship`'s gate trusts — and record it on **every** run, regardless of which branch below is taken (reuse the `brief_dir` already resolved in §1). This recorded value is **advisory**: it lets `/godmode` surface the right next command. `/ship`'s gate never trusts it — it always reads its own live count.
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
+"$gm/godmode-state" set open_blocking "$open_blocking"
+```
+
+This `count` call is **read-only** and within `/verify`'s ownership invariant: verify only ever calls `godmode-findings` `init` / `reconcile` / `list` / `count` — **never** `transition` or `waive`, and it never auto-closes a finding.
+
+Then branch the handoff three ways:
+
+**(a) Every criterion COVERED *and* `open_blocking == 0`** — both axes clear; point the workflow at shipping:
 
 ```bash
 gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
@@ -272,7 +286,16 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 "$gm/godmode-state" set next_command "/ship"
 ```
 
-If any criterion is PARTIAL or MISSING, leave the next command pointed back at building:
+**(b) Every criterion COVERED *but* `open_blocking > 0`** — the unit's goals are met, but open blocking findings remain. The loop isn't done: point the user at the fix loop, **not** `/ship`:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+"$gm/godmode-state" set active_unit "$N"
+"$gm/godmode-state" set status "verified | blocking findings open"
+"$gm/godmode-state" set next_command "/build $N --fix"
+```
+
+**(c) Any criterion PARTIAL or MISSING** — the goals are not met; leave the next command pointed back at building:
 
 ```bash
 gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
