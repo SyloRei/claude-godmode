@@ -47,6 +47,10 @@ Documentation agent. Use for: generating JSDoc/docstrings, writing READMEs, API 
 
 Use when /build N spawns per-step implementation: implement one PLAN.md step in an isolated worktree, run the quality gates, and make one atomic commit. Brief-driven and gate-aware — unlike @writer (general-purpose), this agent works a single plan step against its brief and stops.
 
+### finding-skeptic
+
+Adversarial skeptic that tries to REFUTE a single recorded review finding against the unit diff; returns UPHELD / REFUTED-not-real / REFUTED-over-rated. Read-only.
+
 ### incident-responder
 
 Incident responder that reconstructs the timeline, assesses blast radius, and recommends remediation. Use for: production incidents, outages, regressions in the wild, post-incident analysis. Read-only — analyzes and reports, does not apply fixes.

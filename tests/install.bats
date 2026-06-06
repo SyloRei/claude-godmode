@@ -92,7 +92,7 @@ teardown() {
   [ "$status" -eq 0 ]
 }
 
-@test "install installs the 18-agent roster: 3 review lenses present, retired reviewer absent" {
+@test "install installs the 19-agent roster: 3 review lenses present, retired reviewer absent" {
   run "$PLUGIN_ROOT/install.sh"
   [ "$status" -eq 0 ]
   # The generalist reviewer was split into three single-lens reviewers.
@@ -104,12 +104,14 @@ teardown() {
   [ -f "$TEST_HOME/.claude/agents/migration-engineer.md" ]
   [ -f "$TEST_HOME/.claude/agents/perf-engineer.md" ]
   [ -f "$TEST_HOME/.claude/agents/incident-responder.md" ]
+  # Unit 3 (adversarial confirmation) added the finding-skeptic agent.
+  [ -f "$TEST_HOME/.claude/agents/finding-skeptic.md" ]
   # The retired generalist agent must not ship.
   [ ! -f "$TEST_HOME/.claude/agents/reviewer.md" ]
-  # Roster size is exactly 18 agents.
+  # Roster size is exactly 19 agents.
   run sh -c 'ls "$TEST_HOME"/.claude/agents/*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
-  [ "$output" = "18" ]
+  [ "$output" = "19" ]
 }
 
 @test "install installs all 8 hook scripts" {
