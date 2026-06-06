@@ -112,8 +112,8 @@ if [ -z "$brief_dir" ]; then
   : skip_findings_gate
 elif [ -f "$brief_dir/FINDINGS.md" ]; then
   # The store exists → read the live blocking count, the gate's sole truth.
-  open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
-  count_status=$?
+  count_status=0
+  open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking) || count_status=$?
   # Fail closed unless the count succeeded AND is a clean non-negative integer
   # AND equals 0. A non-zero exit, a garbled/empty value (e.g. a resolver miss),
   # or any value > 0 all collapse to one BLOCK predicate — never fail-open.
@@ -129,8 +129,9 @@ else
   # count read here would fail OPEN. Corroborate against the verify-recorded
   # advisory tripwire instead: if verify recorded open_blocking > 0 but the store
   # is now gone, it was LOST after verification found blockers → BLOCK.
-  gm_state=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
-  prior_blocking=$("$gm_state/godmode-state" get open_blocking 2>/dev/null)
+  gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  [ -n "$gm" ] || { echo "error: godmode-state not found — BLOCK (fail-closed)" >&2; exit 1; }
+  prior_blocking=$("$gm/godmode-state" get open_blocking 2>/dev/null)
   if printf '%s' "$prior_blocking" | grep -qE '^[0-9]+$' && [ "$prior_blocking" -gt 0 ]; then
     : BLOCK   # store was lost after verify recorded blockers — fail closed
   else
