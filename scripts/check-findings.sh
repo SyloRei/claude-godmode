@@ -29,7 +29,8 @@
 
 set -euo pipefail
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd -- "${SCRIPT_DIR}/.." && pwd)"
 HELPER="$REPO_ROOT/bin/godmode-findings"
 FIXTURE_DIR="$REPO_ROOT/tests/fixtures/findings"
 
@@ -45,6 +46,16 @@ trap 'rm -rf "$_FINDINGS_CHECK_TMP"' EXIT
 usage() {
   echo "usage: check-findings.sh                 # parity + fixture validation" >&2
   echo "       check-findings.sh validate <file> # validate a single FINDINGS.md" >&2
+}
+
+# clamp0 <int> — print the integer, or 0 when it is negative. Keeps a cell-count
+# diagnostic from showing a misleading negative for a malformed (pipe-less) line.
+clamp0() {
+  if [ "$1" -lt 0 ]; then
+    echo 0
+  else
+    echo "$1"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -88,9 +99,9 @@ validate_file() {
   # content cells. A well-formed row "| a | ... | i |" has a leading and a
   # trailing empty field around the 9 content cells, so awk -F'|' reports
   # NF == 11. A raw, unencoded `|` inside a cell pushes NF past 11; a missing
-  # column drops it below 11 — either way the row is rejected.
+  # column drops it below 11 — the two directions get distinct diagnostics.
   local lineno=0
-  local line nf
+  local line nf cells sev conf status parsed
   while IFS= read -r line || [ -n "$line" ]; do
     lineno=$((lineno + 1))
     if [ "$lineno" -le 2 ]; then
@@ -101,22 +112,29 @@ validate_file() {
       continue
     fi
 
-    nf=$(printf '%s' "$line" | awk -F'|' '{print NF}')
+    # One awk pass per row: emit the field count plus the three enum columns
+    # (sev=4, conf=5, status=6), each trimmed. The enum columns can never carry
+    # a tab, so a tab-delimited split stays unambiguous even if `note` does.
+    parsed=$(printf '%s' "$line" | awk -F'|' '
+      { s4 = $4; s5 = $5; s6 = $6
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s4)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s5)
+        gsub(/^[[:space:]]+|[[:space:]]+$/, "", s6)
+        printf "%s\t%s\t%s\t%s", NF, s4, s5, s6 }')
+    IFS=$'\t' read -r nf sev conf status <<< "$parsed"
+
     if [ "$nf" -ne 11 ]; then
-      echo "findings: $file: line $lineno does not have exactly 9 cells (found $((nf - 2)))" >&2
-      echo "  a raw unencoded '|' (should be %7C) or a missing column is the usual cause" >&2
+      cells=$(clamp0 $((nf - 2)))
+      if [ "$nf" -gt 11 ]; then
+        echo "findings: $file: line $lineno has too many columns (found $cells, expected 9)" >&2
+        echo "  a raw unencoded '|' inside a cell (should be %7C) forges extra columns" >&2
+      else
+        echo "findings: $file: line $lineno has too few columns (found $cells, expected 9)" >&2
+        echo "  a column is missing from the row" >&2
+      fi
       echo "  row: $line" >&2
       return 1
     fi
-
-    # Enum checks on the positional columns: sev (4), conf (5), status (6).
-    local sev conf status
-    sev=$(printf '%s' "$line" | awk -F'|' '{print $4}' \
-      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    conf=$(printf '%s' "$line" | awk -F'|' '{print $5}' \
-      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
-    status=$(printf '%s' "$line" | awk -F'|' '{print $6}' \
-      | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')
 
     case "$sev" in
       CRITICAL|WARNING|NIT) ;;
@@ -185,11 +203,18 @@ newline in note"
 
   # (b) the data row percent-encodes the raw '|' (%7C) and newline (%0A), so
   # it splits into exactly 9 content cells (NF == 11) with no forged column.
-  local data_row nf
-  data_row=$(sed -n '3p' "$ffile")
+  # Locate the row by its unique location field rather than a positional line
+  # number, so an extra row added before it could never shift the assertion.
+  local data_row nf cells
+  data_row=$(grep -F 'src/foo.sh:42' "$ffile" | sed -n '1p')
+  if [ -z "$data_row" ]; then
+    echo "findings: parity: helper wrote no data row for the added finding" >&2
+    return 1
+  fi
   nf=$(printf '%s' "$data_row" | awk -F'|' '{print NF}')
   if [ "$nf" -ne 11 ]; then
-    echo "findings: parity: helper data row did not encode to 9 cells (found $((nf - 2)))" >&2
+    cells=$(clamp0 $((nf - 2)))
+    echo "findings: parity: helper data row did not encode to 9 cells (found $cells)" >&2
     echo "  row: $data_row" >&2
     return 1
   fi
@@ -231,7 +256,7 @@ newline in note"
   fi
   list_nf=$(printf '%s' "$list_row" | awk -F'|' '{print NF}')
   if [ "$list_nf" -ne 9 ]; then
-    echo "findings: parity: default 'list' did not emit exactly 7 display columns (found $((list_nf - 2)))" >&2
+    echo "findings: parity: default 'list' did not emit exactly 7 display columns (found $(clamp0 $((list_nf - 2))))" >&2
     echo "  row: $list_row" >&2
     return 1
   fi

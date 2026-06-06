@@ -12,15 +12,19 @@
 #
 # Coverage here:
 #   - default mode (no args) exits 0 on the repo as-is (Part 1 + Part 2 pass);
-#   - each committed negative fixture is rejected by `validate <file>`;
+#   - each committed negative fixture is rejected by `validate <file>`, and each
+#     assertion pins the SPECIFIC failure message so a fixture cannot pass for
+#     the wrong reason (enum / too-few / too-many / separator / status);
 #   - the positive fixture validates;
-#   - a Part-1 divergence (helper emitting a wrong header) makes the gate fail.
+#   - the shallow error paths (file-not-found, unknown subcommand) are covered;
+#   - a Part-1 divergence (helper emitting a wrong header) makes the gate fail,
+#     pinned to the header-parity message specifically.
 #
 # The divergence case cannot be triggered against the real repo (the shipped
 # helper is in sync with the schema by construction), so it builds a throwaway
-# REPO_ROOT skeleton in $BATS_TEST_TMPDIR: a copy of check-findings.sh under
-# scripts/, a STUB bin/godmode-findings that emits an 8-column header, and a
-# valid fixture under tests/fixtures/findings/. The gate resolves its helper as
+# REPO_ROOT skeleton: a copy of check-findings.sh under scripts/, a STUB
+# bin/godmode-findings that emits an 8-column header, and a valid fixture under
+# tests/fixtures/findings/. The gate resolves its helper as
 # "$REPO_ROOT/bin/godmode-findings" relative to its own BASH_SOURCE, so running
 # the copy from the skeleton makes Part 1 drive the stub and fail header parity.
 #
@@ -32,54 +36,101 @@ load test_helper
 SCRIPT="$PLUGIN_ROOT/scripts/check-findings.sh"
 FIXTURE_DIR="$PLUGIN_ROOT/tests/fixtures/findings"
 
+# Per-test temp root for the divergence skeleton; teardown reaps it.
+setup() {
+  TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/findings-gate.XXXXXX")"
+}
+
+teardown() {
+  if [ -n "${TMP_ROOT:-}" ] && [ -d "$TMP_ROOT" ]; then
+    rm -rf "$TMP_ROOT"
+  fi
+}
+
 # ---------------------------------------------------------------------------
 # Mode 1 — healthy repo passes (Part 1 parity + Part 2 fixtures, default mode).
+# bats `run` captures stdout+stderr into $output by default — no 2>&1 needed.
 # ---------------------------------------------------------------------------
 
 @test "check-findings (default mode) exits 0 on the repo as-is" {
-  run bash -c '"$0" 2>&1' "$SCRIPT"
+  run bash -c '"$0"' "$SCRIPT"
   [ "$status" -eq 0 ]
   [[ "$output" == *"findings schema OK"* ]]
 }
 
 # ---------------------------------------------------------------------------
-# Mode 2 — each committed negative fixture is rejected by `validate <file>`.
-# One test per fixture so each is asserted individually.
+# Mode 2 — each committed negative fixture is rejected by `validate <file>`,
+# AND each test pins the specific failure message so the fixture cannot pass
+# for an unintended reason.
 # ---------------------------------------------------------------------------
 
-@test "check-findings validate rejects invalid-bad-enum.md" {
-  run bash -c '"$0" validate "$1" 2>&1' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-enum.md"
+@test "check-findings validate rejects invalid-bad-enum.md (sev enum)" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-enum.md"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"not in {CRITICAL,WARNING,NIT}"* ]]
 }
 
-@test "check-findings validate rejects invalid-bad-colcount.md" {
-  run bash -c '"$0" validate "$1" 2>&1' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-colcount.md"
+@test "check-findings validate rejects invalid-bad-colcount.md (too few columns)" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-colcount.md"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"too few columns"* ]]
 }
 
-@test "check-findings validate rejects invalid-raw-pipe.md" {
-  run bash -c '"$0" validate "$1" 2>&1' "$SCRIPT" "$FIXTURE_DIR/invalid-raw-pipe.md"
+@test "check-findings validate rejects invalid-raw-pipe.md (too many columns)" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/invalid-raw-pipe.md"
   [ "$status" -ne 0 ]
+  [[ "$output" == *"too many columns"* ]]
+}
+
+@test "check-findings validate rejects invalid-bad-separator.md (separator row)" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-separator.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"separator"* ]]
+}
+
+@test "check-findings validate rejects invalid-bad-status.md (status enum)" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/invalid-bad-status.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not in {open,fixed,waived}"* ]]
 }
 
 # ---------------------------------------------------------------------------
-# Mode 3 — the positive fixture validates.
+# Mode 3 — the positive fixture validates (it carries open/waived/fixed rows,
+# so the `fixed` status arm is exercised here).
 # ---------------------------------------------------------------------------
 
 @test "check-findings validate accepts valid-basic.md" {
-  run bash -c '"$0" validate "$1" 2>&1' "$SCRIPT" "$FIXTURE_DIR/valid-basic.md"
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$FIXTURE_DIR/valid-basic.md"
   [ "$status" -eq 0 ]
   [[ "$output" == *"conforms to schema"* ]]
 }
 
 # ---------------------------------------------------------------------------
-# Mode 4 — Part-1 divergence: a helper whose header drifts from the schema must
-# fail the gate. Build a throwaway REPO_ROOT skeleton whose bin/godmode-findings
-# is a stub emitting an 8-column header; run the gate from there.
+# Mode 3b — shallow error paths: a missing file and an unknown subcommand.
 # ---------------------------------------------------------------------------
 
-@test "check-findings fails when the helper diverges from the documented schema" {
-  local root="$BATS_TEST_TMPDIR/repo"
+@test "check-findings validate <missing-file> fails with 'file not found'" {
+  run bash -c '"$0" validate "$1"' "$SCRIPT" "$TMP_ROOT/does-not-exist.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"file not found"* ]]
+}
+
+@test "check-findings <unknown-subcommand> prints usage and exits non-zero" {
+  run bash -c '"$0" bogus' "$SCRIPT"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage:"* ]]
+}
+
+# ---------------------------------------------------------------------------
+# Mode 4 — Part-1 divergence: a helper whose header drifts from the schema must
+# fail the gate. Build a throwaway REPO_ROOT skeleton whose bin/godmode-findings
+# is a stub emitting an 8-column header; run the gate from there. The assertion
+# pins the header-parity message so the test fails iff the divergence is caught
+# at the header check (not incidentally at some other Part-1 assertion).
+# ---------------------------------------------------------------------------
+
+@test "check-findings fails when the helper header diverges from the schema" {
+  local root="$TMP_ROOT/repo"
   mkdir -p "$root/scripts" "$root/bin" "$root/tests/fixtures/findings"
 
   # The gate copy resolves REPO_ROOT one level up from scripts/, so this copy
@@ -126,8 +177,8 @@ STUB
   chmod +x "$root/bin/godmode-findings"
 
   # Run the copied gate from the skeleton (default mode → Part 1 then Part 2).
-  run bash -c '"$0" 2>&1' "$root/scripts/check-findings.sh"
+  run bash -c '"$0"' "$root/scripts/check-findings.sh"
   [ "$status" -ne 0 ]
-  # Assert it failed for the right reason: the helper-contract parity message.
-  [[ "$output" == *"parity"* ]]
+  # Pin the exact failure point: the header-parity assertion in Part 1.
+  [[ "$output" == *"helper header diverged"* ]]
 }
