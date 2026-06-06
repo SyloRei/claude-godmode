@@ -4,7 +4,7 @@ description: "Check a built unit goal-backward: classify every brief acceptance 
 user-invocable: true
 argument-hint: [N]
 arguments: [N]
-allowed-tools: Read, Grep, Glob, Bash(gm=*), Bash(*godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(*godmode-state*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*), Bash(*/skills/verify/scripts/coverage-diff.sh*), Bash(skills/verify/scripts/coverage-diff.sh*)
+allowed-tools: Read, Grep, Glob, Bash(gm=*), Bash(*godmode-model*), Bash(git diff*), Bash(git log*), Bash(git show*), Bash(*godmode-state*), Bash(*godmode-findings*), Bash(npm test*), Bash(npm run test*), Bash(pnpm test*), Bash(yarn test*), Bash(bats*), Bash(go test*), Bash(cargo test*), Bash(pytest*), Bash(./scripts/*test*), Bash(shellcheck*), Bash(./scripts/lint*), Bash(*/skills/verify/scripts/coverage-diff.sh*), Bash(skills/verify/scripts/coverage-diff.sh*)
 ---
 
 # Verify
@@ -13,7 +13,7 @@ Decide what is **truly done** for roadmap unit **$N** by working **goal-backward
 
 Run after `/build N` has produced commits. Verify is the gate before shipping: if every criterion is COVERED, the unit is ready for `/ship`. This is the fifth step of the spine: `/mission` → `/brief N` → `/plan N` → `/build N` → **`/verify N`** → `/ship`.
 
-This is a **read-only** operation. You inspect files, search the codebase, read the unit's diff, run the project's test command, and dispatch review lenses that themselves only read. You do **not** write or edit source — your only writes are workflow-state updates via `bin/godmode-state`.
+This is a **read-only** operation. You inspect files, search the codebase, read the unit's diff, run the project's test command, and dispatch review lenses that themselves only read. You do **not** write or edit source — your only writes are workflow-state updates via `bin/godmode-state` and findings persistence via `bin/godmode-findings`. `/verify` only ever calls `godmode-findings init`, `reconcile`, and `list` — it **never** calls `transition` or `waive` and **never** auto-closes a finding. The `open→fixed` transition is `/build`'s job; a finding that no lens re-reports this run stays `open` and is reported as stale.
 
 ---
 
@@ -129,6 +129,66 @@ After all lenses return, merge their findings into one set:
 
 The `@verifier` lens does not feed this findings set — its output drives the AC-coverage verdict in §5 (Classify) instead.
 
+**Persist findings.** After merging and deduplicating the five code-quality lens findings (the post-dedup filtered set — `@verifier`'s AC-coverage output is NOT included here), persist them via `godmode-findings`:
+
+```bash
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+
+# Step 1: init unconditionally — idempotent; reconcile errors if FINDINGS.md is absent.
+"$gm/godmode-findings" init "$brief_dir"
+
+# Step 2: build the reconcile batch from the post-dedup merged quality-lens findings.
+# SANITIZE each finding's lens, location, and note before feeding stdin:
+# replace every tab and newline with a single space, then collapse runs of
+# whitespace to one space. The helper's reconcile stdin parser is raw
+# tab-delimited — an unsanitized tab or newline in a note would shift fields
+# or split a line. The helper percent-encodes on write; sanitize is the
+# source-side guard. This whitespace-collapse matches the helper's own
+# match-key normalization, so it does NOT perturb cross-run identity.
+batch_file=$(mktemp)
+while IFS= read -r finding; do
+  lens=$(     printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
+  sev=$(      printf '%s' "$finding" | ...)
+  conf=$(     printf '%s' "$finding" | ...)
+  location=$( printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
+  note=$(     printf '%s' "$finding" | ... | tr '\t\n' '  ' | tr -s ' ')
+  printf '%s\t%s\t%s\t%s\t%s\n' "$lens" "$sev" "$conf" "$location" "$note"
+done < merged_findings >> "$batch_file"
+
+# Step 3: feed the batch to reconcile; capture outcome lines (new/recurring/reopened/waived-kept).
+# A non-zero reconcile exit MUST surface as an error — do NOT silently fall back
+# to the in-memory merge.
+reconcile_output=$("$gm/godmode-findings" reconcile "$brief_dir" < "$batch_file") || {
+  echo "ERROR: godmode-findings reconcile failed — findings not persisted." >&2
+  rm -f "$batch_file"
+  exit 1
+}
+rm -f "$batch_file"
+```
+
+**Empty merged set:** still run `init` (idempotent); feed an empty batch to `reconcile` or skip it — but **never** clear or rewrite `FINDINGS.md` from scratch. A clean run must not wipe prior findings.
+
+**Compute stale.** `reconcile` emits one outcome word per finding on stdout — exactly the four words `new`, `recurring`, `reopened`, or `waived-kept`. The word `stale` is NOT emitted by the helper; it is computed skill-side. After `reconcile` returns, diff this run's incoming finding match-set against the currently open findings:
+
+```bash
+# Open findings before this reconcile run (identity keys: lens+basename+note).
+open_before=$("$gm/godmode-findings" list "$brief_dir" --open)
+
+# Any open row whose identity was NOT in this run's batch is stale.
+# It stays open — /verify never closes a finding.
+# Count stale rows by comparing open_before identities against the batch set.
+stale_count=0  # compute by diffing open_before against the batch identity set
+```
+
+**Count reconcile outcomes** from `$reconcile_output` for the delta summary in §output:
+
+```bash
+new_count=$(      printf '%s\n' "$reconcile_output" | grep -c ' new$'          || true)
+recurring_count=$(printf '%s\n' "$reconcile_output" | grep -c ' recurring$'    || true)
+reopened_count=$( printf '%s\n' "$reconcile_output" | grep -c ' reopened$'     || true)
+waivedkept_count=$(printf '%s\n' "$reconcile_output" | grep -c ' waived-kept$' || true)
+```
+
 ### 5. Classify
 
 Assign COVERED / PARTIAL / MISSING to each criterion under the strictness rule above, using `@verifier`'s goal-backward analysis. Attach the evidence inline: `file:line`, the test name, or a short slice of command output. For PARTIAL and MISSING, state precisely what is unmet.
@@ -177,10 +237,22 @@ A per-criterion verdict table, then a verdict line.
 
 ### (b) Review findings
 
-The merged findings from the five code-quality lenses (§4), grouped by lens and ordered CRITICAL → WARNING → NIT, after dedup and dropping LOW-confidence NITs.
+The rendered findings derive from `"$gm/godmode-findings" list "$brief_dir" --open --decode` — the persisted, decoded truth, including findings carried over from prior runs and waive reasons. This is NOT the ephemeral in-memory merge; it is the authoritative store after `reconcile` has run.
+
+Open the output of that command and format it grouped by lens, ordered CRITICAL → WARNING → NIT.
+
+Add a one-line delta summary immediately above the findings table:
+
+```
+Findings delta: N new · N recurring · N reopened · N waived-kept · N stale
+```
+
+Where the first four counts (`new`, `recurring`, `reopened`, `waived-kept`) come from `reconcile`'s stdout outcome lines, and `stale` is the skill-computed count from the `list --open` diff (the open findings whose identity was not in this run's batch).
 
 ```markdown
 ## Review findings — unit N
+
+Findings delta: 1 new · 2 recurring · 0 reopened · 0 waived-kept · 1 stale
 
 **code-reviewer**
 - CRITICAL (HIGH) — api.ts:88 — 404 branch returns 200, masking the error.
@@ -192,7 +264,7 @@ The merged findings from the five code-quality lenses (§4), grouped by lens and
 - NIT (HIGH) — foo.test.ts:30 — happy path only; add the empty-input case.
 ```
 
-If the merged set is empty, say so: "No review findings after merge."
+If `list --open --decode` returns no rows, say: "No open review findings."
 
 Then the next step:
 
