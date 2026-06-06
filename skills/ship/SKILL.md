@@ -89,33 +89,69 @@ Re-run all gates after any fix until every one passes.
 
 Runs **only after** the Step 1 quality gates all pass, and **before** Step 2 git readiness. The verification loop persists confirmed, blocking findings to a tracked `FINDINGS.md` (via `/verify`); this gate is the door where they become load-bearing. An open, blocking finding blocks `/ship` exactly as a failing quality gate does — `FINDINGS.md` is enforcement, not advisory paperwork.
 
-**Resolve the brief dir (same resolution `/ship` already uses for the PR body).** Find the active unit and mission, then glob the brief directory — the same dir that holds `FINDINGS.md`:
+**Resolve the brief dir (same resolution `/ship` already uses for the PR body).** Find the active unit and mission, then glob the brief directory — the same dir that holds `FINDINGS.md`. Follow the repo's **one-resolver-per-helper** idiom (as `/verify` Step 6 does): resolve `$gm` against the helper each block actually calls. This block calls `godmode-state`, so it probes `godmode-state`; assert `$gm` is non-empty before any helper call — an empty resolver means the helper dir was not found, and the gate **fails closed** (BLOCK) rather than running an unresolved path:
 
 ```bash
-gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+[ -n "$gm" ] || { echo "error: godmode helpers not found — BLOCK (fail-closed)" >&2; exit 1; }
 active_unit=$("$gm/godmode-state" get active_unit)
 mission_id=$("$gm/godmode-state" get mission_id)
 NN=$(printf '%02d' "$active_unit" 2>/dev/null)
 brief_dir=$(ls -d .planning/missions/${mission_id}/briefs/${NN}-* 2>/dev/null | head -1)
 ```
 
-**Not applicable → skip.** If no active-unit `brief_dir` resolves, or it holds no `FINDINGS.md`, there are no findings to gate on: skip Step 1b and proceed to Step 2. This is the standalone-change case — consistent with `/ship` already omitting the PR's **Brief** section when there is no brief.
-
-**Read the live blocking count — the gate's sole source of truth.** When a `brief_dir` with a `FINDINGS.md` resolves, read the count of open, blocking findings *now*, at gate time:
+**The skip-vs-block decision is a single shell predicate — never model judgment.** The gate's applicability and its block both turn on one deterministic shell decision that co-locates the explicit `[ -f "$brief_dir/FINDINGS.md" ]` file test with the `count` read. Do **not** phrase the skip as a prose "or it holds no `FINDINGS.md`" model check — make it the shell predicate below.
 
 ```bash
-open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
-count_status=$?
+# Resolve the findings helper against its own probe (one-resolver-per-helper).
+gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-findings" ] && { echo "$c/bin"; break; }; done)
+[ -n "$gm" ] || { echo "error: godmode helpers not found — BLOCK (fail-closed)" >&2; exit 1; }
+
+if [ -z "$brief_dir" ]; then
+  # No active-unit brief dir → standalone change, nothing to gate on → SKIP.
+  : skip_findings_gate
+elif [ -f "$brief_dir/FINDINGS.md" ]; then
+  # The store exists → read the live blocking count, the gate's sole truth.
+  open_blocking=$("$gm/godmode-findings" count "$brief_dir" --blocking)
+  count_status=$?
+  # Fail closed unless the count succeeded AND is a clean non-negative integer
+  # AND equals 0. A non-zero exit, a garbled/empty value (e.g. a resolver miss),
+  # or any value > 0 all collapse to one BLOCK predicate — never fail-open.
+  if [ "$count_status" -ne 0 ] || ! printf '%s' "$open_blocking" | grep -qE '^[0-9]+$' || [ "$open_blocking" -gt 0 ]; then
+    : BLOCK   # see the Decision below
+  else
+    : pass    # open_blocking == 0, count clean → gate passes
+  fi
+else
+  # FINDINGS.md is ABSENT. Because .planning/ is gitignored/local-only, an absent
+  # store is reachable in normal use (fresh clone, wiped local state) — and the
+  # frozen helper's `count --blocking` returns 0/exit-0 for an absent store, so a
+  # count read here would fail OPEN. Corroborate against the verify-recorded
+  # advisory tripwire instead: if verify recorded open_blocking > 0 but the store
+  # is now gone, it was LOST after verification found blockers → BLOCK.
+  gm_state=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmode-state" ] && { echo "$c/bin"; break; }; done)
+  prior_blocking=$("$gm_state/godmode-state" get open_blocking 2>/dev/null)
+  if printf '%s' "$prior_blocking" | grep -qE '^[0-9]+$' && [ "$prior_blocking" -gt 0 ]; then
+    : BLOCK   # store was lost after verify recorded blockers — fail closed
+  else
+    # open_blocking unset/0 and no FINDINGS.md → a unit not yet verified → SKIP.
+    : skip_findings_gate
+  fi
+fi
 ```
 
-The blocking predicate (`status==open AND (sev==CRITICAL OR conf==HIGH)`) is the frozen helper's authoritative definition — never re-derived here. This gate trusts the **live** count it just read. It does **not** read the verify-recorded `open_blocking` state key for the block decision: that key is **advisory only** (it lets `/godmode` surface the right next command), and a `/build N --fix` since the last `/verify` could have left it stale. The gate always computes its own count.
+The blocking predicate (`status==open AND (sev==CRITICAL OR conf==HIGH)`) is the frozen helper's authoritative definition — never re-derived here. This gate trusts the **live** count it just read as its **pass-decision source of truth**. It does **not** read the verify-recorded `open_blocking` state key to decide a *pass*: that key is **advisory only** (it lets `/godmode` surface the right next command), and a `/build N --fix` since the last `/verify` could have left it stale.
 
-**Fail-closed.** If `count` exits non-zero (`count_status` != 0 — store unreadable or corrupt), treat the gate as **BLOCKED** and report the error. Never ship past a findings store you cannot read.
+**The `open_blocking` tripwire only ever *adds* a BLOCK — it never suppresses one — so the gate stays AC-9-consistent.** `open_blocking` is consulted in exactly one place: the **absent-`FINDINGS.md`** branch, purely as a fail-closed tripwire that can turn a would-be skip into a BLOCK. It is never used as the count that decides a pass; when a `FINDINGS.md` exists, the live `count` is the only source and `open_blocking` is not read at all. So this missing-store corroboration can only strengthen the gate, never weaken it.
+
+**Not applicable → skip (the legitimate cases).** The gate is skipped only when there is genuinely nothing to gate on: **no** active-unit `brief_dir` (a standalone change — consistent with `/ship` already omitting the PR's **Brief** section), **or** a `brief_dir` whose recorded `open_blocking` is unset/`0` and which has no `FINDINGS.md` (a unit not yet verified). Every other path reaches the BLOCK-or-pass decision below.
+
+**Fail-closed, collapsed into one predicate.** The store-exists branch fails **closed** unless the `count` exited 0 **and** its output is a clean `^[0-9]+$` integer **and** that integer is `0`. A non-zero exit (store unreadable/corrupt), a non-numeric/empty `count` (a garbled value or resolver miss), or any value `> 0` all collapse into the single BLOCK predicate above — treat the gate as **BLOCKED** and report the error; the gate never ships past a store it cannot cleanly read. The absent-store branch fails closed via the `open_blocking` tripwire as described above.
 
 **Decision:**
 
-- **`open_blocking == 0`** (and `count` succeeded) → the findings gate passes; proceed to Step 2.
-- **`open_blocking > 0`** (or `count` failed) → **BLOCK**, with the same hard semantics as a failing quality gate: do **not** commit, do **not** `git push`, do **not** `gh pr create`, do **not** record `status=shipped`, and never `--no-verify` or otherwise bypass. **This BLOCK applies in both normal and `--no-push` mode** — `--no-push` does not exempt the findings gate any more than it exempts the quality gates (under `--no-push` the BLOCK means: do not even commit).
+- **Gate passes** → only when the store exists, `count` succeeded, its output is a clean integer, and `open_blocking == 0` → proceed to Step 2. (Or the legitimate skip cases above.)
+- **BLOCK** → any of: `count` exited non-zero; `count` output is non-numeric/empty; live `open_blocking > 0`; or `FINDINGS.md` absent while the recorded `open_blocking > 0`. A BLOCK carries the same hard semantics as a failing quality gate: do **not** commit, do **not** `git push`, do **not** `gh pr create`, do **not** record `status=shipped`, and never `--no-verify` or otherwise bypass. **This BLOCK applies in both normal and `--no-push` mode** — `--no-push` does not exempt the findings gate any more than it exempts the quality gates (under `--no-push` the BLOCK means: do not even commit).
 
 On BLOCK, report the blocking findings so the user can act:
 

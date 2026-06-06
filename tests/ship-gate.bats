@@ -184,6 +184,56 @@ verify_step6() {
   printf '%s\n' "$s1b" | grep -qF "FINDINGS.md"
 }
 
+@test "AC-13 (single shell predicate: explicit [ -f FINDINGS.md ] co-located with the count read)" {
+  local s1b
+  s1b=$(step1b)
+  # The skip-vs-block decision must be a deterministic shell test — an explicit
+  # `[ -f "$brief_dir/FINDINGS.md" ]` file test — NOT a model-judgment prose check.
+  # SC2016 intentional: literal prose, no expansion.
+  # shellcheck disable=SC2016
+  printf '%s\n' "$s1b" | grep -qF '[ -f "$brief_dir/FINDINGS.md" ]'
+  # The prose must explicitly disavow the old model-judgment phrasing.
+  printf '%s\n' "$s1b" | grep -qiE "single shell predicate|deterministic shell (decision|test)|never model judgment"
+}
+
+@test "AC-13 (missing-store BLOCK: open_blocking > 0 + absent FINDINGS.md → BLOCK)" {
+  local s1b
+  s1b=$(step1b)
+  # The corroborated missing-store BLOCK: when the recorded open_blocking is > 0
+  # but FINDINGS.md is now absent, the store was lost after verify → BLOCK.
+  # The gate reads the advisory tripwire via godmode-state get open_blocking.
+  # SC2016 intentional: literal prose, no expansion.
+  # shellcheck disable=SC2016
+  printf '%s\n' "$s1b" | grep -qF 'godmode-state" get open_blocking'
+  # The absent-store branch and its BLOCK verdict are present.
+  printf '%s\n' "$s1b" | grep -qiE "absent|FINDINGS.md is now (absent|gone)|store (was )?lost"
+  printf '%s\n' "$s1b" | grep -qiE "lost after verif|store was lost"
+}
+
+@test "AC-13 (AC-9-consistent: the open_blocking tripwire only ADDS a BLOCK, never suppresses)" {
+  local s1b
+  s1b=$(step1b)
+  # The missing-store corroboration must say it only strengthens the gate — it can
+  # add a BLOCK but never suppress one — keeping it consistent with AC-9 (open_blocking
+  # is a tripwire, not the pass-decision count). Assert the conjoined phrasing.
+  printf '%s\n' "$s1b" | grep -qiE "only ever \*\*adds\*\* a BLOCK|only ever .?adds.? a BLOCK|only.*adds.*BLOCK"
+  printf '%s\n' "$s1b" | grep -qiE "never suppress|never weaken|can only strengthen|only strengthen"
+}
+
+@test "AC-13 (numeric / \$gm guards: count validated ^[0-9]+\$ and \$gm asserted non-empty → fail closed)" {
+  local s1b
+  s1b=$(step1b)
+  # The count output is validated against a non-negative-integer regex before any
+  # numeric comparison — a garbled/empty value fails closed (BLOCK).
+  printf '%s\n' "$s1b" | grep -qF '^[0-9]+$'
+  # And $gm is asserted non-empty after the resolver, before any helper call.
+  # SC2016 intentional: literal prose, no expansion.
+  # shellcheck disable=SC2016
+  printf '%s\n' "$s1b" | grep -qF '[ -n "$gm" ]'
+  # Both guards fail CLOSED (BLOCK), never open.
+  printf '%s\n' "$s1b" | grep -qiE "fail.?closed|fails closed|BLOCK \(fail-closed\)"
+}
+
 # ---------------------------------------------------------------------------
 # Class A — /verify prose grep (S2 must be present on disk)
 # ---------------------------------------------------------------------------
@@ -203,13 +253,18 @@ verify_step6() {
 }
 
 @test "AC-7 (/verify Step 6 keeps the ownership invariant: never transition/waive)" {
-  local s6
+  local s6 ownership_line
   s6=$(verify_step6)
-  # The count call is read-only and within verify's ownership: never transition/waive.
-  printf '%s\n' "$s6" | grep -qiE "read-only|ownership invariant"
-  printf '%s\n' "$s6" | grep -qiF "never"
-  printf '%s\n' "$s6" | grep -qF "transition"
-  printf '%s\n' "$s6" | grep -qF "waive"
+  # Tightened (verify WARNING): assert the never-transition/never-waive prohibition
+  # as a SINGLE-SENTENCE conjunction on one line — not four independent token greps
+  # that four scattered occurrences could satisfy. Isolate the prohibition line
+  # (the one naming the ownership invariant), then assert the conjoined phrase
+  # binds "never" to BOTH transition and waive in that one sentence.
+  ownership_line=$(printf '%s\n' "$s6" | grep -iE "ownership invariant|read-only" | grep -F "transition" | head -1)
+  [ -n "$ownership_line" ]
+  printf '%s\n' "$ownership_line" | grep -qiE "never.*transition.*waive|never.*waive.*transition"
+  # And it is framed as read-only / within the ownership invariant.
+  printf '%s\n' "$ownership_line" | grep -qiE "read-only|ownership invariant"
 }
 
 @test "AC-8 (/verify Step 6 has three next_command branches incl. /build N --fix)" {
@@ -233,6 +288,19 @@ verify_step6() {
   # so a single-axis handoff cannot satisfy this.
   printf '%s\n' "$s6" | grep -qiE 'open_blocking == 0|open_blocking==0'
   printf '%s\n' "$s6" | grep -qiE 'open_blocking > 0|open_blocking>0'
+}
+
+@test "AC-8 (/verify Step 6 pins each branch's status string)" {
+  local s6
+  s6=$(verify_step6)
+  # Pin (verify NIT) the exact status string set by each of the three branches,
+  # so a renamed/dropped status cannot pass on the next_command match alone.
+  # (a) both axes clear → status "verified".
+  printf '%s\n' "$s6" | grep -qF 'set status "verified"'
+  # (b) ACs COVERED but open_blocking > 0 → the distinct blocking-open status.
+  printf '%s\n' "$s6" | grep -qF 'set status "verified | blocking findings open"'
+  # (c) any AC PARTIAL/MISSING → the gaps status (unchanged).
+  printf '%s\n' "$s6" | grep -qF 'set status "verify found gaps"'
 }
 
 # ---------------------------------------------------------------------------
@@ -309,6 +377,73 @@ verify_step6() {
   [ "$output" -eq 1 ]
 }
 
+@test "AC-11 (multi-finding waive round-trip): 2 blocking → waive 1 → count 1 → waive 2 → count 0" {
+  # Closes a verify WARNING: a multi-finding block clears by repeating the
+  # conversational waive per finding (no bulk-waive). Prove each waive decrements
+  # the live blocking count and the gate stays blocked until the last one clears.
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  run "$FINDINGS" add "$BRIEF_DIR" "security-auditor" "CRITICAL" "HIGH" "db.ts:5" "sql injection risk"
+  [ "$status" -eq 0 ]
+  local fid1
+  fid1="$output"
+  [ -n "$fid1" ]
+
+  run "$FINDINGS" add "$BRIEF_DIR" "code-reviewer" "WARNING" "HIGH" "auth.ts:10" "unvalidated input"
+  [ "$status" -eq 0 ]
+  local fid2
+  fid2="$output"
+  [ -n "$fid2" ]
+  [ "$fid2" != "$fid1" ]
+
+  # Both block → the gate sees 2.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 2 ]
+
+  # Waive the first → still blocked (1 remains).
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid1" "confirmed false positive — parameterized query"
+  [ "$status" -eq 0 ]
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+
+  # Waive the second → the gate clears.
+  run "$FINDINGS" waive "$BRIEF_DIR" "$fid2" "input is validated upstream by the router"
+  [ "$status" -eq 0 ]
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 0 ]
+}
+
+@test "AC-13 (helper hazard probe): count on a store deleted after count==1 returns 0/exit-0" {
+  # Documents the fail-open hazard the gate must guard: the frozen helper's
+  # `count --blocking` returns 0/exit-0 for an ABSENT FINDINGS.md, so a count read
+  # alone would ship past a unit that HAD a blocking finding once the local-only
+  # store is gone. This is why Step 1b guards with an explicit [ -f FINDINGS.md ]
+  # test + the open_blocking tripwire (asserted by the prose-grep cases above).
+  run "$FINDINGS" init "$BRIEF_DIR"
+  [ "$status" -eq 0 ]
+
+  run "$FINDINGS" add "$BRIEF_DIR" "security-auditor" "CRITICAL" "HIGH" "db.ts:5" "sql injection risk"
+  [ "$status" -eq 0 ]
+
+  # With the store present, the blocking finding counts.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 1 ]
+
+  # Delete the store (the .planning/-gitignored, local-only loss the gate guards).
+  rm -f "$BRIEF_DIR/FINDINGS.md"
+  [ ! -f "$BRIEF_DIR/FINDINGS.md" ]
+
+  # The hazard: count now returns 0 / exit-0 — a bare count read would fail OPEN.
+  run "$FINDINGS" count "$BRIEF_DIR" --blocking
+  [ "$status" -eq 0 ]
+  [ "$output" -eq 0 ]
+}
+
 @test "AC-10 (helper frozen): bin/godmode-findings NOT in the unit-5 git diff" {
   # Derive unit 5's base dynamically — the parent of the EARLIEST unit-5 commit
   # that edited skills/ship or skills/verify (this mission's S1/S2). Anchoring on
@@ -319,8 +454,11 @@ verify_step6() {
     -- skills/ship/SKILL.md skills/verify/SKILL.md \
     | awk '/unit 5 S1 — \/ship|unit 5 S2 — \/verify/{print $1; exit}')
 
+  # FAIL (not skip): if the unit-5 base cannot be resolved, the freeze can't be
+  # pinned — a silent skip would let a helper edit slip through unguarded.
   if [ -z "$unit5_sha" ]; then
-    skip "unit-5 ship/verify commit not found in history — cannot pin frozen-helper range"
+    echo "FAIL: no unit-5 ship/verify commit matched — cannot pin frozen-helper range" >&2
+    return 1
   fi
 
   run bash -c 'cd "$1" && git diff --name-only "$2~1..HEAD" -- bin/godmode-findings' \
@@ -342,8 +480,10 @@ verify_step6() {
     -- skills/ship/SKILL.md skills/verify/SKILL.md \
     | awk '/unit 5 S1 — \/ship|unit 5 S2 — \/verify/{print $1; exit}')
 
+  # FAIL (not skip): a missing base means the freeze is unverifiable — fail loud.
   if [ -z "$unit5_sha" ]; then
-    skip "unit-5 ship/verify commit not found in history — cannot pin frozen-helper base"
+    echo "FAIL: no unit-5 ship/verify commit matched — cannot pin frozen-helper base" >&2
+    return 1
   fi
 
   run bash -c 'cd "$1" && git diff --quiet "$2~1" HEAD -- bin/godmode-findings' \
