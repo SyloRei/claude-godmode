@@ -12,7 +12,7 @@ Find and fix bugs systematically using evidence, never guessing.
 
 ## Auto Mode
 
-Auto Mode suppresses confirmation prompts and proceed-pauses — not the one clarifying question that can matter here: **if the symptom isn't reproducible and the exact error/repro steps aren't given, state your reading of it for the user to override** (debugging the wrong symptom wastes the whole effort). Don't ask "what's the repro?" from blank — lead with your best-inferred symptom and repro and invite correction: "I read the failure as X on step Y — correct me if not." This is the clarifying rendering of the recommendation-backed-question convention in `rules/godmode-recommend.md` (`godmode:recommend-convention`). Once you can reproduce, proceed: fix immediately after the root cause is found, surface assumptions inline, and treat course-corrections as normal input. Don't loop on trivia.
+Auto Mode suppresses confirmation prompts and proceed-pauses — not the one clarifying question that can matter here: **if the symptom isn't reproducible and the exact error/repro steps aren't given, state your reading of it for the user to override** (debugging the wrong symptom wastes the whole effort). Don't ask "what's the repro?" from blank — lead with your best-inferred symptom and repro and invite correction: "I read the failure as X on step Y — correct me if not." This is the clarifying rendering of the recommendation-backed-question convention (`godmode:recommend-convention`) in `rules/godmode-recommend.md`. Once you can reproduce, proceed: fix immediately after the root cause is found, surface assumptions inline, and treat course-corrections as normal input. Don't loop on trivia.
 
 ---
 
