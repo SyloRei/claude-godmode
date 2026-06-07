@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-06-08
+
+Mission 07 — workflow cohesion. A polish pass that makes the built spine read
+and behave as one finished product rather than a set of separately-shipped
+features. Surfaces now point at references that actually resolve, every run
+reports its state the same way, consequential questions lead with a reasoned
+recommendation, and new CI gates lock each of these conventions in place so
+they cannot silently regress.
+
+### Added
+
+- **`scripts/check-surface-quality.sh` CI gate** — fails the build if any
+  user-facing surface cites a dead reference, such as pointing at `CLAUDE.md`
+  as a source of the quality gates or the God-Mode protocol.
+- **`rules/godmode-output.md` output convention** — a single canonical in-skill
+  output language (status header, what-changed summary, and an explicit
+  next-step line) with two renderings, enforced by the new
+  `scripts/check-output-style.sh` CI gate.
+
+### Changed
+
+- **Workflow cohesion tightened** — every `## Related` and `## Handoffs`
+  pointer now resolves and the spine reads end-to-end with no dead ends;
+  `scripts/check-cohesion.sh` is tightened to assert what is now mechanically
+  checkable.
+- **Surface-quality sweep** — the lowest-scoring skills, agents, and commands
+  were sharpened in place for clarity, doc/spec accuracy, and structural
+  consistency, with no new surface added.
+- **Interaction polish** — every surface that asks a consequential question now
+  leads with a reasoned **Recommended** option, and `scripts/check-recommend.sh`
+  coverage is extended to lock the convention in.
+- **Consistent run output** — the in-skill output blocks are applied across the
+  spine surfaces so every run reads the same way: what state it reached, what it
+  changed, and where to go next.
+
 ## [2.7.0] - 2026-06-06
 
 Mission 06 — verification phase. `/verify` previously emitted findings that
