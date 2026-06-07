@@ -12,7 +12,7 @@ Implement features using strict Red-Green-Refactor cycles. Implements the testin
 
 ## Auto Mode
 
-Auto Mode suppresses confirmation prompts, not the clarifying questions that decide what the tests assert. **If a target behavior is genuinely ambiguous — the expected output, an edge case's contract — ask** (the tests encode it; guessing bakes the wrong contract into red-green). For low-stakes decomposition choices, use reasonable defaults and surface the behavior list + assumptions inline, then run the cycles. Treat course-corrections as normal input.
+Auto Mode suppresses confirmation prompts, not the clarifying questions that decide what the tests assert. **If a target behavior is genuinely ambiguous — the expected output, an edge case's contract — don't ask blank: lead with the contract you'd assert and invite the override** (e.g. "I'll assert this edge case returns an empty list rather than throwing — correct me before I write the red test"), because the tests encode it and guessing bakes the wrong contract into red-green. This is the clarifying rendering of the shared recommendation convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`. For low-stakes decomposition choices, use reasonable defaults and surface the behavior list + assumptions inline, then run the cycles. Treat course-corrections as normal input.
 
 ---
 
