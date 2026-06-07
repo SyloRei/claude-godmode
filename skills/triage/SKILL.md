@@ -15,11 +15,15 @@ BEFORE touching code. This skill triages; it does not write the fix.
 ## Auto Mode
 
 Auto Mode suppresses confirmation prompts and proceed-pauses — not the one
-clarifying question that can matter here: **if the first symptom, the time it
-started, or who reported it is unknown, ask for it** (triaging the wrong
-incident wastes the whole effort). Once the symptom is anchored, proceed:
-reconstruct the timeline, assess blast radius, and route the fix without
-pausing. Treat course-corrections as normal input.
+clarifying question that can matter here: **when it started, when it was last
+known-good, or who reported it is unknown, don't ask blank — lead with your
+best-inferred answer to override** (e.g. "I'll take the incident start as the
+first error at 14:02 UTC — correct me if it began earlier"), since triaging the
+wrong incident wastes the whole effort. This clarifying question follows the
+shared recommendation convention (`godmode:recommend-convention`) defined in
+`rules/godmode-recommend.md`. Once the symptom is anchored, proceed: reconstruct
+the timeline, assess blast radius, and route the fix without pausing. Treat
+course-corrections as normal input.
 
 ---
 
