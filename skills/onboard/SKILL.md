@@ -131,7 +131,7 @@ The two are written **independently** — each has its own save offer below, and
 
 ### Offer to Save
 
-Lead the offer with the recommended option and a one-line rationale, per the recommendation-backed-question convention (marker `godmode:recommend-convention`; see `rules/godmode-recommend.md`):
+Lead the offer with the recommended option and a one-line rationale, per the recommendation-backed-question convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`:
 
 > "Save this cheatsheet to `.planning/onboarding.md`?
 >   a) Save (Recommended — the cheatsheet is what `/mission` reads as its seed; persisting it now means the next mission starts oriented instead of asking from scratch)
