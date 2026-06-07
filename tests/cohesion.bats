@@ -33,6 +33,11 @@ teardown() {
 #   skills/x/SKILL.md -> ## Related
 #   agents/y.md       -> ## Handoffs
 #   commands/z.md     -> ## Related
+# Every default pointer resolves to a sibling fixture surface, so the tightened
+# resolution pass (AC-7) is satisfied out of the box:
+#   skills/x -> @y (agents/y.md) + /z (commands/z.md)
+#   agents/y -> /x (skills/x/SKILL.md)
+#   commands/z -> /x (skills/x/SKILL.md)
 # Individual cases overwrite a file to remove or vary its section.
 make_fixture() {
   mkdir -p "$FIXTURE/scripts"
@@ -40,8 +45,8 @@ make_fixture() {
   chmod +x "$FIXTURE/scripts/check-cohesion.sh"
 
   mkdir -p "$FIXTURE/skills/x" "$FIXTURE/agents" "$FIXTURE/commands"
-  printf '# x\n\n## Related\n\n- /y\n' > "$FIXTURE/skills/x/SKILL.md"
-  printf '# y\n\n## Handoffs\n\n- @z\n' > "$FIXTURE/agents/y.md"
+  printf '# x\n\n## Related\n\n- @y\n- /z\n' > "$FIXTURE/skills/x/SKILL.md"
+  printf '# y\n\n## Handoffs\n\n- /x\n' > "$FIXTURE/agents/y.md"
   printf '# z\n\n## Related\n\n- /x\n' > "$FIXTURE/commands/z.md"
 }
 
@@ -141,4 +146,22 @@ make_fixture() {
   run "$FIXTURE/scripts/check-cohesion.sh"
   [ "$status" -eq 1 ]
   [[ "$output" == *"no surfaces found"* ]]
+}
+
+# --- case 7: a dangling onward pointer is rejected (AC-9) ------------------
+
+# Beyond presence (AC-7/AC-9): a surface that carries the section but names a
+# pointer resolving to no surface -> exit 1, naming BOTH the offending file and
+# the unresolved token. Guards against a regression where the resolution pass is
+# dropped and a section pointing at a nonexistent step silently passes.
+@test "check-cohesion should exit 1 and name the file and token when an onward pointer is dangling" {
+  make_fixture
+  # Overwrite one surface so its Handoffs body points at a surface that does not
+  # exist (@nonexistent -> no agents/nonexistent.md); all other pointers resolve.
+  printf '# y\n\n## Handoffs\n\n- @nonexistent\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"@nonexistent"* ]]
 }
