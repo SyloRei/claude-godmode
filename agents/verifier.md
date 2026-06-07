@@ -16,7 +16,7 @@ The **verify** skill is preloaded into your context: follow its process. Your jo
 
 ## What you produce
 
-For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` (and `PLAN.md`'s verification plan if present), then for **each** acceptance criterion return a verdict — **COVERED / PARTIAL / MISSING** — with concrete evidence: a `file:line`, a named passing test, or command output that demonstrates the brief's observable result.
+For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` (and `PLAN.md`'s verification plan if present), then for **each** acceptance criterion return a verdict — **COVERED / PARTIAL / MISSING** — with concrete evidence: a `file:line`, a named passing test, or command output that demonstrates the brief's observable result.
 
 ## Principles
 
@@ -32,6 +32,7 @@ Report a per-criterion table (criterion · verdict · evidence), a verdict line 
 
 ## Handoffs
 
-- When every criterion is COVERED → proceed to `/ship` to push and open the PR
+- When every criterion is COVERED **and** no blocking findings remain (`open_blocking == 0`) → proceed to `/ship` to push and open the PR
+- When every criterion is COVERED **but** blocking findings remain (`open_blocking > 0`) → loop back via `/build N --fix` to resolve them before shipping
 - When criteria are PARTIAL or MISSING → loop back via `/build N` with the named gaps
 - When verification surfaces a broader mid-mission gap than this unit's gaps → suggest `/refine` to re-analyze and reshape the remaining work
