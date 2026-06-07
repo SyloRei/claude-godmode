@@ -223,3 +223,29 @@ make_fixture() {
   [[ "$output" != *"missing the convention marker."* ]]
   [[ "$output" != *"unclassified"* ]]
 }
+
+# --- case 8: a surface classified in BOTH lists fails (AC-8 overlap) -------
+
+# AC-8 (overlap half): a path present in BOTH RECOMMEND_SURFACES and NA_SURFACES
+# is ambiguous and must fail — it violates the exactly-one contract. The two real
+# arrays are hardcoded disjoint, so repo content alone can never trip this branch;
+# the only way to exercise it is to inject a duplicate classification into the
+# COPIED script. We append an already-RECOMMEND path (skills/mission/SKILL.md)
+# into the copy's NA_SURFACES array with a BSD-safe single-line sed (the real
+# script is never mutated), then run the copy. The gate must exit 1, name the
+# duplicated surface, and emit the "both lists" overlap marker + summary.
+@test "check-recommend should exit 1 and name a surface classified in both lists" {
+  make_fixture mission
+  # Inject mission (already in RECOMMEND_SURFACES) into the COPIED script's
+  # NA_SURFACES array so it is classified in both lists. BSD-safe: '@' delimiter,
+  # in-place with .bak then remove it (no GNU-only -i'' form).
+  sed -i.bak 's@^NA_SURFACES=($@NA_SURFACES=( skills/mission/SKILL.md@' \
+    "$FIXTURE/scripts/check-recommend.sh"
+  rm -f "$FIXTURE/scripts/check-recommend.sh.bak"
+
+  run "$FIXTURE/scripts/check-recommend.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"skills/mission/SKILL.md"* ]]
+  [[ "$output" == *"both lists"* ]]
+  [[ "$output" == *"in both lists"* ]]
+}
