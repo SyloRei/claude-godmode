@@ -9,12 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [2.8.0] - 2026-06-08
 
-Mission 07 — workflow cohesion. A polish pass that makes the built spine read
-and behave as one finished product rather than a set of separately-shipped
-features. Surfaces now point at references that actually resolve, every run
-reports its state the same way, consequential questions lead with a reasoned
-recommendation, and new CI gates lock each of these conventions in place so
-they cannot silently regress.
+Mission 07 — workflow cohesion. The spine was built across six missions, but it
+read as accreted parts: handoffs between surfaces were inconsistent, surface
+quality was uneven, consequential questions were asked ad hoc, and every surface
+ended its run its own way. This release makes the spine read and behave as one
+finished product — tightening the handoffs between surfaces, sharpening the
+weakest surfaces in place, leading every consequential question with a reasoned
+recommendation, and giving every run one consistent output language — with each
+convention locked in by a new or tightened CI gate.
 
 ### Added
 
