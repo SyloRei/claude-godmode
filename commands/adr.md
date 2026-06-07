@@ -83,6 +83,18 @@ Keep it terse. One decision, four sections, no filler.
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with a short status block so it reads as finished, not just the raw ADR:
+
+- **Status** — ADR drafted; say where it landed — written to `docs/adr/NNNN-title.md` on confirm, or printed inline for the user to place.
+- **Produced** — a one-line gloss of the decision recorded (its title and the choice made), distinct from the full ADR body above.
+- **Next** — Accepted? Run `/plan N` to act on the decision; spawn **@architect** first if it still needs working out.
+
+---
+
 ## Related
 
 - **@architect** — produces the design analysis and trade-offs an ADR records; spawn it first when the decision still needs working out, then capture the outcome here.
