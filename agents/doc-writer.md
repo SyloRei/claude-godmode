@@ -54,3 +54,4 @@ You are a technical writer who creates clear, accurate documentation. Document w
 
 - For understanding codebase first → `/onboard` or `@researcher`
 - For API design decisions → `@architect`
+- Once the docs are written → hand back to the spine: `/verify N` to confirm the unit's criteria, then `/ship` to release; for a documentation review pass first, `@code-reviewer`
