@@ -6,7 +6,7 @@ user-invocable: true
 
 # Safe Refactoring
 
-Improve code structure without changing behavior. Every step verified by tests. Implements the refactoring protocol defined in CLAUDE.md.
+Improve code structure without changing behavior. Every step verified by tests, with quality gates passing before and after each change.
 
 ---
 
@@ -28,7 +28,7 @@ When `## Auto Mode Active` is present in context: do not pause for confirmation.
 ## Process
 
 ### 1. BASELINE
-- Run ALL quality gates (CLAUDE.md canonical list). They must pass.
+- Run ALL quality gates (from `config/quality-gates.txt`). They must pass.
 - If not: fix quality issues first (separate commit).
 - Note current test count and coverage.
 
