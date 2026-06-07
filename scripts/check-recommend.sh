@@ -28,9 +28,12 @@
 #
 # Partition completeness (AC-8): every skills/*/SKILL.md and commands/*.md that
 # actually exists in the repo must be classified in EXACTLY one of the two
-# lists. A surface in neither fails the gate, so a newly added question-asking
-# surface cannot silently escape the convention — it must be classified in
-# RECOMMEND_SURFACES or NA_SURFACES.
+# lists, and the gate enforces both halves of that contract:
+#   - a surface in NEITHER list fails (unclassified), so a newly added
+#     question-asking surface cannot silently escape the convention; and
+#   - a surface in BOTH lists fails (ambiguous), so a path cannot be in-scope and
+#     N/A at once — it must be classified in exactly one of RECOMMEND_SURFACES or
+#     NA_SURFACES.
 #
 # This gate asserts marker *presence* only. Whether a question *truly* leads
 # with a recommendation — that the prose actually renders the principle — is a
@@ -129,20 +132,43 @@ for f in "${RECOMMEND_SURFACES[@]}"; do
 done
 
 # --- Partition completeness (AC-8) ----------------------------------------
-# Every surface present in the repo must be classified in exactly one list.
+# Every surface present in the repo must be classified in EXACTLY one list: in
+# neither fails (unclassified), in both fails (ambiguous overlap). Together these
+# two checks enforce the documented exactly-one contract.
 partition_failures=0
+overlap_failures=0
 partition_header_shown=0
+overlap_header_shown=0
 for f in skills/*/SKILL.md commands/*.md; do
   # Guard against a glob that matched nothing (literal pattern left intact).
   [ -e "$f" ] || continue
 
+  in_recommend=0
+  in_na=0
   if in_list "$f" "${RECOMMEND_SURFACES[@]}"; then
-    continue
+    in_recommend=1
   fi
   if in_list "$f" "${NA_SURFACES[@]}"; then
+    in_na=1
+  fi
+
+  # In BOTH lists -> ambiguous: violates exactly-one, fail and name it.
+  if [ "$in_recommend" -eq 1 ] && [ "$in_na" -eq 1 ]; then
+    if [ "$overlap_header_shown" -eq 0 ]; then
+      echo "recommend FAILURE: surface(s) classified in BOTH lists (must be in exactly one):" >&2
+      overlap_header_shown=1
+    fi
+    printf '  [both lists] %s — remove it from RECOMMEND_SURFACES or NA_SURFACES so it is in exactly one\n' "$f" >&2
+    overlap_failures=$((overlap_failures + 1))
     continue
   fi
 
+  # In exactly one list -> correctly classified.
+  if [ "$in_recommend" -eq 1 ] || [ "$in_na" -eq 1 ]; then
+    continue
+  fi
+
+  # In NEITHER list -> unclassified, fail and name it.
   if [ "$partition_header_shown" -eq 0 ]; then
     echo "recommend FAILURE: surface(s) classified neither in-scope nor N/A:" >&2
     partition_header_shown=1
@@ -152,10 +178,13 @@ for f in skills/*/SKILL.md commands/*.md; do
 done
 
 # --- Report ----------------------------------------------------------------
-total_failures=$((failures + partition_failures))
+total_failures=$((failures + partition_failures + overlap_failures))
 if [ "$total_failures" -ne 0 ]; then
   if [ "$failures" -ne 0 ]; then
     echo "recommend: ${failures} surface(s) missing the convention marker." >&2
+  fi
+  if [ "$overlap_failures" -ne 0 ]; then
+    echo "recommend: ${overlap_failures} surface(s) in both lists — each must be classified in exactly one of RECOMMEND_SURFACES or NA_SURFACES." >&2
   fi
   if [ "$partition_failures" -ne 0 ]; then
     echo "recommend: ${partition_failures} unclassified surface(s) — classify each in RECOMMEND_SURFACES or NA_SURFACES." >&2
