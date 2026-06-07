@@ -45,7 +45,7 @@ make_fixture() {
   printf '# z\n\nA clean command surface with no stale citations.\n' > "$FIXTURE/commands/z.md"
 }
 
-# --- case 0: live-repo smoke test (real gate vs. real tree) --------------
+# --- case 1: live-repo smoke test (real gate vs. real tree) --------------
 
 # Run the REAL gate script against the REAL repo tree (no fixture), mirroring
 # cohesion.bats's opening case. The committed surfaces carry no stale CLAUDE.md
@@ -59,9 +59,15 @@ make_fixture() {
   [[ "$output" == *"no stale CLAUDE.md references"* ]]
   count=$(ls "$PLUGIN_ROOT"/skills/*/SKILL.md "$PLUGIN_ROOT"/agents/*.md "$PLUGIN_ROOT"/commands/*.md 2>/dev/null | wc -l | tr -d ' ')
   [[ "$output" == *"${count} surface(s)"* ]]
+  # Assert the gate emits its per-surface progress lines (the F4 observability
+  # output), so a regression dropping the `surface-quality: ok <path>` lines is
+  # caught. Mirrors cohesion.bats spot-checking one agent and one skill by name.
+  [[ "$output" == *"surface-quality: ok"* ]]
+  [[ "$output" == *"surface-quality: ok agents/writer.md"* ]]
+  [[ "$output" == *"surface-quality: ok skills/ship/SKILL.md"* ]]
 }
 
-# --- case 1: pass when no surface cites CLAUDE.md -------------------------
+# --- case 2: pass when no surface cites CLAUDE.md -------------------------
 
 # A surface tree carrying zero CLAUDE.md references exits 0 and reports the
 # number of surfaces checked.
@@ -74,7 +80,7 @@ make_fixture() {
   [[ "$output" == *"3 surface(s)"* ]]
 }
 
-# --- case 2: fail when a surface cites CLAUDE.md, naming the file ----------
+# --- case 3: fail when a surface cites CLAUDE.md, naming the file ----------
 
 # A surface holding a `CLAUDE.md` citation -> exit 1, and the offending file
 # path is named in output. `run` captures both stdout and stderr into $output,
@@ -93,7 +99,7 @@ make_fixture() {
   [[ "$output" == *"skills/x/SKILL.md"* ]]
 }
 
-# --- case 3: the reported line number appears in output -------------------
+# --- case 4: the reported line number appears in output -------------------
 
 # Beyond naming the file, the gate reports the line on which the stale citation
 # sits (grep -n), so the reader can jump straight to it. Place the citation on a
@@ -108,7 +114,7 @@ make_fixture() {
   [[ "$output" == *"skills/x/SKILL.md:5"* ]]
 }
 
-# --- case 4: an agents/ surface citing CLAUDE.md is caught -----------------
+# --- case 5: an agents/ surface citing CLAUDE.md is caught -----------------
 
 # The two fail cases above only inject the stale ref into skills/*/SKILL.md, so
 # a glob-narrowing regression that scanned only the skills arm would still pass
@@ -124,9 +130,9 @@ make_fixture() {
   [[ "$output" == *"agents/y.md"* ]]
 }
 
-# --- case 5: a commands/ surface citing CLAUDE.md is caught ----------------
+# --- case 6: a commands/ surface citing CLAUDE.md is caught ----------------
 
-# Companion to case 4 for the third surface arm: the offending citation sits on
+# Companion to case 5 for the third surface arm: the offending citation sits on
 # a commands/*.md surface (clean skills + agents). Exit 1 with the command path
 # named proves the commands arm is scanned too, so all three arms are covered.
 @test "check-surface-quality should exit 1 and name a commands/ surface that cites CLAUDE.md" {
@@ -138,7 +144,7 @@ make_fixture() {
   [[ "$output" == *"commands/z.md"* ]]
 }
 
-# --- case 6: simultaneous violations on TWO surfaces are ALL named ---------
+# --- case 7: simultaneous violations on TWO surfaces are ALL named ---------
 
 # Two different surfaces each carry a stale CLAUDE.md ref. The gate must
 # accumulate failures across surfaces rather than early-exiting on the first
@@ -155,7 +161,7 @@ make_fixture() {
   [[ "$output" == *"agents/y.md"* ]]
 }
 
-# --- case 7: zero surfaces is a misconfiguration, not a clean pass ---------
+# --- case 8: zero surfaces is a misconfiguration, not a clean pass ---------
 
 # A run that matches no surfaces (wrong working dir / renamed tree) must fail
 # loudly rather than report "all 0 surface(s)" — guards the misconfiguration
