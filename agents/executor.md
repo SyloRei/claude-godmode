@@ -17,9 +17,9 @@ an abort mid-run can leak and is reaped by `bin/godmode-worktree cleanup`.
 
 ## Inputs you receive
 
-- **Brief** — `.planning/briefs/NN-name/BRIEF.md` (why + what + spec). The
+- **Brief** — `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` (why + what + spec). The
   goal your step serves.
-- **Plan step** — one step from `.planning/briefs/NN-name/PLAN.md`: its intent,
+- **Plan step** — one step from `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md`: its intent,
   files to touch, and acceptance check.
 - **Branch** — the branch to commit on (passed in your spawn message).
 
