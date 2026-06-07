@@ -272,3 +272,51 @@ make_fixture() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"output: ok x"* ]]
 }
+
+# --- case 11: an h3 `### Output` heading does NOT satisfy the h2-only regex ----
+
+# The heading regex is anchored to EXACTLY two `#` (`^## *Output( Format)? *$`),
+# so an h3 `### Output` heading must be REJECTED. The marker is present, so only
+# the heading check fails -> exit 1, naming the file under the missing-heading
+# header. Without this case the tightened h2-only regex has no rejection test: a
+# revert to a looser `^#{2,}` (h2-or-deeper) would still pass every other case,
+# silently re-admitting h3 headings. This asserts the boundary the tightening
+# created.
+@test "check-output-style should exit 1 and name the file when its only Output heading is an h3 (### Output)" {
+  make_fixture
+  # Marker present, but the sole heading is h3 — three `#`, not the required two.
+  printf '# x\n\n### Output\n\nEmits a result block. <!-- %s -->\n' "$MARKER" > "$FIXTURE/skills/x/SKILL.md"
+
+  run "$FIXTURE/scripts/check-output-style.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing heading"* ]]
+  [[ "$output" == *"skills/x/SKILL.md"* ]]
+  # The marker IS present, so the marker category must NOT fire for this file.
+  [[ "$output" != *"[missing marker] skills/x/SKILL.md"* ]]
+}
+
+# --- case 12: the per-scope commands guard fires even when skills is healthy ---
+
+# The two tier-1 scopes are guarded SEPARATELY. The both-empty case (case 7) trips
+# the skills guard first and short-circuits, so the commands guard never runs there
+# — it would be a dead path under that test alone. This isolates it: a fixture with
+# a VALID skill (heading + marker) but NO commands/ tree at all reaches the commands
+# guard with skills_checked=1 (healthy) and commands_checked=0, so the per-scope
+# "no surfaces found under commands/" error must fire -> exit 1. Guards against a
+# regression that drops or merges the per-scope guards, letting an emptied commands
+# scope pass silently behind a healthy skills scope.
+@test "check-output-style should exit 1 with the per-scope commands error when a valid skill is present but no commands surfaces exist" {
+  mkdir -p "$FIXTURE/scripts"
+  cp "$SCRIPT" "$FIXTURE/scripts/check-output-style.sh"
+  chmod +x "$FIXTURE/scripts/check-output-style.sh"
+  # A real, PASSING skill so the skills guard is satisfied and execution reaches
+  # the commands guard. Deliberately NO commands/ directory or files.
+  mkdir -p "$FIXTURE/skills/x"
+  printf '# x\n\n## Output\n\nEmits a result block. <!-- %s -->\n' "$MARKER" > "$FIXTURE/skills/x/SKILL.md"
+
+  run "$FIXTURE/scripts/check-output-style.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"no surfaces found under commands/"* ]]
+  # The skills scope is healthy, so the skills-scope guard must NOT have fired.
+  [[ "$output" != *"no surfaces found under skills/"* ]]
+}
