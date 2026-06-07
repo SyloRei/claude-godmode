@@ -41,11 +41,11 @@ teardown() {
   run sh -c 'ls "$TEST_HOME"/.claude/rules/godmode-*.md 2>/dev/null'
   [ "$status" -ne 0 ]
 
-  # They DO land in the pinned private path the hook reads, and all 9 ship.
+  # They DO land in the pinned private path the hook reads, and all 10 ship.
   [ -d "$TEST_HOME/.claude/godmode/rules" ]
   run sh -c 'ls "$TEST_HOME"/.claude/godmode/rules/godmode-*.md | wc -l | tr -d " "'
   [ "$status" -eq 0 ]
-  [ "$output" = "9" ]
+  [ "$output" = "10" ]
 }
 
 @test "install removes stale legacy godmode rules from the auto-loaded path and backs them up" {
