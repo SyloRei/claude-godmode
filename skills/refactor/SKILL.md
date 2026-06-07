@@ -12,7 +12,7 @@ Improve code structure without changing behavior. Every step verified by tests, 
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not pause for confirmation. Plan the steps using reasonable defaults, surface the plan and assumptions inline, then execute step by step with per-step quality gates. Treat user course-corrections as normal input.
+When `## Auto Mode Active` is present in context: do not pause for confirmation. Plan the steps using reasonable defaults, surface the plan and assumptions inline, then execute step by step with per-step quality gates. When the refactor's scope or target is genuinely ambiguous — what to restructure into what — ask, following the shared recommendation convention (`godmode:recommend-convention`) in `rules/godmode-recommend.md`: lead with your best-inferred answer to override, not a blank prompt (e.g. "I'll extract X into Y unless you'd scope the boundary differently"), then let the user redirect. Treat user course-corrections as normal input.
 
 ---
 
