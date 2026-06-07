@@ -62,7 +62,8 @@ make_fixture() {
   # Assert the gate emits its per-surface progress lines (the F4 observability
   # output), so a regression dropping the `surface-quality: ok <path>` lines is
   # caught. Mirrors cohesion.bats spot-checking one agent and one skill by name.
-  [[ "$output" == *"surface-quality: ok"* ]]
+  # The named spot-checks already assert the per-surface ok output, so a general
+  # prefix check would be subsumed and is intentionally omitted.
   [[ "$output" == *"surface-quality: ok agents/writer.md"* ]]
   [[ "$output" == *"surface-quality: ok skills/ship/SKILL.md"* ]]
 }
