@@ -136,7 +136,7 @@ make_fixture() {
 
 # AC-10: a present command surface (the adr path shape) carrying the marker is
 # reported as ok, exercising the command path, not just skills.
-@test "check-recommend should report a present command surface (adr path shape) as ok" {
+@test "check-recommend should exit 0 and report a present command surface (adr path shape) as ok" {
   make_fixture mission commands/adr.md
 
   run "$FIXTURE/scripts/check-recommend.sh"
