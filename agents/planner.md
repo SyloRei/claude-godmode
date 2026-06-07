@@ -15,7 +15,7 @@ The **plan** skill is preloaded into your context: follow its process. Your job 
 
 ## What you produce
 
-For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` and write a single `.planning/briefs/NN-name/PLAN.md` containing:
+For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` and write a single `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md` containing:
 
 1. **Ordered steps** — small, mechanical, one concern each. Each step names the files it touches and the change it makes.
 2. **Dependency relationships** — every step declares `dependsOn` (the step IDs it requires, or none). This lets `/build` group independent steps into parallel waves.
