@@ -235,6 +235,20 @@ Onboarding is the orientation step at the front of the workflow spine. Its **des
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with one consolidated result block, after the cheatsheet and any save offers. It leads with the terminal state, summarizes what was produced, and names one next move:
+
+- **Status** — orientation complete; the cheatsheet is built (and the artifacts written, if the user chose to save).
+- **What was produced** — the cheatsheet, and which artifacts were persisted: `.planning/onboarding.md` (descriptive) and/or `.planning/STANDARDS.md` (prescriptive), or "no project-specific standards found" for the empty case.
+- **Next** — the single onward pointer:
+
+> "Onboarding cheatsheet built and saved to `.planning/onboarding.md` (and `.planning/STANDARDS.md`). Run `/mission` to turn it into a project charter and roadmap."
+
+---
+
 ## Related
 
 - **@researcher** — spawn for cited findings and parallel deep dives into specific areas

@@ -108,6 +108,26 @@ In Auto Mode, run all cycles now unless the feature clearly needs its own planni
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+The Progress Report above narrates each Red-Green-Refactor cycle as it runs; close the whole run with one consolidated result block. It leads with the terminal state, summarizes the cycles, and names one next move:
+
+- **Status** — all behaviors driven test-first to green, or the remaining work deferred as a work unit.
+- **Cycles** — the behaviors implemented, each one a completed Red→Green→Refactor cycle.
+- **Tests** — the passing/total count and the files changed.
+- **Gates** — the quality-gate results (all ✓).
+- **Next** — the single onward pointer:
+
+> "Implemented [N] behaviors test-first; [X]/[X] tests pass and all quality gates are green. Run `/ship` to take the feature to a PR."
+
+When the remaining behaviors are deferred instead of driven now, the next-step names the work-unit handoff:
+
+> "Drove [N] behaviors; appended the rest as a work unit to `.planning/missions/<mission_id>/ROADMAP.md`. Run `/brief N` to plan it."
+
+---
+
 ## Related
 
 - **@test-writer** — for adding coverage to existing code (not TDD)

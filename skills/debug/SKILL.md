@@ -117,6 +117,26 @@ In Auto Mode, fix now unless the bug clearly needs design work — then append a
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close every debug run with one consolidated result block. The per-step `**Output:**` lines above narrate the protocol as you go; this block is the single legible summary the user reads at the end — it leads with the terminal state, summarizes the work, and names one next move:
+
+- **Status** — the terminal state: bug found and fixed, or found and deferred as a work unit.
+- **Root cause** — the exact cause with `file:line` evidence.
+- **Fix** — the minimal change applied and the regression test added.
+- **Gates** — the quality-gate results (all ✓).
+- **Next** — the single onward pointer:
+
+> "Fixed [root cause] at [file:line]. Added regression test [name]; all quality gates pass. Run `/ship` to take the fix to a PR."
+
+When the fix is deferred instead of applied now, the next-step names the work-unit handoff:
+
+> "Root cause: [cause] at [file:line]. Appended a work unit to `.planning/missions/<mission_id>/ROADMAP.md`. Run `/brief N` to plan the fix."
+
+---
+
 ## Related
 
 - **@researcher** — use for gathering context when stuck

@@ -107,6 +107,22 @@ optimization, and hand off to `@writer` or `@executor`.
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with one consolidated result block. The per-step `**Output:**` lines above narrate baseline → profile → route as you go; this block is the single legible summary the user reads at the end — it leads with the terminal state, summarizes the finding, and names one next move:
+
+- **Status** — profiling complete; the dominant cost is identified and the optimization is routed.
+- **Baseline vs target** — the measured baseline metric and the target (e.g. `p99 latency 800ms → target <200ms`).
+- **Bottleneck** — the dominant cost with `file:line` evidence and its share of the total.
+- **Recommendations** — the ranked optimizations with expected gain.
+- **Next** — the single onward pointer:
+
+> "Profiling complete. Bottleneck: [cause] at [file:line] ([share]). Baseline [metric=value], target [value]. Routed the top optimization to `@writer`; re-measure to confirm the gain. If it warrants a tracked work unit, run `/brief N`."
+
+---
+
 ## Related
 
 - **@perf-engineer** — read-only profiling and optimization recommendations

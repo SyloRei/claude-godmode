@@ -114,6 +114,22 @@ hand off to `@debugger` or `@writer`.
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with one consolidated result block. The per-step `**Output:**` lines above narrate timeline → blast radius → reconstruct → route as you go; this block is the single legible summary the user reads at the end — it leads with the terminal state, summarizes the incident, and names one next move:
+
+- **Status** — incident triaged; the root-cause hypothesis is established and the fix is routed.
+- **Timeline** — first symptom and time, last known-good, and what changed in the window.
+- **Blast radius** — who and what is affected, severity, and whether it is ongoing or resolved.
+- **Remediation** — the routes considered, each with `file:line` evidence.
+- **Next** — the single onward pointer:
+
+> "Incident triaged. Root-cause hypothesis: [cause] at [file:line]. Affected [scope], severity [level], [ongoing/resolved]. Routed the fix to `@debugger`. Run `/debug` to verify the fix, then `/brief N` if it warrants a tracked work unit."
+
+---
+
 ## Related
 
 - **@incident-responder** — read-only reconstruction and remediation advice
