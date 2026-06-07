@@ -61,7 +61,7 @@ make_fixture() {
   printf '# z\n\n## Output\n\nEmits a result block. <!-- %s -->\n' "$MARKER" > "$FIXTURE/commands/z.md"
 }
 
-# === AC-6: the bundled terse output style file ============================
+# --- AC-6: the bundled terse output style file ----------------------------
 
 @test "godmode-terse.md style file exists" {
   [ -f "$STYLE" ]
@@ -83,7 +83,7 @@ make_fixture() {
   [ "$output" = "./outputStyles/" ]
 }
 
-# === AC-10: the check-output-style.sh gate ================================
+# --- AC-10: the check-output-style.sh gate --------------------------------
 
 # --- case 1: pass on the repo as built (healthy, all 21) ------------------
 
@@ -219,4 +219,56 @@ make_fixture() {
   run "$FIXTURE/scripts/check-output-style.sh"
   [ "$status" -eq 1 ]
   [[ "$output" == *"no surfaces found"* ]]
+}
+
+# --- case 8: an in-scope surface missing BOTH heading and marker ------------
+
+# When a present in-scope surface carries NEITHER the Output heading NOR the
+# marker, both checks fire independently: the gate double-increments and emits a
+# separate entry under each per-category header. Cases 2 and 3 each isolate one
+# failure; this asserts the two-entries-for-one-file behaviour when both miss.
+@test "check-output-style should exit 1 and emit both a missing-heading and a missing-marker entry when a surface lacks both" {
+  make_fixture
+  # Neither `## Output` / `## Output Format` heading nor the marker token.
+  printf '# x\n\nNo output heading and no convention marker anywhere in the body.\n' > "$FIXTURE/skills/x/SKILL.md"
+
+  run "$FIXTURE/scripts/check-output-style.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"[missing heading] skills/x/SKILL.md"* ]]
+  [[ "$output" == *"[missing marker] skills/x/SKILL.md"* ]]
+}
+
+# --- case 9: a PRESENT tier-2 allow-list agent missing the marker fails ------
+
+# Cases 2-4 exercise only tier-1 (skills/commands) failures. The additive tier-2
+# allow-list must enforce the same contract: an agent that IS on the list
+# (verifier) and is present on disk but lacks the marker -> exit 1, naming the
+# agent file. Guards against a regression that scans tier-2 surfaces but never
+# fails on them. The other two allow-list agents stay absent (skipped).
+@test "check-output-style should exit 1 and name a present tier-2 allow-list agent that lacks the marker" {
+  make_fixture
+  mkdir -p "$FIXTURE/agents"
+  # verifier IS one of the three OUTPUT_AGENTS; heading present, marker absent.
+  printf '# verifier\n\n## Output\n\nEmits a result block, but with no convention marker.\n' > "$FIXTURE/agents/verifier.md"
+
+  run "$FIXTURE/scripts/check-output-style.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"missing marker"* ]]
+  [[ "$output" == *"agents/verifier.md"* ]]
+}
+
+# --- case 10: the `## Output Format` heading variant is accepted -------------
+
+# The heading regex's `( Format)?` branch is only exercised transitively by the
+# real-repo pass. This isolates it: a surface whose sole heading is the longer
+# `## Output Format` variant, carrying a valid marker, must pass -> exit 0 and
+# report the surface ok. Guards against a regression that narrows the heading
+# regex to a bare `## Output` and false-fails the Format variant.
+@test "check-output-style should exit 0 and accept a surface whose heading is the '## Output Format' variant" {
+  make_fixture
+  printf '# x\n\n## Output Format\n\nEmits a result block. <!-- %s -->\n' "$MARKER" > "$FIXTURE/skills/x/SKILL.md"
+
+  run "$FIXTURE/scripts/check-output-style.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"output: ok x"* ]]
 }
