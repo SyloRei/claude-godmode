@@ -6,7 +6,7 @@ user-invocable: true
 
 # Test-Driven Development
 
-Implement features using strict Red-Green-Refactor cycles. Implements the testing protocol defined in CLAUDE.md.
+Implement features using strict Red-Green-Refactor cycles. Implements the testing protocol in `rules/godmode-testing.md`.
 
 ---
 
@@ -62,7 +62,7 @@ Break the feature into small behaviors. For each behavior, run one Red-Green-Ref
 1. List the behaviors to implement (3-7 items typically)
 2. Order from simplest to most complex
 3. For each: RED → GREEN → REFACTOR → COMMIT
-4. After all: run quality gates (CLAUDE.md canonical list)
+4. After all: run quality gates (from `config/quality-gates.txt`)
 
 ---
 
