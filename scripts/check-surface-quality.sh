@@ -35,6 +35,10 @@ STALE_RE='CLAUDE\.md'
 
 failures=0
 checked=0
+# Category header flag: the stale-reference failure header prints exactly once,
+# the first time a violation fires, so all violation lines group under a single
+# intro header (mirroring check-cohesion.sh's "header then violations" shape).
+stale_header_shown=0
 
 for f in skills/*/SKILL.md agents/*.md commands/*.md; do
   # Guard against a glob that matched nothing (literal pattern left intact).
@@ -47,8 +51,19 @@ for f in skills/*/SKILL.md agents/*.md commands/*.md; do
   # the run on a clean surface. The `|| true` is scoped to grep ONLY.
   hits=$(grep -nE "${STALE_RE}" "$f" || true)
 
+  if [ -z "$hits" ]; then
+    # Per-surface progress line for a clean surface, mirroring cohesion.sh's
+    # `cohesion: ok <path>` line on stdout.
+    echo "surface-quality: ok ${f}"
+    continue
+  fi
+
   while IFS= read -r line; do
     [ -n "$line" ] || continue
+    if [ "$stale_header_shown" -eq 0 ]; then
+      echo "surface-quality FAILURE: surface(s) cite a stale CLAUDE.md reference (cite config/quality-gates.txt + rules/godmode-*.md instead):" >&2
+      stale_header_shown=1
+    fi
     printf '  [stale reference] %s:%s\n' "$f" "$line" >&2
     failures=$((failures + 1))
   done <<EOF
