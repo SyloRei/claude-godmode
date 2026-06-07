@@ -28,7 +28,7 @@ Investigate systematically, then present a structured cheatsheet. Spawn `@resear
 
 ## Process
 
-### 1. Project Detection (aligns with CLAUDE.md Auto-Detection)
+### 1. Project Detection (aligns with the Auto-Detection rules in `rules/godmode-coding.md`)
 - Language and framework
 - Package manager and build system
 - Test runner and coverage setup
