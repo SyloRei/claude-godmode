@@ -33,7 +33,24 @@ For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRI
 
 ## Output
 
-After writing, report the plan path, the wave grouping implied by `dependsOn`, confirmation that every brief criterion has a verification entry, the workflow state you recorded, and the next step (`/build N`).
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+End with this caller-contract block addressed to the orchestrator — a status header, what the plan covers, the workflow state you recorded, and the single next step:
+
+```
+## Plan: WRITTEN
+
+## Summary
+- Plan: .planning/missions/<mission_id>/briefs/NN-name/PLAN.md
+- Waves: <the wave grouping implied by dependsOn, e.g. W1: S1,S2 | W2: S3>
+- Coverage: every brief criterion has a verification entry (cited by ID)
+
+## State
+- Recorded: <the workflow pointer you set via bin/godmode-state>
+
+## Next
+→ /build N
+```
 
 ## Handoffs
 

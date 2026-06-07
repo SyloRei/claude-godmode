@@ -52,6 +52,8 @@ You are a technical writer who creates clear, accurate documentation. Document w
 
 ## Output Format
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 ```
 ## Docs: [COMPLETE | PARTIAL]
 

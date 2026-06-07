@@ -28,7 +28,28 @@ For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRI
 
 ## Output
 
-Report a per-criterion table (criterion · verdict · evidence), a verdict line (`N COVERED / N PARTIAL / N MISSING`), the workflow state you recorded, and the next step — `/ship` if every criterion is COVERED, otherwise `/build N` with the list of gaps.
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+End with this caller-contract block addressed to the orchestrator — a verdict header, the per-criterion coverage, the workflow state you recorded, and the single next step:
+
+```
+## Verdict: [COVERED | GAPS | BLOCKED]  (N COVERED / N PARTIAL / N MISSING)
+
+## Coverage
+| Criterion | Verdict | Evidence |
+|-----------|---------|----------|
+| <AC-id>   | COVERED \| PARTIAL \| MISSING | file:line · test name · command output |
+
+## State
+- Recorded: <the workflow pointer you set via bin/godmode-state>
+
+## Next
+→ /ship                — every criterion COVERED and open_blocking == 0
+→ /build N --fix        — every criterion COVERED but open_blocking > 0
+→ /build N <gaps>       — any criterion PARTIAL or MISSING
+```
+
+Emit exactly one `→ Next` line: the branch that matches this run's outcome.
 
 ## Handoffs
 
