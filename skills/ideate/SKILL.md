@@ -2,7 +2,7 @@
 name: ideate
 description: "Pre-mission discovery: discuss and think out candidate directions for the next feature mission, converge on one concrete proposal, and capture the reasoning as a durable artifact that /mission later reads as its seed. Use when: ideate, what should the next mission be, explore options before committing to a charter. Does not start or mutate any mission — it stops at a proposal."
 user-invocable: true
-allowed-tools: Read, Write, Edit, Glob, Bash(bin/godmode-state*), Bash(*/.claude/bin/godmode-state*), Bash(*/bin/godmode-state*)
+allowed-tools: Read, Write, Edit, Glob, Bash(gm=*), Bash(*godmode-state*)
 ---
 
 # Ideate
@@ -26,7 +26,7 @@ This location is deliberately **outside** `.planning/missions/`: the prospective
 - **Requires no active mission.** It runs on a bare repo with no missions at all, before anything has been allocated.
 - **May run mid-mission.** While a mission is active, `/ideate` shapes the *next* mission without disturbing the current one. It does not read or rely on the active mission's state.
 - **Does not start, switch, or mutate any mission.** It allocates no `mission_id`, resets no counter, writes no roadmap, touches no brief. It **stops at a proposal** — the `IDEAS.md` artifact. `/mission` remains the only skill that allocates a `mission_id` and resets the work-unit counter.
-- **No mission-flow state writes.** Because it is pre-mission and out-of-order, `/ideate` does **not** set `active_unit` or `next_command` into a mission flow — that would corrupt an active mission's pointer. Any state write, if ever needed, goes only through `bin/godmode-state`; none is required. At most, `/ideate` suggests `/mission <name>` as the next step in its output prose.
+- **No mission-flow state writes.** Because it is pre-mission and out-of-order, `/ideate` does **not** set `active_unit` or `next_command` into a mission flow — that would corrupt an active mission's pointer. Any state write, if ever needed, goes only through the `godmode-state` helper; none is required. At most, `/ideate` suggests `/mission <name>` as the next step in its output prose.
 
 ---
 
@@ -142,9 +142,11 @@ After writing, report:
 - Whether the artifact was created or updated, and its path `.planning/ideas/<slug>/IDEAS.md`.
 - The proposed feature name and a one-line summary of the recommended direction and why it won over the alternatives.
 - In Auto Mode, the **Assumptions** that were made.
-- The next step, in prose only (no state-pointer writes into a mission flow):
+- The next step, stated explicitly (in prose only — no state-pointer writes into a mission flow): run **`/mission <name>`** to commit the proposal into a mission. If unsure what to run next, **`/godmode`** is the fallback.
 
-> "Idea captured at `.planning/ideas/<slug>/IDEAS.md`. When you're ready to commit, run `/mission <name>` — it will read this artifact as its seed."
+> "Idea captured at `.planning/ideas/<slug>/IDEAS.md`. When you're ready to commit, run `/mission <name>` — it reads this artifact as its seed. (Not sure? `/godmode` always tells you the next step.)"
+
+**No workflow state written.** `/ideate` deliberately sets no state pointer (the pre-mission contract — see above), so `/godmode` will still report the cold-start default until `/mission` allocates the mission. This is expected, not a bug.
 
 ---
 
