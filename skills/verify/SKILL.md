@@ -306,7 +306,7 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 
 ---
 
-## Output Format
+## Output
 
 <!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
 
