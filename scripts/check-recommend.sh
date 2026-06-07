@@ -69,6 +69,7 @@ MARKER='godmode:recommend-convention'
 # Membership test (bash 3.2 safe — no associative arrays). Usage:
 #   in_list "$needle" "${SOME_ARRAY[@]}"  -> 0 if present, 1 otherwise.
 in_list() {
+  local needle item
   needle=$1
   shift
   for item in "$@"; do
@@ -82,6 +83,7 @@ in_list() {
 # Short display label for the human-readable "ok" line. Presentation only — the
 # marker check greps the full path verbatim and never relies on this.
 surface_label() {
+  local label
   case "$1" in
     skills/*/SKILL.md)
       label=${1#skills/}
@@ -161,5 +163,5 @@ if [ "$total_failures" -ne 0 ]; then
   exit 1
 fi
 
-echo "recommend: convention marker present on all ${checked} in-scope surface(s); partition complete."
+echo "recommend: convention marker present on ${checked} of ${#RECOMMEND_SURFACES[@]} in-scope surface(s); partition complete."
 exit 0
