@@ -1,13 +1,19 @@
 #!/usr/bin/env bats
 #
-# Workflow-cohesion gate (unit 24, S5 — advances AC-5, AC-6, AC-7).
+# Workflow-cohesion gate (mission 07-workflow-cohesion, unit 2).
 #
 # Exercises scripts/check-cohesion.sh, which enforces that every user-facing
 # surface (skills/*/SKILL.md, agents/*.md, commands/*.md) carries an onward-
-# pointer section: `## Related` OR `## Handoffs`. Contract under test:
-#   - all surfaces carry the section -> exit 0, names each `cohesion: ok` (AC-7)
-#   - a surface missing the section  -> exit 1, names the offending file  (AC-5)
-#   - either heading alone satisfies the gate                            (AC-6)
+# pointer section (## Related OR ## Handoffs) AND that every pointer named in
+# that section resolves to a real surface (AC-7, pointer-resolution behavior).
+# These bats cases are the negative + healthy coverage that AC-9 calls for.
+# Contract under test:
+#   - all surfaces carry the section AND all pointers resolve -> exit 0,
+#     names each `cohesion: ok` and emits the all-present summary
+#   - a surface missing the section -> exit 1, names the offending file
+#   - either heading alone satisfies the section requirement
+#   - a section naming a pointer that resolves to no surface -> exit 1,
+#     names the file and the dangling token (AC-7 resolution pass)
 #
 # The gate resolves its own REPO_ROOT from BASH_SOURCE and cd's there, so the
 # fixture cases build a TEMP repo: the script is copied into a temp dir
@@ -33,7 +39,7 @@ teardown() {
 #   skills/x/SKILL.md -> ## Related
 #   agents/y.md       -> ## Handoffs
 #   commands/z.md     -> ## Related
-# Every default pointer resolves to a sibling fixture surface, so the tightened
+# Every default pointer resolves to a sibling fixture surface, so the
 # resolution pass (AC-7) is satisfied out of the box:
 #   skills/x -> @y (agents/y.md) + /z (commands/z.md)
 #   agents/y -> /x (skills/x/SKILL.md)
@@ -50,10 +56,10 @@ make_fixture() {
   printf '# z\n\n## Related\n\n- /x\n' > "$FIXTURE/commands/z.md"
 }
 
-# --- case 1: pass on the repo as built (AC-7) ----------------------------
+# --- case 1: pass on the repo as built (healthy case) --------------------
 
-# AC-7: the real repo exits 0, reports each surface as `cohesion: ok`, and
-# emits the all-present summary naming the surface count.
+# The real repo exits 0, reports each surface as `cohesion: ok`, and emits
+# the all-present summary naming the surface count.
 @test "check-cohesion should exit 0 and report every surface as ok on the repo as built" {
   run "$SCRIPT"
   [ "$status" -eq 0 ]
@@ -68,9 +74,9 @@ make_fixture() {
   [[ "$output" == *"cohesion: ok skills/ship/SKILL.md"* ]]
 }
 
-# --- case 2: fail when a surface lacks the section (AC-5) ------------------
+# --- case 2: fail when a surface lacks the section -------------------------
 
-# AC-5: a present surface missing both headings -> exit 1 naming the file.
+# A present surface missing both headings -> exit 1 naming the file.
 # Operates on a TEMP copy; the real repo files are never touched. `run`
 # captures both stdout and stderr into $output, so the failure line (written
 # to stderr by the gate) is asserted there.
@@ -84,9 +90,9 @@ make_fixture() {
   [[ "$output" == *"agents/y.md"* ]]
 }
 
-# --- case 3: either heading satisfies (AC-6) ------------------------------
+# --- case 3: either heading satisfies -------------------------------------
 
-# AC-6: Handoffs alone (on the agent) and Related alone (on the skill) both
+# Handoffs alone (on the agent) and Related alone (on the skill) both
 # satisfy the gate, so a fixture using each exclusively still exits 0.
 @test "check-cohesion should exit 0 when surfaces use Handoffs or Related interchangeably" {
   make_fixture
@@ -100,7 +106,7 @@ make_fixture() {
   [[ "$output" == *"cohesion: ok commands/z.md"* ]]
 }
 
-# --- case 4: multiple missing surfaces are ALL named (AC-5) ----------------
+# --- case 4: multiple missing surfaces are ALL named ----------------------
 
 # The gate continues after the first miss and names every violator — guards
 # against a regression to "exit 1 on first miss" that would still pass case 2.
@@ -115,7 +121,7 @@ make_fixture() {
   [[ "$output" == *"commands/z.md"* ]]
 }
 
-# --- case 5: near-miss headings are rejected (AC-6 boundary) ---------------
+# --- case 5: near-miss headings are rejected (heading boundary) ------------
 
 # The heading regex is anchored and exact: `## Relatedness`, a trailing-text
 # variant, and a wrong-case `## handoffs` must all fail — so a future relaxation
@@ -148,9 +154,9 @@ make_fixture() {
   [[ "$output" == *"no surfaces found"* ]]
 }
 
-# --- case 7: a dangling onward pointer is rejected (AC-9) ------------------
+# --- case 7: a dangling onward pointer is rejected (AC-7 resolution) -------
 
-# Beyond presence (AC-7/AC-9): a surface that carries the section but names a
+# Beyond presence (AC-7 resolution pass): a surface that carries the section but names a
 # pointer resolving to no surface -> exit 1, naming BOTH the offending file and
 # the unresolved token. Guards against a regression where the resolution pass is
 # dropped and a section pointing at a nonexistent step silently passes.
@@ -166,7 +172,7 @@ make_fixture() {
   [[ "$output" == *"@nonexistent"* ]]
 }
 
-# --- case 8: MULTIPLE dangling pointers in one section are ALL named (AC-9) -
+# --- case 8: MULTIPLE dangling pointers in one section are ALL named -------
 
 # The resolution pass loops over every token in a section and accumulates a
 # failure per dangling one. A regression that short-circuits on the first
@@ -187,7 +193,7 @@ make_fixture() {
   [[ "$output" == *"@ghosttwo"* ]]
 }
 
-# --- case 9: a dangling /skill-style pointer is rejected (AC-9) -------------
+# --- case 9: a dangling /skill-style pointer is rejected (AC-7 resolution) --
 
 # Case 7 only covers the @<name> (agent) branch of resolve_pointer. The
 # /<name> branch — which resolves only if skills/<name>/SKILL.md OR
@@ -203,4 +209,79 @@ make_fixture() {
   [ "$status" -eq 1 ]
   [[ "$output" == *"agents/y.md"* ]]
   [[ "$output" == *"/ghostskill"* ]]
+}
+
+# --- case 10: a prose-only section with no pointer tokens passes (AC-7) -----
+
+# A section whose body is plain prose — no `/` or `@` pointer tokens at all —
+# has nothing to resolve and must pass. The gate's token extraction uses
+# `grep -oE ... || true` precisely because grep exits 1 on a no-match body;
+# without that tolerance the pipeline would abort under `set -e`/pipefail on
+# every prose-only surface. This case locks the `|| true`: drop it and the
+# gate aborts here (non-zero, no `cohesion: ok` summary), failing this test.
+@test "check-cohesion should exit 0 and report ok for a section with no pointer tokens" {
+  make_fixture
+  # Replace the agent's Handoffs body with prose containing zero pointer tokens.
+  printf '# y\n\n## Handoffs\n\nThis section is plain prose with no onward pointers at all.\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cohesion: ok agents/y.md"* ]]
+}
+
+# --- case 11: one section mixing a resolvable and a dangling pointer fails (AC-7) -
+
+# A single section can name several pointers; the gate must flag a dangling one
+# even when a SIBLING pointer in the same section resolves. Guards against a
+# regression that exits 0 as soon as any pointer in the section resolves
+# (e.g. an early `return 0` short-circuit) — here /x resolves to
+# skills/x/SKILL.md but @ghostmix has no agents/ghostmix.md, so the run must
+# still exit 1 and name the dangling token.
+@test "check-cohesion should exit 1 and name the dangling pointer when a sibling pointer resolves" {
+  make_fixture
+  # /x resolves (skills/x/SKILL.md exists); @ghostmix is dangling.
+  printf '# y\n\n## Handoffs\n\n- /x\n- @ghostmix\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"@ghostmix"* ]]
+}
+
+# --- case 12: the /-branch resolves a VALID /skill in isolation (AC-7) ------
+
+# Case 9 proves the /-branch rejects a dangling /skill; this proves the same
+# branch ACCEPTS a valid one. Paired, they pin the /-arm to its real behavior:
+# a regression that drops the /-arm to resolve_pointer's catch-all `return 1`
+# would still pass case 9 (dangling stays dangling) but would FAIL here — the
+# valid /x would be wrongly flagged dangling, flipping this exit 0 to 1.
+@test "check-cohesion should exit 0 when a section names a valid /skill pointer" {
+  make_fixture
+  # /x resolves to skills/x/SKILL.md, which make_fixture creates.
+  printf '# y\n\n## Handoffs\n\n- /x\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cohesion: ok agents/y.md"* ]]
+}
+
+# --- case 13: an embedded path fragment is not mis-extracted as a pointer (AC-7) -
+
+# Boundary-aware extraction: the token regex requires the `/` or `@` sigil to
+# sit at start-of-line or be preceded by a non-path char, so a `/` embedded in
+# a backticked filesystem path (`.planning/missions/...`, `bin/godmode-skill`)
+# is NOT pulled out as a `/missions` pointer. This section carries such a path
+# fragment alongside one real resolvable pointer (/x); the gate must extract
+# only /x and exit 0. A regression that drops the boundary guard (naive
+# `[/@][a-z][a-z-]*`) would extract /missions, find no surface for it, and
+# wrongly exit 1 — failing this test.
+@test "check-cohesion should exit 0 when a section embeds a path fragment beside a real pointer" {
+  make_fixture
+  # `.planning/missions/<id>/ROADMAP.md` — the /missions slash is preceded by a
+  # letter, so the boundary regex excludes it; only /x is a real pointer.
+  printf '# y\n\n## Handoffs\n\nSee `.planning/missions/<id>/ROADMAP.md` for context.\n\n- /x\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"cohesion: ok agents/y.md"* ]]
 }
