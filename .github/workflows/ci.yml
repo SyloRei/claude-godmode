@@ -99,6 +99,11 @@ jobs:
       - name: cohesion gate
         run: ./scripts/check-cohesion.sh
 
+      # surface-quality gate: no user-facing surface may cite CLAUDE.md as a
+      # source of quality gates or godmode protocol (a dead reference).
+      - name: surface-quality gate
+        run: ./scripts/check-surface-quality.sh
+
       # worktree-lifecycle coverage gate: every audit reproduction + every
       # godmode-worktree subcommand must stay locked by a named test.
       - name: worktree-coverage gate
