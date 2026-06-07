@@ -60,6 +60,13 @@ resolve_pointer() {
 
 failures=0
 checked=0
+# Per-category header flags: each violation category prints its failure header
+# exactly once, the first time that category fires. Decoupling them from the
+# shared `failures` counter means that when both categories occur in one run,
+# each category's entries still appear under its own header (rather than the
+# second category's entries printing headerless under the first).
+missing_header_shown=0
+dangling_header_shown=0
 
 for f in skills/*/SKILL.md agents/*.md commands/*.md; do
   # Guard against a glob that matched nothing (literal pattern left intact).
@@ -87,16 +94,21 @@ for f in skills/*/SKILL.md agents/*.md commands/*.md; do
     # `grep -oE` exits 1 when the body holds no pointer tokens, which is a valid
     # prose-only section, not an error; swallow that so `set -e`/pipefail do not
     # abort the run on a clean surface.
+    # `|| true` is scoped to grep ONLY: grep exits 1 when the body holds no
+    # pointer tokens (a valid prose-only section), so we tolerate that single
+    # failure inline. A genuine sed/sort failure downstream is NOT swallowed and
+    # still aborts the run under `set -e`/pipefail.
     tokens=$(printf '%s\n' "$body" \
-      | grep -oE '(^|[^A-Za-z0-9._/@-])[/@][a-z][a-z-]*' \
+      | { grep -oE '(^|[^A-Za-z0-9._/@-])[/@][a-z][a-z-]*' || true; } \
       | sed -E 's/^[^/@]//' \
-      | sort -u) || true
+      | sort -u)
 
     while IFS= read -r token; do
       [ -n "$token" ] || continue
       if ! resolve_pointer "$token"; then
-        if [ "$failures" -eq 0 ]; then
+        if [ "$dangling_header_shown" -eq 0 ]; then
           echo "cohesion FAILURE: onward-pointer section names a surface that does not exist:" >&2
+          dangling_header_shown=1
         fi
         printf '  [dangling pointer] %s -> %s\n' "$f" "$token" >&2
         failures=$((failures + 1))
@@ -105,8 +117,9 @@ for f in skills/*/SKILL.md agents/*.md commands/*.md; do
 $tokens
 EOF
   else
-    if [ "$failures" -eq 0 ]; then
+    if [ "$missing_header_shown" -eq 0 ]; then
       echo "cohesion FAILURE: surface(s) missing an onward-pointer section (## Related or ## Handoffs):" >&2
+      missing_header_shown=1
     fi
     printf '  [missing section] %s\n' "$f" >&2
     failures=$((failures + 1))
