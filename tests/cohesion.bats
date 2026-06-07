@@ -165,3 +165,42 @@ make_fixture() {
   [[ "$output" == *"agents/y.md"* ]]
   [[ "$output" == *"@nonexistent"* ]]
 }
+
+# --- case 8: MULTIPLE dangling pointers in one section are ALL named (AC-9) -
+
+# The resolution pass loops over every token in a section and accumulates a
+# failure per dangling one. A regression that short-circuits on the first
+# dangling hit (e.g. swapping the resolution `while` loop for an `if`/`break`)
+# would still pass case 7 but must fail here, where one section carries two
+# dangling pointers and BOTH must be named. Mirrors case 4's multi-miss spirit
+# for the missing-section path.
+@test "check-cohesion should exit 1 and name every dangling pointer in a single section" {
+  make_fixture
+  # One Handoffs section naming two agents that do not exist; the order proves
+  # the loop did not stop after the first unresolved token.
+  printf '# y\n\n## Handoffs\n\n- @ghostone\n- @ghosttwo\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"@ghostone"* ]]
+  [[ "$output" == *"@ghosttwo"* ]]
+}
+
+# --- case 9: a dangling /skill-style pointer is rejected (AC-9) -------------
+
+# Case 7 only covers the @<name> (agent) branch of resolve_pointer. The
+# /<name> branch — which resolves only if skills/<name>/SKILL.md OR
+# commands/<name>.md exists — must reject a name backed by neither. Guards the
+# slash branch in isolation against a regression that drops it.
+@test "check-cohesion should exit 1 and name the file and token for a dangling /skill pointer" {
+  make_fixture
+  # /ghostskill resolves to neither skills/ghostskill/SKILL.md nor
+  # commands/ghostskill.md, so the slash branch must report it dangling.
+  printf '# y\n\n## Handoffs\n\n- /ghostskill\n' > "$FIXTURE/agents/y.md"
+
+  run "$FIXTURE/scripts/check-cohesion.sh"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"agents/y.md"* ]]
+  [[ "$output" == *"/ghostskill"* ]]
+}
