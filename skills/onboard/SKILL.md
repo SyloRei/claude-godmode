@@ -131,7 +131,11 @@ The two are written **independently** — each has its own save offer below, and
 
 ### Offer to Save
 
-> "Save this cheatsheet to `.planning/onboarding.md` so `/mission` can use it?"
+Lead the offer with the recommended option and a one-line rationale, per the recommendation-backed-question convention (marker `godmode:recommend-convention`; see `rules/godmode-recommend.md`):
+
+> "Save this cheatsheet to `.planning/onboarding.md`?
+>   a) Save (Recommended — the cheatsheet is what `/mission` reads as its seed; persisting it now means the next mission starts oriented instead of asking from scratch)
+>   b) Skip"
 
 - Saving is **optional** — the user must confirm before writing anything
 - If the user declines, continue without further prompts about saving
@@ -203,7 +207,11 @@ The format:
 
 The Code Standards discovery step (Process step 4) **always runs** — it always gathers findings. **Writing** them to `.planning/STANDARDS.md` follows the same optional-save convention as the cheatsheet above.
 
-> "Save the discovered code standards to `.planning/STANDARDS.md`?"
+Lead this offer the same way — recommended option first, with a rationale specific to the standards artifact:
+
+> "Save the discovered code standards to `.planning/STANDARDS.md`?
+>   a) Save (Recommended — these cited DO / DON'T rules are what later code-writing surfaces apply over the generic `rules/godmode-*.md`; persisting them now means every `/build` in this repo honors its own conventions)
+>   b) Skip"
 
 - Saving is **optional** — the user must confirm before writing anything
 - If the user declines, continue without further prompts about saving
