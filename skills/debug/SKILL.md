@@ -6,7 +6,7 @@ user-invocable: true
 
 # Structured Debugging
 
-Find and fix bugs systematically using evidence, never guessing. Implements the debugging protocol defined in CLAUDE.md.
+Find and fix bugs systematically using evidence, never guessing.
 
 ---
 
@@ -66,7 +66,7 @@ H3: [hypothesis] — confirm by [check]
 
 - Apply the minimal targeted fix
 - Write a regression test (fails without fix, passes with fix)
-- Run ALL quality gates (as defined in CLAUDE.md):
+- Run ALL quality gates (from `config/quality-gates.txt`):
   1. Typecheck passes
   2. Lint passes
   3. All tests pass
