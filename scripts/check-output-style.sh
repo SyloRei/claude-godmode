@@ -54,8 +54,9 @@ OUTPUT_AGENTS=(
   agents/doc-writer.md
 )
 
-# Output section heading: `## Output` or `## Output Format` (two or more `#`).
-HEADING_RE='^#{2,} *Output( Format)? *$'
+# Output section heading: `## Output` or `## Output Format` — EXACTLY two `#`
+# (h2 only). The convention is an h2 heading; h3+ (`### Output`) does NOT count.
+HEADING_RE='^## *Output( Format)? *$'
 
 # The literal marker token each in-scope surface must contain. Matched with a
 # trailing non-[alnum-] boundary (or EOL) so a suffix-extended superset such as
@@ -134,16 +135,34 @@ check_surface() {
 }
 
 # --- Tier 1: universal glob over all skills and commands -------------------
-for f in skills/*/SKILL.md commands/*.md; do
+# Track the two tier-1 scopes' matched-surface counts SEPARATELY so an emptied
+# or renamed single scope can't pass silently behind the other. (A combined
+# guard would only fire when BOTH scopes are empty, masking a partial scan.)
+skills_checked=0
+for f in skills/*/SKILL.md; do
   # Guard against a glob that matched nothing (literal pattern left intact).
   [ -e "$f" ] || continue
   check_surface "$f"
+  skills_checked=$((skills_checked + 1))
 done
 
-# A tier-1 glob that matched zero surfaces is a misconfiguration (wrong working
-# dir, or a renamed surface tree), not a clean pass — fail loudly.
-if [ "$checked" -eq 0 ]; then
-  echo "output ERROR: no surfaces found under skills/ or commands/." >&2
+commands_checked=0
+for f in commands/*.md; do
+  [ -e "$f" ] || continue
+  check_surface "$f"
+  commands_checked=$((commands_checked + 1))
+done
+
+# Each tier-1 scope must match at least one surface. A scope that matched zero
+# is a misconfiguration (wrong working dir, or a renamed/moved surface tree),
+# not a clean pass — fail loudly per scope so an emptied scope is never a silent
+# partial scan.
+if [ "$skills_checked" -eq 0 ]; then
+  echo "output ERROR: no surfaces found under skills/ (skills/*/SKILL.md matched nothing)." >&2
+  exit 1
+fi
+if [ "$commands_checked" -eq 0 ]; then
+  echo "output ERROR: no surfaces found under commands/ (commands/*.md matched nothing)." >&2
   exit 1
 fi
 
