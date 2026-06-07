@@ -16,11 +16,16 @@ write the optimization.
 ## Auto Mode
 
 Auto Mode suppresses confirmation prompts and proceed-pauses — not the one
-clarifying question that can matter here: **if the symptom or the target metric
-is unknown, ask for it** (optimizing the wrong path wastes the whole effort).
-"Slow" is not a target; "p99 request latency is 800ms, want <200ms" is. Once the
-symptom and metric are anchored, proceed: baseline, profile, and route the fix
-without pausing. Treat course-corrections as normal input.
+clarifying question that can matter here: when the slow path, target metric, or
+baseline is unknown, **resolve it before profiling** (optimizing the wrong path
+wastes the whole effort). Ask it the way the shared recommendation convention
+(`godmode:recommend-convention`) in `rules/godmode-recommend.md` prescribes —
+**lead with your best-inferred answer for the user to override**, not a blank
+prompt: e.g. "I'll treat the hot path as the `/search` endpoint and baseline on
+p99 latency — correct me if you meant a different path or metric." "Slow" is not
+a target; "p99 request latency is 800ms, want <200ms" is. Once the symptom and
+metric are anchored, proceed: baseline, profile, and route the fix without
+pausing. Treat course-corrections as normal input.
 
 ---
 
