@@ -225,6 +225,8 @@ Each criterion is verifiable (a clear trigger and observable result) and carries
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After writing, report:
 
 - Whether the brief was created or updated, and its path `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md`.

@@ -385,6 +385,8 @@ The fix flow inherits the **confirm-before-each-wave** behavior and the **Auto M
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After building, report:
 
 - The waves derived from `dependsOn` (and whether the plan's `## Waves` section agreed, was absent, or conflicted) and the steps in each.

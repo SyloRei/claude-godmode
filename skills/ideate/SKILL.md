@@ -137,6 +137,8 @@ This is the last step. `/ideate` stops here — it does not start a mission.
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After writing, report:
 
 - Whether the artifact was created or updated, and its path `.planning/ideas/<slug>/IDEAS.md`.

@@ -196,6 +196,8 @@ Every brief acceptance criterion, by ID, with how it is checked.
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After writing, report:
 
 - Whether the plan was created or updated, and its path `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md`.

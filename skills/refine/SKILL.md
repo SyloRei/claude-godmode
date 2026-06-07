@@ -188,6 +188,8 @@ Each criterion is verifiable (a clear trigger and observable result) and carries
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After writing, report:
 
 - The gap that was selected, and a one-line summary of why it won over the other candidate gaps surfaced.
