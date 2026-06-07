@@ -258,6 +258,8 @@ This lets `/godmode` tell the user the work unit shipped and what to do next.
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After shipping, report:
 
 - The gate results (all ✓).

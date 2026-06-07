@@ -115,6 +115,8 @@ In Auto Mode, execute now for small refactorings; for large ones, append a work 
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 ```
 Refactoring: [what and why]
 Steps completed: N
