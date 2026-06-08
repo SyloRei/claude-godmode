@@ -214,6 +214,128 @@ Organize memory by topic (one file per topic, concise). Keep MEMORY.md index und
 - If you can say it in one sentence, don't use three
 - No emojis unless user requests them
 
+### godmode-output
+
+## In-Skill Output — Canonical Convention
+
+This is the single canonical definition of the in-skill output-block
+convention. Surfaces that print a result reference this rule; do not restate or
+fork it elsewhere.
+
+### The principle (shape-independent)
+
+Every run ends with a legible result block — say what state the run reached,
+what it changed, and where to go next — in one consistent shape, so every
+surface reads as one finished product. The reader should never have to scroll
+back to reconstruct the outcome: the block names the terminal state, the work,
+and the single next move, in that order.
+
+This one principle holds regardless of the surface's shape. Every result block
+carries the same **three shared required elements**:
+
+1. **Status header** — one line naming the terminal state the run reached
+   (done, blocked, shipped, no-op, needs-input). It leads the block.
+2. **What-changed / what-was-produced summary** — what the run did when it did
+   work: files written, a diff summary, findings, gate results, metrics. A
+   no-op run says so instead.
+3. **Explicit next-step line** — the single onward pointer: a `/command` the
+   reader runs next, or a named handoff. Exactly one onward move, stated plainly.
+
+The block renders two ways. The renderings differ only in **addressee + form** —
+the three beats above are identical in both.
+
+**Rendering A — Terminal output** (the 14 skills + 4 commands): addressed to the
+**user**, in prose plus light formatting, pretty at first order for Claude Code.
+The next-step is a `/command` the user runs next:
+
+```
+Built S3. Wrote scripts/check-output-style.sh (+118) and
+tests/output-style.bats (+64); all gates green (vocab, cohesion, bats).
+
+Next: run `/verify 5` to confirm the unit meets its brief.
+```
+
+**Rendering B — Caller-contract block** (the 3 in-scope agents `verifier`,
+`planner`, `doc-writer`): addressed to the **orchestrator**, as a fenced,
+machine-parseable template — a status/verdict header, a what-changed/coverage
+summary, and a handoff next-step line. Modeled on `agents/code-reviewer.md`'s
+`## Output Format`:
+
+```
+## Verdict: [PASS | GAPS | BLOCKED]
+
+## Coverage
+- Criteria checked: <n>/<total>
+- Gaps: [file:line — what is missing, or "none"]
+
+## Next
+→ [the single handoff: /command or @agent the orchestrator runs next]
+```
+
+Both renderings lead with state, summarize the work, and end on one next move;
+only the addressee (user vs. orchestrator) and the form (prose vs. fenced
+template) change.
+
+### Marker token
+
+Every in-scope surface includes the exact, fixed marker token
+`godmode:output-convention` in its body, at its Output section, to signal
+adherence. The token is the single greppable contract between the surfaces and
+this rule. The CI gate `scripts/check-output-style.sh` greps in-scope surfaces
+for `godmode:output-convention` and fails the build if any is missing it.
+
+The token is literal and fixed — `godmode:output-convention`. It is the
+**single** marker for both renderings: do NOT paraphrase, version, or namespace
+it per rendering. There is no `…-convention:A`, no `…-convention-v2`, no
+per-rendering suffix. The rule body — not the token — says which rendering
+applies, since the CI gate cannot judge rendering. One token, every surface.
+
+### Scope — the ledger
+
+The convention governs **every surface that prints a result**. The set is
+explicit: **21 in-scope surfaces** must carry the marker.
+
+**14 skills:**
+
+- `mission`
+- `brief`
+- `plan`
+- `build`
+- `ship`
+- `verify`
+- `ideate`
+- `refine`
+- `onboard`
+- `debug`
+- `refactor`
+- `tdd`
+- `profile`
+- `triage`
+
+**4 commands:**
+
+- `adr`
+- `changelog`
+- `godmode`
+- `pr-describe`
+
+**3 agents:**
+
+- `verifier`
+- `planner`
+- `doc-writer`
+
+**Out of scope by design — the ~15 other agents:** their output is a caller
+contract that was **not flagged sub-threshold by the unit-1 audit**. Agent
+output is machine-facing; only the 3 agents the audit flagged opt in. The rest
+are recorded here as deliberately excluded, not overlooked.
+
+**Delegation boundary.** The CI gate asserts heading + marker **presence** only.
+Whether a block truly leads with a status header, summarizes what changed, and
+names a real next step is a `/verify` Lens-4 judgment — mirroring how
+`scripts/check-cohesion.sh` and `scripts/check-recommend.sh` delegate prose
+quality to the same lens. The gate greps a token; it cannot judge prose.
+
 ### godmode-quality
 
 ## Quality Gates (Canonical — Single Source of Truth)
@@ -235,34 +357,24 @@ Project-specific gates (e.g., "build") are auto-detected per project by /build N
 ## Recommendation-Backed Questions — Canonical Convention
 
 This is the single canonical definition of the recommendation-backed-question
-convention. Skills that ask interactive questions reference this rule; do not
-restate or fork it elsewhere.
+convention. Surfaces that ask the user a consequential question reference this
+rule; do not restate or fork it elsewhere.
 
-### Scope — the planning spine
+### The principle (shape-independent)
 
-The convention governs the **planning spine**: the skills `/mission`, `/brief`,
-`/plan`, `/ideate`, and `/refine`. (`/ideate` and `/refine` do not exist yet —
-the convention binds them the moment they are built.) These skills shape
-decisions, so every interactive question they ask must carry the author's
-reasoning, not punt the decision back to the user.
+Whatever you ask the user, **lead with the answer you'd give and why**, then let
+the user override. You did the analysis — say what you'd do and the reason,
+inline, before you hand the decision back. Never offload the thinking with a
+flat prompt of equal options or a blank question.
 
-### Lead with Recommended
+This one principle holds regardless of the question's shape. It renders three
+ways, and every rendering carries a **visible one-line rationale** — the
+explicit thinking, shown inline, never hidden, one line, concrete, and tied to
+the actual context (the mission, the brief, a known constraint) — not a generic
+"this is common."
 
-Every interactive question a spine skill asks must **lead with a Recommended
-option** — the reasoned default the skill would pick. Do NOT present a flat menu
-of equal choices that offloads the thinking onto the user. You did the analysis;
-say what you'd do and why, then let the user override.
-
-### Visible one-line rationale
-
-The Recommended option carries a short, **user-visible** rationale — the explicit
-thinking, shown inline, never hidden. Use the form:
-
-```
-a) X (Recommended — because …)
-```
-
-Concrete example:
+**1. Menu choice** — a lettered set of options, the reasoned default marked
+`(Recommended — because …)`:
 
 ```
 Which storage backend should the brief assume?
@@ -275,20 +387,73 @@ Which storage backend should the brief assume?
 Pick a letter, or describe a different option.
 ```
 
-The rationale is one line, concrete, and tied to the actual context (the
-mission, the brief, a known constraint) — not a generic "this is common."
+**2. Confirm / proceed pause** — a yes/no or go/stop gate, the default stated as
+`Recommended: proceed — because …` (the generalized form already used by /brief
+and /plan as "Recommended: yes"):
+
+```
+Recommended: proceed — the plan's 6 steps each map to an acceptance check and
+nothing is blocked. Reply "go", or name what to change.
+```
+
+**3. Clarifying question** — lead with your **best-inferred answer to override**,
+not a blank prompt. State the assumption you'd run with and invite correction,
+rather than asking the user to fill in a blank:
+
+```
+I'll assume the repro is the failing `bats tests/ship-gate.bats` run — correct
+me if you meant a different reproduction.
+```
+
+(Not: "what's the repro?")
 
 ### Marker token
 
-Every planning-spine skill includes the exact, fixed marker token
-`godmode:recommend-convention` in its body (in its question-guidance section)
-to signal adherence. The token is the single greppable contract between the
-skills and this rule. The CI gate `scripts/check-recommend.sh` greps the spine
-skills for `godmode:recommend-convention` and fails the build if any spine skill
-is missing it.
+Every in-scope surface includes the exact, fixed marker token
+`godmode:recommend-convention` in its body (in its question-guidance section) to
+signal adherence. The token is the single greppable contract between the
+surfaces and this rule. The CI gate `scripts/check-recommend.sh` greps in-scope
+surfaces for `godmode:recommend-convention` and fails the build if any is
+missing it.
 
-The token is literal and fixed — `godmode:recommend-convention`. Do not
-paraphrase, version, or namespace it differently.
+The token is literal and fixed — `godmode:recommend-convention`. It is the
+**single** marker for all three renderings: do NOT paraphrase, version, or
+namespace it per shape. There is no `…-convention:menu`, no `…-convention-v2`,
+no per-surface suffix. One token, every surface.
+
+### Scope — the ledger
+
+The convention governs **every surface that asks the user a consequential
+question**. The set is explicit:
+
+**In scope (14) — must carry the marker:**
+
+- `mission`
+- `brief`
+- `plan`
+- `ideate`
+- `refine`
+- `build`
+- `ship`
+- `onboard`
+- `debug`
+- `refactor`
+- `tdd`
+- `profile`
+- `triage`
+- `adr` (command)
+
+**N/A (4) — asks no consequential question, recorded but not marked:**
+
+- `verify` — auto-runs its lenses and gates; asks the user nothing.
+- `changelog` — reactive helper that renders existing history; no questions.
+- `godmode` — orientation/status surface only; presents no choices.
+- `pr-describe` — fills a PR body from the diff; no consequential question.
+
+The gate `scripts/check-recommend.sh` enforces marker **presence** across the
+in-scope set. Whether a question *truly* leads with Recommended — that the prose
+actually renders the principle — is a `/verify` judgment-lens concern; the gate
+greps a token and cannot judge prose.
 
 ### godmode-routing
 

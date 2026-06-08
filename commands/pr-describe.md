@@ -61,6 +61,18 @@ to paste when opening the PR.
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with a short status block:
+
+- **Status** — PR description drafted from the branch's commits and diff against the base.
+- **Produced** — the Summary / What changed / Test plan body above, grounded in the commits and diff.
+- **Next** — paste it into the PR when you open it; `/ship` owns the actual push and PR creation.
+
+---
+
 ## Related
 
 - **/ship** — owns pushing the branch and opening the PR; this command only drafts the body for it to carry.

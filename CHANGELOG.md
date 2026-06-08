@@ -7,6 +7,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-06-08
+
+Mission 07 — workflow cohesion. The spine was built across six missions, but it
+read as accreted parts: handoffs between surfaces were inconsistent, surface
+quality was uneven, consequential questions were asked ad hoc, and every surface
+ended its run its own way. This release makes the spine read and behave as one
+finished product — tightening the handoffs between surfaces, sharpening the
+weakest surfaces in place, leading every consequential question with a reasoned
+recommendation, and giving every run one consistent output language — with each
+convention locked in by a new or tightened CI gate.
+
+### Added
+
+- **`scripts/check-surface-quality.sh` CI gate** — fails the build if any
+  user-facing surface cites a dead reference, such as pointing at `CLAUDE.md`
+  as a source of the quality gates or the God-Mode protocol.
+- **`rules/godmode-output.md` output convention** — a single canonical in-skill
+  output language (status header, what-changed summary, and an explicit
+  next-step line) with two renderings, enforced by the new
+  `scripts/check-output-style.sh` CI gate.
+
+### Changed
+
+- **Workflow cohesion tightened** — every `## Related` and `## Handoffs`
+  pointer now resolves and the spine reads end-to-end with no dead ends;
+  `scripts/check-cohesion.sh` is tightened to assert what is now mechanically
+  checkable.
+- **Surface-quality sweep** — the lowest-scoring skills, agents, and commands
+  were sharpened in place for clarity, doc/spec accuracy, and structural
+  consistency, with no new surface added.
+- **Interaction polish** — every surface that asks a consequential question now
+  leads with a reasoned **Recommended** option, and `scripts/check-recommend.sh`
+  coverage is extended to lock the convention in.
+- **Consistent run output** — the in-skill output blocks are applied across the
+  spine surfaces so every run reads the same way: what state it reached, what it
+  changed, and where to go next.
+
 ## [2.7.0] - 2026-06-06
 
 Mission 06 — verification phase. `/verify` previously emitted findings that

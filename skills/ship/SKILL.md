@@ -24,7 +24,16 @@ When `--no-push` is set the confirmation prompt is moot — there is nothing sid
 
 ## Confirm by default
 
-`/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then wait for explicit confirmation before pushing.
+`/ship` **confirms with the user before the side-effecting steps** (the push and the `gh pr create`). This confirm follows the shared convention in `rules/godmode-recommend.md` (`godmode:recommend-convention`) — its confirm/proceed rendering: lead with a **Recommended: proceed** line carrying a visible one-line rationale, then let the user override.
+
+After the gates pass and the PR body is drafted, show the branch, target, and PR title/body, then lead with the recommended-proceed confirm before pushing — for example:
+
+```
+Recommended: proceed — every quality gate and the findings gate are green, and
+the PR body is drafted. Reply "go" to push and open the PR, or name what to change.
+```
+
+Wait for explicit confirmation before pushing.
 
 **Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompt: proceed straight to push and PR create on the default choices, and treat any user course-correction as normal input. The quality-gate block (Step 1) **and the findings gate (Step 1b)** are never skipped, in either mode — Auto Mode skips only the confirmation, never a BLOCK. (The findings gate's waive escape is inherently conversational, so it still requires an explicit user-named ID + reason even under Auto Mode; Auto Mode never auto-waives.)
 
@@ -248,6 +257,8 @@ This lets `/godmode` tell the user the work unit shipped and what to do next.
 ---
 
 ## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
 
 After shipping, report:
 

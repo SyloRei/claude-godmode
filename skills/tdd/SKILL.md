@@ -6,13 +6,13 @@ user-invocable: true
 
 # Test-Driven Development
 
-Implement features using strict Red-Green-Refactor cycles. Implements the testing protocol defined in CLAUDE.md.
+Implement features using strict Red-Green-Refactor cycles. Implements the testing protocol in `rules/godmode-testing.md`.
 
 ---
 
 ## Auto Mode
 
-Auto Mode suppresses confirmation prompts, not the clarifying questions that decide what the tests assert. **If a target behavior is genuinely ambiguous — the expected output, an edge case's contract — ask** (the tests encode it; guessing bakes the wrong contract into red-green). For low-stakes decomposition choices, use reasonable defaults and surface the behavior list + assumptions inline, then run the cycles. Treat course-corrections as normal input.
+Auto Mode suppresses confirmation prompts, not the clarifying questions that decide what the tests assert. **If a target behavior is genuinely ambiguous — the expected output, an edge case's contract — don't ask blank: lead with the contract you'd assert and invite the override** (e.g. "I'll assert this edge case returns an empty list rather than throwing — correct me before I write the red test"), because the tests encode it and guessing bakes the wrong contract into red-green. This is the clarifying rendering of the shared recommendation convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`. For low-stakes decomposition choices, use reasonable defaults and surface the behavior list + assumptions inline, then run the cycles. Treat course-corrections as normal input.
 
 ---
 
@@ -62,7 +62,7 @@ Break the feature into small behaviors. For each behavior, run one Red-Green-Ref
 1. List the behaviors to implement (3-7 items typically)
 2. Order from simplest to most complex
 3. For each: RED → GREEN → REFACTOR → COMMIT
-4. After all: run quality gates (CLAUDE.md canonical list)
+4. After all: run quality gates (from `config/quality-gates.txt`)
 
 ---
 
@@ -105,6 +105,26 @@ In Auto Mode, run all cycles now unless the feature clearly needs its own planni
 - TDD: [feature name] — N behaviors, each one RED-GREEN-REFACTOR cycle.
   Behaviors: [short list]. Drive test-first; quality gates per cycle.
 ```
+
+---
+
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+The Progress Report above narrates each Red-Green-Refactor cycle as it runs; close the whole run with one consolidated result block. It leads with the terminal state, summarizes the cycles, and names one next move:
+
+- **Status** — all behaviors driven test-first to green, or the remaining work deferred as a work unit.
+- **Cycles** — the behaviors implemented, each one a completed Red→Green→Refactor cycle.
+- **Tests** — the passing/total count and the files changed.
+- **Gates** — the quality-gate results (all ✓).
+- **Next** — the single onward pointer:
+
+> "Implemented [N] behaviors test-first; [X]/[X] tests pass and all quality gates are green. Run `/ship` to take the feature to a PR."
+
+When the remaining behaviors are deferred instead of driven now, the next-step names the work-unit handoff:
+
+> "Drove [N] behaviors; appended the rest as a work unit to `.planning/missions/<mission_id>/ROADMAP.md`. Run `/brief N` to plan it."
 
 ---
 

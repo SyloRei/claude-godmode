@@ -15,11 +15,15 @@ BEFORE touching code. This skill triages; it does not write the fix.
 ## Auto Mode
 
 Auto Mode suppresses confirmation prompts and proceed-pauses — not the one
-clarifying question that can matter here: **if the first symptom, the time it
-started, or who reported it is unknown, ask for it** (triaging the wrong
-incident wastes the whole effort). Once the symptom is anchored, proceed:
-reconstruct the timeline, assess blast radius, and route the fix without
-pausing. Treat course-corrections as normal input.
+clarifying question that can matter here: **when it started, when it was last
+known-good, or who reported it is unknown, don't ask blank — lead with your
+best-inferred answer to override** (e.g. "I'll take the incident start as the
+first error at 14:02 UTC — correct me if it began earlier"), since triaging the
+wrong incident wastes the whole effort. This clarifying question follows the
+shared recommendation convention (`godmode:recommend-convention`) defined in
+`rules/godmode-recommend.md`. Once the symptom is anchored, proceed: reconstruct
+the timeline, assess blast radius, and route the fix without pausing. Treat
+course-corrections as normal input.
 
 ---
 
@@ -107,6 +111,22 @@ do it read-only with cited evidence. Never write the fix from this skill.
 This is an on-demand helper, invoked when an incident lands. It is not part of
 the routine spine and records no workflow state — run it, route the fix, and
 hand off to `@debugger` or `@writer`.
+
+---
+
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with one consolidated result block. The per-step `**Output:**` lines above narrate timeline → blast radius → reconstruct → route as you go; this block is the single legible summary the user reads at the end — it leads with the terminal state, summarizes the incident, and names one next move:
+
+- **Status** — incident triaged; the root-cause hypothesis is established and the fix is routed.
+- **Timeline** — first symptom and time, last known-good, and what changed in the window.
+- **Blast radius** — who and what is affected, severity, and whether it is ongoing or resolved.
+- **Remediation** — the routes considered, each with `file:line` evidence.
+- **Next** — the single onward pointer:
+
+> "Incident triaged. Root-cause hypothesis: [cause] at [file:line]. Affected [scope], severity [level], [ongoing/resolved]. Routed the fix to `@debugger`. Run `/debug` to verify the fix, then `/brief N` if it warrants a tracked work unit."
 
 ---
 

@@ -196,6 +196,8 @@ Numbered work units for this mission. Reference an entry with `/brief N`.
 
 ## Output
 
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
 After writing, report:
 
 - The active mission (`mission_id` and `mission_name`), and whether it was created fresh or switched into.

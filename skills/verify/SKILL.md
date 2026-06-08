@@ -306,9 +306,11 @@ gm=$(for c in "${CLAUDE_PLUGIN_ROOT:-}" "$HOME/.claude" .; do [ -x "$c/bin/godmo
 
 ---
 
-## Output format
+## Output
 
-The report has **two sections**: (a) the goal-backward AC-coverage verdict, then (b) the merged review findings.
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+The report has **two sections**: (a) the goal-backward AC-coverage verdict, then (b) the merged review findings. It leads with the verdict (the terminal state), summarizes what was found, and ends on the single next-step `/command` below.
 
 ### (a) AC-coverage verdict
 

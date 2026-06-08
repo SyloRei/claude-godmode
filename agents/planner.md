@@ -15,7 +15,7 @@ The **plan** skill is preloaded into your context: follow its process. Your job 
 
 ## What you produce
 
-For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` and write a single `.planning/briefs/NN-name/PLAN.md` containing:
+For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` and write a single `.planning/missions/<mission_id>/briefs/NN-name/PLAN.md` containing:
 
 1. **Ordered steps** — small, mechanical, one concern each. Each step names the files it touches and the change it makes.
 2. **Dependency relationships** — every step declares `dependsOn` (the step IDs it requires, or none). This lets `/build` group independent steps into parallel waves.
@@ -33,7 +33,24 @@ For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` and write a sin
 
 ## Output
 
-After writing, report the plan path, the wave grouping implied by `dependsOn`, confirmation that every brief criterion has a verification entry, the workflow state you recorded, and the next step (`/build N`).
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+End with this caller-contract block addressed to the orchestrator — a status header, what the plan covers, the workflow state you recorded, and the single next step:
+
+```
+## Plan: WRITTEN
+
+## Summary
+- Plan: .planning/missions/<mission_id>/briefs/NN-name/PLAN.md
+- Waves: <the wave grouping implied by dependsOn, e.g. W1: S1,S2 | W2: S3>
+- Coverage: every brief criterion has a verification entry (cited by ID)
+
+## State
+- Recorded: <the workflow pointer you set via bin/godmode-state>
+
+## Next
+→ /build N
+```
 
 ## Handoffs
 

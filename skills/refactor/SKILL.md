@@ -6,13 +6,13 @@ user-invocable: true
 
 # Safe Refactoring
 
-Improve code structure without changing behavior. Every step verified by tests. Implements the refactoring protocol defined in CLAUDE.md.
+Improve code structure without changing behavior. Every step verified by tests, with quality gates passing before and after each change.
 
 ---
 
 ## Auto Mode
 
-When `## Auto Mode Active` is present in context: do not pause for confirmation. Plan the steps using reasonable defaults, surface the plan and assumptions inline, then execute step by step with per-step quality gates. Treat user course-corrections as normal input.
+When `## Auto Mode Active` is present in context: do not pause for confirmation. Plan the steps using reasonable defaults, surface the plan and assumptions inline, then execute step by step with per-step quality gates. When the refactor's scope or target is genuinely ambiguous — what to restructure into what — ask, following the shared recommendation convention (`godmode:recommend-convention`) in `rules/godmode-recommend.md`: lead with your best-inferred answer to override, not a blank prompt (e.g. "I'll extract X into Y unless you'd scope the boundary differently"), then let the user redirect. Treat user course-corrections as normal input.
 
 ---
 
@@ -28,7 +28,7 @@ When `## Auto Mode Active` is present in context: do not pause for confirmation.
 ## Process
 
 ### 1. BASELINE
-- Run ALL quality gates (CLAUDE.md canonical list). They must pass.
+- Run ALL quality gates (from `config/quality-gates.txt`). They must pass.
 - If not: fix quality issues first (separate commit).
 - Note current test count and coverage.
 
@@ -114,6 +114,8 @@ In Auto Mode, execute now for small refactorings; for large ones, append a work 
 ---
 
 ## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
 
 ```
 Refactoring: [what and why]

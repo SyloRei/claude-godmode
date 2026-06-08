@@ -16,7 +16,7 @@ The **verify** skill is preloaded into your context: follow its process. Your jo
 
 ## What you produce
 
-For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` (and `PLAN.md`'s verification plan if present), then for **each** acceptance criterion return a verdict — **COVERED / PARTIAL / MISSING** — with concrete evidence: a `file:line`, a named passing test, or command output that demonstrates the brief's observable result.
+For roadmap unit **N**, read `.planning/missions/<mission_id>/briefs/NN-name/BRIEF.md` (and `PLAN.md`'s verification plan if present), then for **each** acceptance criterion return a verdict — **COVERED / PARTIAL / MISSING** — with concrete evidence: a `file:line`, a named passing test, or command output that demonstrates the brief's observable result.
 
 ## Principles
 
@@ -28,10 +28,32 @@ For roadmap unit **N**, read `.planning/briefs/NN-name/BRIEF.md` (and `PLAN.md`'
 
 ## Output
 
-Report a per-criterion table (criterion · verdict · evidence), a verdict line (`N COVERED / N PARTIAL / N MISSING`), the workflow state you recorded, and the next step — `/ship` if every criterion is COVERED, otherwise `/build N` with the list of gaps.
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+End with this caller-contract block addressed to the orchestrator — a verdict header, the per-criterion coverage, the workflow state you recorded, and the single next step:
+
+```
+## Verdict: [COVERED | GAPS | BLOCKED]  (N COVERED / N PARTIAL / N MISSING)
+
+## Coverage
+| Criterion | Verdict | Evidence |
+|-----------|---------|----------|
+| <AC-id>   | COVERED \| PARTIAL \| MISSING | file:line · test name · command output |
+
+## State
+- Recorded: <the workflow pointer you set via bin/godmode-state>
+
+## Next
+→ /ship                — every criterion COVERED and open_blocking == 0
+→ /build N --fix        — every criterion COVERED but open_blocking > 0
+→ /build N <gaps>       — any criterion PARTIAL or MISSING
+```
+
+Emit exactly one `→ Next` line: the branch that matches this run's outcome.
 
 ## Handoffs
 
-- When every criterion is COVERED → proceed to `/ship` to push and open the PR
+- When every criterion is COVERED **and** no blocking findings remain (`open_blocking == 0`) → proceed to `/ship` to push and open the PR
+- When every criterion is COVERED **but** blocking findings remain (`open_blocking > 0`) → loop back via `/build N --fix` to resolve them before shipping
 - When criteria are PARTIAL or MISSING → loop back via `/build N` with the named gaps
 - When verification surfaces a broader mid-mission gap than this unit's gaps → suggest `/refine` to re-analyze and reshape the remaining work

@@ -6,13 +6,13 @@ user-invocable: true
 
 # Structured Debugging
 
-Find and fix bugs systematically using evidence, never guessing. Implements the debugging protocol defined in CLAUDE.md.
+Find and fix bugs systematically using evidence, never guessing.
 
 ---
 
 ## Auto Mode
 
-Auto Mode suppresses confirmation prompts and proceed-pauses — not the one clarifying question that can matter here: **if the symptom isn't reproducible and the exact error/repro steps aren't given, ask for them** (debugging the wrong symptom wastes the whole effort). Once you can reproduce, proceed: fix immediately after the root cause is found, surface assumptions inline, and treat course-corrections as normal input. Don't loop on trivia.
+Auto Mode suppresses confirmation prompts and proceed-pauses — not the one clarifying question that can matter here: **if the symptom isn't reproducible and the exact error/repro steps aren't given, state your reading of it for the user to override** (debugging the wrong symptom wastes the whole effort). Don't ask "what's the repro?" from blank — lead with your best-inferred symptom and repro and invite correction: "I read the failure as X on step Y — correct me if not." This is the clarifying rendering of the recommendation-backed-question convention (`godmode:recommend-convention`) in `rules/godmode-recommend.md`. Once you can reproduce, proceed: fix immediately after the root cause is found, surface assumptions inline, and treat course-corrections as normal input. Don't loop on trivia.
 
 ---
 
@@ -66,7 +66,7 @@ H3: [hypothesis] — confirm by [check]
 
 - Apply the minimal targeted fix
 - Write a regression test (fails without fix, passes with fix)
-- Run ALL quality gates (as defined in CLAUDE.md):
+- Run ALL quality gates (from `config/quality-gates.txt`):
   1. Typecheck passes
   2. Lint passes
   3. All tests pass
@@ -114,6 +114,26 @@ In Auto Mode, fix now unless the bug clearly needs design work — then append a
 - Fix: [root cause summary] — bug found by /debug.
   Root cause: [cause] at [file:line]. Needs: regression test + minimal fix.
 ```
+
+---
+
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close every debug run with one consolidated result block. The per-step `**Output:**` lines above narrate the protocol as you go; this block is the single legible summary the user reads at the end — it leads with the terminal state, summarizes the work, and names one next move:
+
+- **Status** — the terminal state: bug found and fixed, or found and deferred as a work unit.
+- **Root cause** — the exact cause with `file:line` evidence.
+- **Fix** — the minimal change applied and the regression test added.
+- **Gates** — the quality-gate results (all ✓).
+- **Next** — the single onward pointer:
+
+> "Fixed [root cause] at [file:line]. Added regression test [name]; all quality gates pass. Run `/ship` to take the fix to a PR."
+
+When the fix is deferred instead of applied now, the next-step names the work-unit handoff:
+
+> "Root cause: [cause] at [file:line]. Appended a work unit to `.planning/missions/<mission_id>/ROADMAP.md`. Run `/brief N` to plan the fix."
 
 ---
 

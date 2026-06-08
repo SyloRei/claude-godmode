@@ -102,6 +102,18 @@ Keep the whole output well under 10,000 characters — five short lines is the t
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+The five-line orientation from section 5 *is* the result block — it already carries all three beats, so nothing extra prints after it:
+
+- **Status** — the Mission/Where lines: which unit is active and its recorded status (or "cold start — no roadmap yet").
+- **Produced** — the version, the live skill/agent counts, and the resolved spine position, all read from state and the filesystem.
+- **Next** — the `Next:` line is the single onward move: the exact next command it just reported from workflow state. Print the resolved next step — never hardcode it (cold start resolves to `/mission`).
+
+---
+
 ## Related
 
 `/godmode` points users *into* the workflow — every pointer here is a next step it recommends.

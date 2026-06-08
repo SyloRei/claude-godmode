@@ -89,3 +89,4 @@ When fanned out as a parallel review lens, report each finding as: **lens** (`se
 
 - Report findings through `/verify` (security lens) for tracking in code review
 - Critical findings should block `/ship` until resolved
+- When run standalone (spawned from `/debug`, `/onboard`, or ad-hoc — not as a `/verify` lens) → return the findings to the caller; if any are critical, resolve them via `/build N --fix` or a manual fix before `/ship`

@@ -28,7 +28,7 @@ Investigate systematically, then present a structured cheatsheet. Spawn `@resear
 
 ## Process
 
-### 1. Project Detection (aligns with CLAUDE.md Auto-Detection)
+### 1. Project Detection (aligns with the Auto-Detection rules in `rules/godmode-coding.md`)
 - Language and framework
 - Package manager and build system
 - Test runner and coverage setup
@@ -131,7 +131,11 @@ The two are written **independently** — each has its own save offer below, and
 
 ### Offer to Save
 
-> "Save this cheatsheet to `.planning/onboarding.md` so `/mission` can use it?"
+Lead the offer with the recommended option and a one-line rationale, per the recommendation-backed-question convention (`godmode:recommend-convention`) defined in `rules/godmode-recommend.md`:
+
+> "Save this cheatsheet to `.planning/onboarding.md`?
+>   a) Save (Recommended — the cheatsheet is what `/mission` reads as its seed; persisting it now means the next mission starts oriented instead of asking from scratch)
+>   b) Skip"
 
 - Saving is **optional** — the user must confirm before writing anything
 - If the user declines, continue without further prompts about saving
@@ -203,7 +207,11 @@ The format:
 
 The Code Standards discovery step (Process step 4) **always runs** — it always gathers findings. **Writing** them to `.planning/STANDARDS.md` follows the same optional-save convention as the cheatsheet above.
 
-> "Save the discovered code standards to `.planning/STANDARDS.md`?"
+Lead this offer the same way — recommended option first, with a rationale specific to the standards artifact:
+
+> "Save the discovered code standards to `.planning/STANDARDS.md`?
+>   a) Save (Recommended — these cited DO / DON'T rules are what later code-writing surfaces apply over the generic `rules/godmode-*.md`; persisting them now means every `/build` in this repo honors its own conventions)
+>   b) Skip"
 
 - Saving is **optional** — the user must confirm before writing anything
 - If the user declines, continue without further prompts about saving
@@ -224,6 +232,20 @@ Suggest next steps:
 Onboarding is the orientation step at the front of the workflow spine. Its **descriptive** cheatsheet feeds `/mission`: the saved `.planning/onboarding.md` gives the charter its starting context — stack, architecture, how-to-run/test, technical-debt hotspots — so `/mission` asks fewer questions and lands a sharper purpose + roadmap. From there the spine continues `/brief N → /plan N → /build N → /verify N → /ship`.
 
 `.planning/STANDARDS.md` plays a different role. It is **prescriptive**, not orientation: the cited DO / DON'T standards it captures are written for later code-writing surfaces, where they supplement or override the generic shipped `rules/godmode-*.md` for *this* codebase. It is not consumed by `/mission` the way the cheatsheet is — it exists to carry the codebase's own conventions downstream into the work.
+
+---
+
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with one consolidated result block, after the cheatsheet and any save offers. It leads with the terminal state, summarizes what was produced, and names one next move:
+
+- **Status** — orientation complete; the cheatsheet is built (and the artifacts written, if the user chose to save).
+- **What was produced** — the cheatsheet, and which artifacts were persisted: `.planning/onboarding.md` (descriptive) and/or `.planning/STANDARDS.md` (prescriptive), or "no project-specific standards found" for the empty case.
+- **Next** — the single onward pointer:
+
+> "Onboarding cheatsheet built and saved to `.planning/onboarding.md` (and `.planning/STANDARDS.md`). Run `/mission` to turn it into a project charter and roadmap."
 
 ---
 

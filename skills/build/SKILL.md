@@ -20,7 +20,14 @@ The git log **is** the execution log. There is no third artifact file — `BRIEF
 
 ## Confirm by default (OQ-5)
 
-`/build` **confirms with the user before dispatching each wave** and before any other side-effecting change (committing, writing to the worktree). Before a wave runs, show: the wave number, the steps in it, the files each step touches, and the agent each step dispatches to. Wait for explicit confirmation, then proceed.
+`/build` **confirms with the user before dispatching each wave** and before any other side-effecting change (committing, writing to the worktree). Follow the shared recommendation convention (`godmode:recommend-convention`) in `rules/godmode-recommend.md`: lead the confirm with a recommended default rather than a bare "wait for confirmation."
+
+Before a wave runs, show the wave number, the steps in it, the files each step touches, and the agent each step dispatches to — then lead with the convention's confirm/proceed rendering, a **Recommended: proceed — <one-line rationale>** that names why this wave is safe to run (e.g. its steps are file-disjoint and each maps to a planned acceptance check), and invite the user to override:
+
+```
+Recommended: proceed — wave 2's 3 steps touch disjoint files and each maps to a
+plan step. Reply "go", or name what to change.
+```
 
 **Exception — Auto Mode.** When `## Auto Mode Active` is present in context, skip the confirmation prompts: dispatch each wave on the default choices and treat any user course-correction as normal input. The per-step quality-gate block (below) is **never** skipped, in either mode.
 
@@ -377,6 +384,8 @@ The fix flow inherits the **confirm-before-each-wave** behavior and the **Auto M
 ---
 
 ## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
 
 After building, report:
 

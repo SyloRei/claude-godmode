@@ -79,6 +79,18 @@ view, present tense, terse. Print the entry for the user to paste into
 
 ---
 
+## Output
+
+<!-- Output follows the in-skill output convention: godmode:output-convention — see rules/godmode-output.md -->
+
+Close the run with a short status block:
+
+- **Status** — changelog entry drafted from the commits since the last tag.
+- **Produced** — the Keep a Changelog block above (Added / Changed / Fixed / Removed), with noise dropped.
+- **Next** — fold it into `CHANGELOG.md`, or run `/ship` when you are actually cutting the release.
+
+---
+
 ## Related
 
 - **/ship** — owns the release-time changelog step when you are actually cutting a version; this command is only for ad-hoc drafting between releases.
